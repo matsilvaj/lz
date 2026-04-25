@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { logout } from "@/app/auth/actions";
 
-export function UserMenu() {
+export function UserMenu({ firstName }: { firstName: string }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +40,7 @@ export function UserMenu() {
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        Menu
+        {firstName}
       </button>
 
       {open ? (
@@ -51,6 +51,14 @@ export function UserMenu() {
             onClick={() => setOpen(false)}
           >
             Perfil
+          </Link>
+
+          <Link
+            className="block rounded-xl px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+            href="/bases"
+            onClick={() => setOpen(false)}
+          >
+            Bases
           </Link>
 
           <form action={logout}>

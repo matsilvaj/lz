@@ -1,11 +1,11 @@
-import { requireUser } from "@/lib/auth/session";
+import { requireBaseContext } from "@/lib/auth/base-context";
 import { getBookmakersPageData } from "@/lib/server/app-data";
 
 import { BookmakersWorkspace } from "./bookmakers-workspace";
 
 export default async function BookmakersPage() {
-  const user = await requireUser();
-  const data = await getBookmakersPageData(user.id);
+  const { activeBase, user } = await requireBaseContext();
+  const data = await getBookmakersPageData(user.id, activeBase.id);
 
   return (
     <BookmakersWorkspace

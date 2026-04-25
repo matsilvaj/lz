@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireUser } from "@/lib/auth/session";
+import { requireBaseContext } from "@/lib/auth/base-context";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: string | FormDataEntryValue | null) {
@@ -27,7 +27,7 @@ export async function saveBookmakerAction({
 }: {
   name: string;
 }) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -35,7 +35,7 @@ export async function saveBookmakerAction({
     return;
   }
 
-  await repository.addBookmaker(normalizedName, user.id);
+  await repository.addBookmaker(normalizedName, user.id, activeBase.id);
 
   revalidateBookmakerScreens();
 }
@@ -47,7 +47,7 @@ export async function updateBookmakerBalanceAction({
   name: string;
   balance: number;
 }) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -59,12 +59,13 @@ export async function updateBookmakerBalanceAction({
     normalizedName,
     parseNumber(balance),
     user.id,
+    activeBase.id,
   );
   revalidateBookmakerScreens();
 }
 
 export async function deleteBookmakerAction(name: string) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -72,14 +73,14 @@ export async function deleteBookmakerAction(name: string) {
     return;
   }
 
-  await repository.deleteBookmaker(normalizedName, user.id);
+  await repository.deleteBookmaker(normalizedName, user.id, activeBase.id);
   revalidateBookmakerScreens();
 }
 
 export async function updateBookmakersNotesAction(notes: string) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
 
-  await repository.updateBookmakersNotes(user.id, parseText(notes));
+  await repository.updateBookmakersNotes(user.id, activeBase.id, parseText(notes));
   revalidateBookmakerScreens();
 }

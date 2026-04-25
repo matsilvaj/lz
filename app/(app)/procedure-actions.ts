@@ -8,7 +8,7 @@ import {
   FREEBET_RESULT_NO,
   FREEBET_RESULT_YES,
 } from "@/core";
-import { requireUser } from "@/lib/auth/session";
+import { requireBaseContext } from "@/lib/auth/base-context";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: FormDataEntryValue | null) {
@@ -101,7 +101,7 @@ function revalidateApplication() {
 }
 
 export async function saveProcedureAction(formData: FormData) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const returnTo = getReturnTo(formData, "/procedimentos");
   const procedureType = parseText(formData.get("procedureType")) || "SureBet";
@@ -131,9 +131,9 @@ export async function saveProcedureAction(formData: FormData) {
   });
 
   if (procedureType === "Converter Freebet" && originIds.length > 0) {
-    await repository.saveFreebetConversion(payload, originIds, user.id);
+    await repository.saveFreebetConversion(payload, originIds, user.id, activeBase.id);
   } else {
-    await repository.saveProcedure(payload, user.id);
+    await repository.saveProcedure(payload, user.id, activeBase.id);
   }
 
   revalidateApplication();
@@ -141,7 +141,7 @@ export async function saveProcedureAction(formData: FormData) {
 }
 
 export async function updateProcedureAction(formData: FormData) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const returnTo = getReturnTo(formData, "/procedimentos");
   const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
@@ -150,7 +150,7 @@ export async function updateProcedureAction(formData: FormData) {
     redirect(returnTo);
   }
 
-  const current = await repository.getProcedureById(procedureId, user.id);
+  const current = await repository.getProcedureById(procedureId, user.id, activeBase.id);
   if (!current) {
     redirect(returnTo);
   }
@@ -183,36 +183,36 @@ export async function updateProcedureAction(formData: FormData) {
     freebetOriginId: current.id_freebet_origem,
   });
 
-  await repository.updateProcedure(procedureId, payload, user.id);
+  await repository.updateProcedure(procedureId, payload, user.id, activeBase.id);
 
   revalidateApplication();
   redirect(returnTo);
 }
 
 export async function updateProcedureDoubleStatusAction(procedureId: number, hitDouble: boolean) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
 
   if (Number.isInteger(procedureId) && procedureId > 0) {
-    await repository.updateDoubleStatus(procedureId, hitDouble, user.id);
+    await repository.updateDoubleStatus(procedureId, hitDouble, user.id, activeBase.id);
   }
 
   revalidateApplication();
 }
 
 export async function deleteProcedureAction(procedureId: number) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
 
   if (Number.isInteger(procedureId) && procedureId > 0) {
-    await repository.deleteProcedure(procedureId, user.id);
+    await repository.deleteProcedure(procedureId, user.id, activeBase.id);
   }
 
   revalidateApplication();
 }
 
 export async function updateFreebetResultAction(formData: FormData) {
-  const user = await requireUser();
+  const { activeBase, user } = await requireBaseContext();
   const repository = getProceduresRepository();
   const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
   const rawResult = parseText(formData.get("result"));
@@ -221,7 +221,7 @@ export async function updateFreebetResultAction(formData: FormData) {
   const returnTo = getReturnTo(formData, "/freebets");
 
   if (Number.isInteger(procedureId) && [FREEBET_RESULT_YES, FREEBET_RESULT_NO].includes(result)) {
-    await repository.updateFreebetResult(procedureId, result, user.id);
+    await repository.updateFreebetResult(procedureId, result, user.id, activeBase.id);
   }
 
   revalidateApplication();

@@ -2,17 +2,20 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 
-import { requireUser } from "@/lib/auth/session";
+import { requireBaseContext } from "@/lib/auth/base-context";
 
 import { AppNavigation } from "./_components/app-navigation";
+import { BaseSwitcher } from "./_components/base-switcher";
 import { UserMenu } from "./_components/user-menu";
+import { getUserFirstName } from "./user-display-name";
 
 export default async function ProtectedAppLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
-  await requireUser();
+  const { activeBase, bases, user } = await requireBaseContext();
+  const firstName = getUserFirstName(user);
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-950">
@@ -35,8 +38,9 @@ export default async function ProtectedAppLayout({
 
             <AppNavigation />
 
-            <div className="flex justify-start xl:justify-end">
-              <UserMenu />
+            <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
+              <BaseSwitcher activeBase={activeBase} bases={bases} />
+              <UserMenu firstName={firstName} />
             </div>
           </div>
         </div>

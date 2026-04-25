@@ -59,30 +59,32 @@ export class ProceduresPostgresRepository {
 
   async initialize() {}
 
-  async addBookmaker(name, userId, executor = this.db) {
+  async addBookmaker(name, userId, baseId, executor = this.db) {
     const normalizedName = parseText(name).trim();
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedName || !normalizedUserId) {
+    if (!normalizedName || !normalizedUserId || normalizedBaseId <= 0) {
       return;
     }
 
     await executor.query(
       `
-        INSERT INTO usuarios_bancas (user_id, bookmaker_id)
-        SELECT $1, id
+        INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id)
+        SELECT $1, $2, id
         FROM casas_de_apostas
-        WHERE lower(nome) = lower($2)
-        ON CONFLICT (user_id, bookmaker_id) DO NOTHING
+        WHERE lower(nome) = lower($3)
+        ON CONFLICT (base_id, bookmaker_id) DO NOTHING
       `,
-      [normalizedUserId, normalizedName],
+      [normalizedUserId, normalizedBaseId, normalizedName],
     );
   }
 
-  async deleteBookmaker(name, userId, executor = this.db) {
+  async deleteBookmaker(name, userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return;
     }
 
@@ -92,9 +94,10 @@ export class ProceduresPostgresRepository {
         USING casas_de_apostas ca
         WHERE ub.bookmaker_id = ca.id
           AND ub.user_id = $1
-          AND lower(ca.nome) = lower($2)
+          AND ub.base_id = $2
+          AND lower(ca.nome) = lower($3)
       `,
-      [normalizedUserId, name],
+      [normalizedUserId, normalizedBaseId, name],
     );
   }
 
@@ -106,10 +109,11 @@ export class ProceduresPostgresRepository {
     return rows.map((row) => row.nome);
   }
 
-  async listBookmakersWithBalance(userId, executor = this.db) {
+  async listBookmakersWithBalance(userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return [];
     }
 
@@ -120,9 +124,10 @@ export class ProceduresPostgresRepository {
         INNER JOIN casas_de_apostas ca
           ON ca.id = ub.bookmaker_id
         WHERE ub.user_id = $1
+          AND ub.base_id = $2
         ORDER BY ca.nome ASC
       `,
-      [normalizedUserId],
+      [normalizedUserId, normalizedBaseId],
     );
 
     return rows.map((row) => ({
@@ -131,10 +136,11 @@ export class ProceduresPostgresRepository {
     }));
   }
 
-  async updateBookmakerBalance(name, balance, userId, executor = this.db) {
+  async updateBookmakerBalance(name, balance, userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return;
     }
 
@@ -145,16 +151,18 @@ export class ProceduresPostgresRepository {
         FROM casas_de_apostas ca
         WHERE ub.bookmaker_id = ca.id
           AND ub.user_id = $2
-          AND lower(ca.nome) = lower($3)
+          AND ub.base_id = $3
+          AND lower(ca.nome) = lower($4)
       `,
-      [parseNumber(balance), normalizedUserId, name],
+      [parseNumber(balance), normalizedUserId, normalizedBaseId, name],
     );
   }
 
-  async getBookmakersNotes(userId, executor = this.db) {
+  async getBookmakersNotes(userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return "";
     }
 
@@ -163,38 +171,140 @@ export class ProceduresPostgresRepository {
         SELECT texto
         FROM usuarios_observacoes_bancas
         WHERE user_id = $1
+          AND base_id = $2
       `,
-      [normalizedUserId],
+      [normalizedUserId, normalizedBaseId],
     );
 
     return parseText(rows[0]?.texto);
   }
 
-  async updateBookmakersNotes(userId, notes, executor = this.db) {
+  async updateBookmakersNotes(userId, baseId, notes, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return;
     }
 
     await executor.query(
       `
-        INSERT INTO usuarios_observacoes_bancas (user_id, texto)
-        VALUES ($1, $2)
-        ON CONFLICT (user_id)
+        INSERT INTO usuarios_observacoes_bancas (user_id, base_id, texto)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (base_id)
         DO UPDATE SET texto = EXCLUDED.texto
       `,
-      [normalizedUserId, parseText(notes)],
+      [normalizedUserId, normalizedBaseId, parseText(notes)],
     );
   }
 
-  async saveProcedure(data, userId, executor = this.db) {
+  async listBases(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return [];
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT id, nome, created_at
+        FROM bases_usuario
+        WHERE user_id = $1
+        ORDER BY created_at ASC, id ASC
+      `,
+      [normalizedUserId],
+    );
+
+    return rows.map((row) => ({
+      id: parseNumber(row.id),
+      nome: parseText(row.nome),
+      created_at: row.created_at,
+    }));
+  }
+
+  async getBaseById(userId, baseId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
+
+    if (!normalizedUserId || normalizedBaseId <= 0) {
+      return null;
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT id, nome, created_at
+        FROM bases_usuario
+        WHERE user_id = $1
+          AND id = $2
+      `,
+      [normalizedUserId, normalizedBaseId],
+    );
+
+    const row = rows[0];
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: parseNumber(row.id),
+      nome: parseText(row.nome),
+      created_at: row.created_at,
+    };
+  }
+
+  async createBase(userId, name, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedName = parseText(name).trim().replace(/\s+/g, " ");
+
+    if (!normalizedUserId || !normalizedName) {
+      return null;
+    }
+
+    const existing = await executor.query(
+      `
+        SELECT id, nome, created_at
+        FROM bases_usuario
+        WHERE user_id = $1
+          AND lower(nome) = lower($2)
+        LIMIT 1
+      `,
+      [normalizedUserId, normalizedName],
+    );
+
+    if (existing.rows[0]) {
+      return {
+        id: parseNumber(existing.rows[0].id),
+        nome: parseText(existing.rows[0].nome),
+        created_at: existing.rows[0].created_at,
+      };
+    }
+
+    const { rows } = await executor.query(
+      `
+        INSERT INTO bases_usuario (user_id, nome)
+        VALUES ($1, $2)
+        RETURNING id, nome, created_at
+      `,
+      [normalizedUserId, normalizedName],
+    );
+
+    return {
+      id: parseNumber(rows[0]?.id),
+      nome: parseText(rows[0]?.nome),
+      created_at: rows[0]?.created_at,
+    };
+  }
+
+  async saveProcedure(data, userId, baseId, executor = this.db) {
     const normalized = normalizeDatabaseData(data);
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
     const { rows } = await executor.query(
       `
         INSERT INTO procedimentos_historico (
           user_id,
+          base_id,
           data_operacao,
           tipo_procedimento,
           casas_envolvidas,
@@ -211,12 +321,13 @@ export class ProceduresPostgresRepository {
           valor_da_freebet,
           ganhou_freebet
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
         )
         RETURNING id
       `,
       [
         normalizedUserId,
+        normalizedBaseId,
         normalized.data_operacao,
         normalized.tipo_procedimento,
         normalized.casas_envolvidas,
@@ -238,8 +349,9 @@ export class ProceduresPostgresRepository {
     return Number(rows[0]?.id);
   }
 
-  async saveFreebetConversion(data, originIds, userId) {
+  async saveFreebetConversion(data, originIds, userId, baseId) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
     const ids = Array.isArray(originIds) ? originIds : [originIds];
     const payload = {
       ...data,
@@ -249,7 +361,12 @@ export class ProceduresPostgresRepository {
     let conversionId = null;
 
     await this.runInTransaction(async (executor) => {
-      conversionId = await this.saveProcedure(payload, normalizedUserId, executor);
+      conversionId = await this.saveProcedure(
+        payload,
+        normalizedUserId,
+        normalizedBaseId,
+        executor,
+      );
 
       for (const originId of ids) {
         await executor.query(
@@ -258,8 +375,9 @@ export class ProceduresPostgresRepository {
             SET status_freebet = $1
             WHERE id = $2
               AND user_id = $3
+              AND base_id = $4
           `,
-          [FREEBET_STATUS_USED, originId, normalizedUserId],
+          [FREEBET_STATUS_USED, originId, normalizedUserId, normalizedBaseId],
         );
       }
     });
@@ -267,43 +385,51 @@ export class ProceduresPostgresRepository {
     return conversionId;
   }
 
-  async getProcedureById(procedureId, userId, executor = this.db) {
+  async getProcedureById(procedureId, userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
     const { rows } = await executor.query(
-      "SELECT * FROM procedimentos_historico WHERE id = $1 AND user_id = $2",
-      [procedureId, normalizedUserId],
+      "SELECT * FROM procedimentos_historico WHERE id = $1 AND user_id = $2 AND base_id = $3",
+      [procedureId, normalizedUserId, normalizedBaseId],
     );
 
     const row = rows[0];
     return row ? { ...row } : null;
   }
 
-  async listProcedures(userId, executor = this.db) {
+  async listProcedures(userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
 
-    if (!normalizedUserId) {
+    if (!normalizedUserId || normalizedBaseId <= 0) {
       return [];
     }
 
     const { rows } = await executor.query(
-      "SELECT * FROM procedimentos_historico WHERE user_id = $1 ORDER BY id DESC",
-      [normalizedUserId],
+      "SELECT * FROM procedimentos_historico WHERE user_id = $1 AND base_id = $2 ORDER BY id DESC",
+      [normalizedUserId, normalizedBaseId],
     );
 
     return rows.map((row) => enrichProcedure(row));
   }
 
-  async listFilteredProcedures(userId, searchText = "", types = [], houses = []) {
+  async listFilteredProcedures(
+    userId,
+    baseId,
+    searchText = "",
+    types = [],
+    houses = [],
+  ) {
     return filterProcedures(
-      await this.listProcedures(userId),
+      await this.listProcedures(userId, baseId),
       searchText,
       types,
       houses,
     );
   }
 
-  async updateProcedure(procedureId, data, userId, executor = this.db) {
-    const current = await this.getProcedureById(procedureId, userId, executor);
+  async updateProcedure(procedureId, data, userId, baseId, executor = this.db) {
+    const current = await this.getProcedureById(procedureId, userId, baseId, executor);
     if (!current) {
       throw new Error(`Procedimento ${procedureId} nao encontrado.`);
     }
@@ -333,6 +459,7 @@ export class ProceduresPostgresRepository {
           ganhou_freebet = $15
         WHERE id = $16
           AND user_id = $17
+          AND base_id = $18
       `,
       [
         normalized.data_operacao,
@@ -352,43 +479,45 @@ export class ProceduresPostgresRepository {
         normalized.ganhou_freebet,
         procedureId,
         normalizeUserId(userId),
+        parseNumber(baseId),
       ],
     );
   }
 
-  async deleteProcedure(procedureId, userId, executor = this.db) {
+  async deleteProcedure(procedureId, userId, baseId, executor = this.db) {
     await executor.query(
-      "DELETE FROM procedimentos_historico WHERE id = $1 AND user_id = $2",
-      [procedureId, normalizeUserId(userId)],
+      "DELETE FROM procedimentos_historico WHERE id = $1 AND user_id = $2 AND base_id = $3",
+      [procedureId, normalizeUserId(userId), parseNumber(baseId)],
     );
   }
 
-  async captureAndDeleteProcedure(procedureId, userId, executor = this.db) {
-    const procedure = await this.getProcedureById(procedureId, userId, executor);
+  async captureAndDeleteProcedure(procedureId, userId, baseId, executor = this.db) {
+    const procedure = await this.getProcedureById(procedureId, userId, baseId, executor);
     if (procedure) {
-      await this.deleteProcedure(procedureId, userId, executor);
+      await this.deleteProcedure(procedureId, userId, baseId, executor);
     }
 
     return procedure;
   }
 
-  async restoreProcedure(data, userId, executor = this.db) {
-    return this.saveProcedure(data, userId, executor);
+  async restoreProcedure(data, userId, baseId, executor = this.db) {
+    return this.saveProcedure(data, userId, baseId, executor);
   }
 
-  async updateDoubleStatus(procedureId, hitDouble, userId, executor = this.db) {
+  async updateDoubleStatus(procedureId, hitDouble, userId, baseId, executor = this.db) {
     await executor.query(
       `
         UPDATE procedimentos_historico
         SET bateu_duplo = $1
         WHERE id = $2
           AND user_id = $3
+          AND base_id = $4
       `,
-      [parseBoolean(hitDouble), procedureId, normalizeUserId(userId)],
+      [parseBoolean(hitDouble), procedureId, normalizeUserId(userId), parseNumber(baseId)],
     );
   }
 
-  async updateFreebetResult(procedureId, result, userId, executor = this.db) {
+  async updateFreebetResult(procedureId, result, userId, baseId, executor = this.db) {
     const status =
       result === FREEBET_RESULT_NO
         ? FREEBET_STATUS_FINISHED
@@ -400,20 +529,22 @@ export class ProceduresPostgresRepository {
         SET ganhou_freebet = $1, status_freebet = $2
         WHERE id = $3
           AND user_id = $4
+          AND base_id = $5
       `,
-      [result, status, procedureId, normalizeUserId(userId)],
+      [result, status, procedureId, normalizeUserId(userId), parseNumber(baseId)],
     );
   }
 
-  async getFreebetState(procedureId, userId, executor = this.db) {
+  async getFreebetState(procedureId, userId, baseId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT id, ganhou_freebet, status_freebet
         FROM procedimentos_historico
         WHERE id = $1
           AND user_id = $2
+          AND base_id = $3
       `,
-      [procedureId, normalizeUserId(userId)],
+      [procedureId, normalizeUserId(userId), parseNumber(baseId)],
     );
 
     const row = rows[0];
@@ -428,10 +559,10 @@ export class ProceduresPostgresRepository {
     };
   }
 
-  async getFreebetStates(procedureIds, userId) {
+  async getFreebetStates(procedureIds, userId, baseId) {
     const ids = Array.isArray(procedureIds) ? procedureIds : [procedureIds];
     const states = await Promise.all(
-      ids.map((id) => this.getFreebetState(id, userId)),
+      ids.map((id) => this.getFreebetState(id, userId, baseId)),
     );
 
     return states.filter(Boolean);
@@ -442,6 +573,7 @@ export class ProceduresPostgresRepository {
     freebetResult,
     freebetStatus,
     userId,
+    baseId,
     executor = this.db,
   ) {
     await executor.query(
@@ -450,19 +582,21 @@ export class ProceduresPostgresRepository {
         SET ganhou_freebet = $1, status_freebet = $2
         WHERE id = $3
           AND user_id = $4
+          AND base_id = $5
       `,
       [
         freebetResult,
         freebetStatus,
         procedureId,
         normalizeUserId(userId),
+        parseNumber(baseId),
       ],
     );
   }
 
-  async undoFreebetConversion(conversionId, originStates, userId) {
+  async undoFreebetConversion(conversionId, originStates, userId, baseId) {
     await this.runInTransaction(async (executor) => {
-      await this.deleteProcedure(conversionId, userId, executor);
+      await this.deleteProcedure(conversionId, userId, baseId, executor);
 
       for (const state of originStates ?? []) {
         await this.restoreFreebetState(
@@ -470,28 +604,30 @@ export class ProceduresPostgresRepository {
           parseText(state.ganhou_freebet),
           parseText(state.status_freebet, FREEBET_STATUS_PENDING),
           userId,
+          baseId,
           executor,
         );
       }
     });
   }
 
-  async getMonthData(referenceMonth, userId, executor = this.db) {
+  async getMonthData(referenceMonth, userId, baseId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT *
         FROM procedimentos_historico
         WHERE mes_referencia = $1
           AND user_id = $2
+          AND base_id = $3
         ORDER BY id DESC
       `,
-      [referenceMonth, normalizeUserId(userId)],
+      [referenceMonth, normalizeUserId(userId), parseNumber(baseId)],
     );
 
     return rows.map((row) => enrichProcedure(row));
   }
 
-  async listActiveFreebets(userId, executor = this.db) {
+  async listActiveFreebets(userId, baseId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT
@@ -508,16 +644,18 @@ export class ProceduresPostgresRepository {
         WHERE tipo_procedimento = 'Coletar Freebet'
           AND status_freebet = 'Pendente'
           AND user_id = $1
+          AND base_id = $2
         ORDER BY id DESC
       `,
-      [normalizeUserId(userId)],
+      [normalizeUserId(userId), parseNumber(baseId)],
     );
 
     return groupActiveFreebets(rows);
   }
 
-  async listConvertedFreebets(userId, executor = this.db) {
+  async listConvertedFreebets(userId, baseId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
+    const normalizedBaseId = parseNumber(baseId);
     const { rows } = await executor.query(
       `
         SELECT
@@ -538,12 +676,14 @@ export class ProceduresPostgresRepository {
           ON v.id_freebet_origem = c.id
          AND v.tipo_procedimento = 'Converter Freebet'
          AND v.user_id = c.user_id
+         AND v.base_id = c.base_id
         WHERE c.tipo_procedimento = 'Coletar Freebet'
           AND c.status_freebet IN ('Usada', 'Finalizada')
           AND c.user_id = $1
+          AND c.base_id = $2
         ORDER BY c.id DESC
       `,
-      [normalizedUserId],
+      [normalizedUserId, normalizedBaseId],
     );
 
     return buildConvertedFreebetsHistory(rows);
