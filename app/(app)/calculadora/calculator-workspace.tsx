@@ -94,7 +94,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   }, [searchParams]);
   const appliedPresetRef = useRef<string | null>(null);
   const [lineCount, setLineCount] = useState(2);
-  const [baseIndex, setBaseIndex] = useState(0);
+  const [workspaceIndex, setWorkspaceIndex] = useState(0);
   const [configExpanded, setConfigExpanded] = useState(false);
   const [lines, setLines] = useState<CalculatorLine[]>(() =>
     conversionPreset
@@ -113,7 +113,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     }
 
     setLineCount(2);
-    setBaseIndex(0);
+    setWorkspaceIndex(0);
     setConfigExpanded(false);
     setLines([
       createConversionLine(conversionPreset.house, conversionPreset.freebetValue),
@@ -137,7 +137,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     }
 
     setLineCount(2);
-    setBaseIndex(0);
+    setWorkspaceIndex(0);
     setConfigExpanded(false);
     setLines([createInitialLine(0), createInitialLine(1)]);
   }
@@ -156,7 +156,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
 
       return [...current, ...additional];
     });
-    setBaseIndex((current) => Math.min(current, nextCount - 1));
+    setWorkspaceIndex((current) => Math.min(current, nextCount - 1));
   }
 
   function toggleLineType(index: number) {
@@ -177,7 +177,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   }
 
   function handleStakeChange(index: number, value: string) {
-    updateLine(index, { stake: value, stakeEdited: index !== baseIndex });
+    updateLine(index, { stake: value, stakeEdited: index !== workspaceIndex });
   }
 
   function fixStake(index: number, stake: string) {
@@ -188,7 +188,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         stakeEdited: false,
       })),
     );
-    setBaseIndex(index);
+    setWorkspaceIndex(index);
   }
 
   let calculationError = "";
@@ -199,7 +199,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       lines.map((line, index) => ({
         odd: toNumber(line.odd),
         stake:
-          index === baseIndex || line.stakeEdited ? toNumber(line.stake) : 0,
+          index === workspaceIndex || line.stakeEdited ? toNumber(line.stake) : 0,
         tipo: line.tipo,
         responsabilidade: toNumber(line.responsabilidade),
         aumento_percentual: toNumber(line.aumento_percentual),
@@ -207,7 +207,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         cashback_percentual: toNumber(line.cashback_percentual),
         freebet: line.freebet,
       })),
-      baseIndex,
+      workspaceIndex,
     );
   } catch (error) {
     calculationError =
@@ -269,7 +269,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             toNumber(line.comissao_percentual) > 0 ||
             toNumber(line.cashback_percentual) > 0;
           const displayedStake =
-            index === baseIndex
+            index === workspaceIndex
               ? line.stake
               : line.stakeEdited
                 ? line.stake
@@ -454,14 +454,14 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
 
               <button
                 className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                  index === baseIndex
+                  index === workspaceIndex
                     ? "bg-neutral-950 text-white hover:bg-neutral-800"
                     : "border border-neutral-300 text-neutral-700 hover:border-neutral-950 hover:text-neutral-950"
                 }`}
                 onClick={() => fixStake(index, displayedStake)}
                 type="button"
               >
-                {index === baseIndex ? "Stake Fixa" : "Fixar Stake"}
+                {index === workspaceIndex ? "Stake Fixa" : "Fixar Stake"}
               </button>
             </div>
           );

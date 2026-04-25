@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { logout } from "@/app/auth/actions";
 
-export function UserMenu({ firstName }: { firstName: string }) {
+export function UserMenu() {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -35,12 +35,26 @@ export function UserMenu({ firstName }: { firstName: string }) {
     <div className="relative" ref={menuRef}>
       <button
         aria-expanded={open}
+        aria-label="Abrir menu"
         aria-haspopup="menu"
-        className="rounded-xl border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-900 transition hover:border-neutral-950 hover:bg-neutral-50"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-300 text-neutral-900 transition hover:border-neutral-950 hover:bg-neutral-50"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        {firstName}
+        <svg
+          aria-hidden="true"
+          className="h-5 w-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M4 7h16M4 12h16M4 17h16"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeWidth="1.8"
+          />
+        </svg>
       </button>
 
       {open ? (
@@ -51,14 +65,6 @@ export function UserMenu({ firstName }: { firstName: string }) {
             onClick={() => setOpen(false)}
           >
             Perfil
-          </Link>
-
-          <Link
-            className="block rounded-xl px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
-            href="/bases"
-            onClick={() => setOpen(false)}
-          >
-            Bases
           </Link>
 
           <form action={logout}>

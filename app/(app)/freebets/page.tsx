@@ -1,11 +1,11 @@
-import { requireBaseContext } from "@/lib/auth/base-context";
+import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { getFreebetsPageData } from "@/lib/server/app-data";
 
 import { FreebetsWorkspace } from "./freebets-workspace";
 
 export default async function FreebetsPage() {
-  const { activeBase, user } = await requireBaseContext();
-  const data = await getFreebetsPageData(user.id, activeBase.id);
+  const { activeWorkspace, user } = await requireWorkspaceContext();
+  const data = await getFreebetsPageData(user.id, activeWorkspace.id);
 
   return (
     <FreebetsWorkspace

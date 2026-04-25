@@ -59,12 +59,12 @@ export class ProceduresPostgresRepository {
 
   async initialize() {}
 
-  async addBookmaker(name, userId, baseId, executor = this.db) {
+  async addBookmaker(name, userId, workspaceId, executor = this.db) {
     const normalizedName = parseText(name).trim();
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedName || !normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedName || !normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
@@ -76,15 +76,15 @@ export class ProceduresPostgresRepository {
         WHERE lower(nome) = lower($3)
         ON CONFLICT (base_id, bookmaker_id) DO NOTHING
       `,
-      [normalizedUserId, normalizedBaseId, normalizedName],
+      [normalizedUserId, normalizedWorkspaceId, normalizedName],
     );
   }
 
-  async deleteBookmaker(name, userId, baseId, executor = this.db) {
+  async deleteBookmaker(name, userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
@@ -97,7 +97,7 @@ export class ProceduresPostgresRepository {
           AND ub.base_id = $2
           AND lower(ca.nome) = lower($3)
       `,
-      [normalizedUserId, normalizedBaseId, name],
+      [normalizedUserId, normalizedWorkspaceId, name],
     );
   }
 
@@ -109,11 +109,11 @@ export class ProceduresPostgresRepository {
     return rows.map((row) => row.nome);
   }
 
-  async listBookmakersWithBalance(userId, baseId, executor = this.db) {
+  async listBookmakersWithBalance(userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return [];
     }
 
@@ -127,7 +127,7 @@ export class ProceduresPostgresRepository {
           AND ub.base_id = $2
         ORDER BY ca.nome ASC
       `,
-      [normalizedUserId, normalizedBaseId],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     return rows.map((row) => ({
@@ -136,11 +136,11 @@ export class ProceduresPostgresRepository {
     }));
   }
 
-  async updateBookmakerBalance(name, balance, userId, baseId, executor = this.db) {
+  async updateBookmakerBalance(name, balance, userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
@@ -154,15 +154,15 @@ export class ProceduresPostgresRepository {
           AND ub.base_id = $3
           AND lower(ca.nome) = lower($4)
       `,
-      [parseNumber(balance), normalizedUserId, normalizedBaseId, name],
+      [parseNumber(balance), normalizedUserId, normalizedWorkspaceId, name],
     );
   }
 
-  async getBookmakersNotes(userId, baseId, executor = this.db) {
+  async getBookmakersNotes(userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return "";
     }
 
@@ -173,17 +173,17 @@ export class ProceduresPostgresRepository {
         WHERE user_id = $1
           AND base_id = $2
       `,
-      [normalizedUserId, normalizedBaseId],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     return parseText(rows[0]?.texto);
   }
 
-  async updateBookmakersNotes(userId, baseId, notes, executor = this.db) {
+  async updateBookmakersNotes(userId, workspaceId, notes, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
@@ -194,11 +194,11 @@ export class ProceduresPostgresRepository {
         ON CONFLICT (base_id)
         DO UPDATE SET texto = EXCLUDED.texto
       `,
-      [normalizedUserId, normalizedBaseId, parseText(notes)],
+      [normalizedUserId, normalizedWorkspaceId, parseText(notes)],
     );
   }
 
-  async listBases(userId, executor = this.db) {
+  async listWorkspaces(userId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
 
     if (!normalizedUserId) {
@@ -222,11 +222,11 @@ export class ProceduresPostgresRepository {
     }));
   }
 
-  async getBaseById(userId, baseId, executor = this.db) {
+  async getWorkspaceById(userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return null;
     }
 
@@ -237,7 +237,7 @@ export class ProceduresPostgresRepository {
         WHERE user_id = $1
           AND id = $2
       `,
-      [normalizedUserId, normalizedBaseId],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     const row = rows[0];
@@ -253,7 +253,7 @@ export class ProceduresPostgresRepository {
     };
   }
 
-  async createBase(userId, name, executor = this.db) {
+  async createWorkspace(userId, name, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedName = parseText(name).trim().replace(/\s+/g, " ");
 
@@ -296,10 +296,87 @@ export class ProceduresPostgresRepository {
     };
   }
 
-  async saveProcedure(data, userId, baseId, executor = this.db) {
+  async updateWorkspace(userId, workspaceId, name, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedName = parseText(name).trim().replace(/\s+/g, " ");
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0 || !normalizedName) {
+      return null;
+    }
+
+    const current = await this.getWorkspaceById(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    if (!current) {
+      return null;
+    }
+
+    const duplicate = await executor.query(
+      `
+        SELECT id
+        FROM bases_usuario
+        WHERE user_id = $1
+          AND lower(nome) = lower($2)
+          AND id <> $3
+        LIMIT 1
+      `,
+      [normalizedUserId, normalizedName, normalizedWorkspaceId],
+    );
+
+    if (duplicate.rows[0]) {
+      return current;
+    }
+
+    const { rows } = await executor.query(
+      `
+        UPDATE bases_usuario
+        SET nome = $1
+        WHERE user_id = $2
+          AND id = $3
+        RETURNING id, nome, created_at
+      `,
+      [normalizedName, normalizedUserId, normalizedWorkspaceId],
+    );
+
+    const row = rows[0];
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: parseNumber(row.id),
+      nome: parseText(row.nome),
+      created_at: row.created_at,
+    };
+  }
+
+  async deleteWorkspace(userId, workspaceId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
+      return;
+    }
+
+    await executor.query(
+      `
+        DELETE FROM bases_usuario
+        WHERE user_id = $1
+          AND id = $2
+      `,
+      [normalizedUserId, normalizedWorkspaceId],
+    );
+  }
+
+  async saveProcedure(data, userId, workspaceId, executor = this.db) {
     const normalized = normalizeDatabaseData(data);
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
     const { rows } = await executor.query(
       `
         INSERT INTO procedimentos_historico (
@@ -327,7 +404,7 @@ export class ProceduresPostgresRepository {
       `,
       [
         normalizedUserId,
-        normalizedBaseId,
+        normalizedWorkspaceId,
         normalized.data_operacao,
         normalized.tipo_procedimento,
         normalized.casas_envolvidas,
@@ -349,9 +426,9 @@ export class ProceduresPostgresRepository {
     return Number(rows[0]?.id);
   }
 
-  async saveFreebetConversion(data, originIds, userId, baseId) {
+  async saveFreebetConversion(data, originIds, userId, workspaceId) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
     const ids = Array.isArray(originIds) ? originIds : [originIds];
     const payload = {
       ...data,
@@ -364,7 +441,7 @@ export class ProceduresPostgresRepository {
       conversionId = await this.saveProcedure(
         payload,
         normalizedUserId,
-        normalizedBaseId,
+        normalizedWorkspaceId,
         executor,
       );
 
@@ -377,7 +454,7 @@ export class ProceduresPostgresRepository {
               AND user_id = $3
               AND base_id = $4
           `,
-          [FREEBET_STATUS_USED, originId, normalizedUserId, normalizedBaseId],
+          [FREEBET_STATUS_USED, originId, normalizedUserId, normalizedWorkspaceId],
         );
       }
     });
@@ -385,29 +462,29 @@ export class ProceduresPostgresRepository {
     return conversionId;
   }
 
-  async getProcedureById(procedureId, userId, baseId, executor = this.db) {
+  async getProcedureById(procedureId, userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
     const { rows } = await executor.query(
       "SELECT * FROM procedimentos_historico WHERE id = $1 AND user_id = $2 AND base_id = $3",
-      [procedureId, normalizedUserId, normalizedBaseId],
+      [procedureId, normalizedUserId, normalizedWorkspaceId],
     );
 
     const row = rows[0];
     return row ? { ...row } : null;
   }
 
-  async listProcedures(userId, baseId, executor = this.db) {
+  async listProcedures(userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
 
-    if (!normalizedUserId || normalizedBaseId <= 0) {
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
       return [];
     }
 
     const { rows } = await executor.query(
       "SELECT * FROM procedimentos_historico WHERE user_id = $1 AND base_id = $2 ORDER BY id DESC",
-      [normalizedUserId, normalizedBaseId],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     return rows.map((row) => enrichProcedure(row));
@@ -415,21 +492,21 @@ export class ProceduresPostgresRepository {
 
   async listFilteredProcedures(
     userId,
-    baseId,
+    workspaceId,
     searchText = "",
     types = [],
     houses = [],
   ) {
     return filterProcedures(
-      await this.listProcedures(userId, baseId),
+      await this.listProcedures(userId, workspaceId),
       searchText,
       types,
       houses,
     );
   }
 
-  async updateProcedure(procedureId, data, userId, baseId, executor = this.db) {
-    const current = await this.getProcedureById(procedureId, userId, baseId, executor);
+  async updateProcedure(procedureId, data, userId, workspaceId, executor = this.db) {
+    const current = await this.getProcedureById(procedureId, userId, workspaceId, executor);
     if (!current) {
       throw new Error(`Procedimento ${procedureId} nao encontrado.`);
     }
@@ -479,32 +556,32 @@ export class ProceduresPostgresRepository {
         normalized.ganhou_freebet,
         procedureId,
         normalizeUserId(userId),
-        parseNumber(baseId),
+        parseNumber(workspaceId),
       ],
     );
   }
 
-  async deleteProcedure(procedureId, userId, baseId, executor = this.db) {
+  async deleteProcedure(procedureId, userId, workspaceId, executor = this.db) {
     await executor.query(
       "DELETE FROM procedimentos_historico WHERE id = $1 AND user_id = $2 AND base_id = $3",
-      [procedureId, normalizeUserId(userId), parseNumber(baseId)],
+      [procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
   }
 
-  async captureAndDeleteProcedure(procedureId, userId, baseId, executor = this.db) {
-    const procedure = await this.getProcedureById(procedureId, userId, baseId, executor);
+  async captureAndDeleteProcedure(procedureId, userId, workspaceId, executor = this.db) {
+    const procedure = await this.getProcedureById(procedureId, userId, workspaceId, executor);
     if (procedure) {
-      await this.deleteProcedure(procedureId, userId, baseId, executor);
+      await this.deleteProcedure(procedureId, userId, workspaceId, executor);
     }
 
     return procedure;
   }
 
-  async restoreProcedure(data, userId, baseId, executor = this.db) {
-    return this.saveProcedure(data, userId, baseId, executor);
+  async restoreProcedure(data, userId, workspaceId, executor = this.db) {
+    return this.saveProcedure(data, userId, workspaceId, executor);
   }
 
-  async updateDoubleStatus(procedureId, hitDouble, userId, baseId, executor = this.db) {
+  async updateDoubleStatus(procedureId, hitDouble, userId, workspaceId, executor = this.db) {
     await executor.query(
       `
         UPDATE procedimentos_historico
@@ -513,11 +590,11 @@ export class ProceduresPostgresRepository {
           AND user_id = $3
           AND base_id = $4
       `,
-      [parseBoolean(hitDouble), procedureId, normalizeUserId(userId), parseNumber(baseId)],
+      [parseBoolean(hitDouble), procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
   }
 
-  async updateFreebetResult(procedureId, result, userId, baseId, executor = this.db) {
+  async updateFreebetResult(procedureId, result, userId, workspaceId, executor = this.db) {
     const status =
       result === FREEBET_RESULT_NO
         ? FREEBET_STATUS_FINISHED
@@ -531,11 +608,11 @@ export class ProceduresPostgresRepository {
           AND user_id = $4
           AND base_id = $5
       `,
-      [result, status, procedureId, normalizeUserId(userId), parseNumber(baseId)],
+      [result, status, procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
   }
 
-  async getFreebetState(procedureId, userId, baseId, executor = this.db) {
+  async getFreebetState(procedureId, userId, workspaceId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT id, ganhou_freebet, status_freebet
@@ -544,7 +621,7 @@ export class ProceduresPostgresRepository {
           AND user_id = $2
           AND base_id = $3
       `,
-      [procedureId, normalizeUserId(userId), parseNumber(baseId)],
+      [procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
 
     const row = rows[0];
@@ -559,10 +636,10 @@ export class ProceduresPostgresRepository {
     };
   }
 
-  async getFreebetStates(procedureIds, userId, baseId) {
+  async getFreebetStates(procedureIds, userId, workspaceId) {
     const ids = Array.isArray(procedureIds) ? procedureIds : [procedureIds];
     const states = await Promise.all(
-      ids.map((id) => this.getFreebetState(id, userId, baseId)),
+      ids.map((id) => this.getFreebetState(id, userId, workspaceId)),
     );
 
     return states.filter(Boolean);
@@ -573,7 +650,7 @@ export class ProceduresPostgresRepository {
     freebetResult,
     freebetStatus,
     userId,
-    baseId,
+    workspaceId,
     executor = this.db,
   ) {
     await executor.query(
@@ -589,14 +666,14 @@ export class ProceduresPostgresRepository {
         freebetStatus,
         procedureId,
         normalizeUserId(userId),
-        parseNumber(baseId),
+        parseNumber(workspaceId),
       ],
     );
   }
 
-  async undoFreebetConversion(conversionId, originStates, userId, baseId) {
+  async undoFreebetConversion(conversionId, originStates, userId, workspaceId) {
     await this.runInTransaction(async (executor) => {
-      await this.deleteProcedure(conversionId, userId, baseId, executor);
+      await this.deleteProcedure(conversionId, userId, workspaceId, executor);
 
       for (const state of originStates ?? []) {
         await this.restoreFreebetState(
@@ -604,14 +681,14 @@ export class ProceduresPostgresRepository {
           parseText(state.ganhou_freebet),
           parseText(state.status_freebet, FREEBET_STATUS_PENDING),
           userId,
-          baseId,
+          workspaceId,
           executor,
         );
       }
     });
   }
 
-  async getMonthData(referenceMonth, userId, baseId, executor = this.db) {
+  async getMonthData(referenceMonth, userId, workspaceId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT *
@@ -621,13 +698,13 @@ export class ProceduresPostgresRepository {
           AND base_id = $3
         ORDER BY id DESC
       `,
-      [referenceMonth, normalizeUserId(userId), parseNumber(baseId)],
+      [referenceMonth, normalizeUserId(userId), parseNumber(workspaceId)],
     );
 
     return rows.map((row) => enrichProcedure(row));
   }
 
-  async listActiveFreebets(userId, baseId, executor = this.db) {
+  async listActiveFreebets(userId, workspaceId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT
@@ -647,15 +724,15 @@ export class ProceduresPostgresRepository {
           AND base_id = $2
         ORDER BY id DESC
       `,
-      [normalizeUserId(userId), parseNumber(baseId)],
+      [normalizeUserId(userId), parseNumber(workspaceId)],
     );
 
     return groupActiveFreebets(rows);
   }
 
-  async listConvertedFreebets(userId, baseId, executor = this.db) {
+  async listConvertedFreebets(userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
-    const normalizedBaseId = parseNumber(baseId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
     const { rows } = await executor.query(
       `
         SELECT
@@ -683,7 +760,7 @@ export class ProceduresPostgresRepository {
           AND c.base_id = $2
         ORDER BY c.id DESC
       `,
-      [normalizedUserId, normalizedBaseId],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     return buildConvertedFreebetsHistory(rows);

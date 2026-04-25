@@ -49,15 +49,15 @@ export function BookmakersWorkspace({
 
   const suggestions = useMemo(() => {
     const normalizedSearch = name.trim().toLowerCase();
-    const baseOptions = availableBookmakers.filter(
+    const workspaceOptions = availableBookmakers.filter(
       (bookmaker) => !selectedBookmakers.has(bookmaker.toLowerCase()),
     );
 
     if (!normalizedSearch) {
-      return baseOptions.slice(0, 8);
+      return workspaceOptions.slice(0, 8);
     }
 
-    return baseOptions
+    return workspaceOptions
       .filter((bookmaker) => bookmaker.toLowerCase().includes(normalizedSearch))
       .slice(0, 8);
   }, [availableBookmakers, name, selectedBookmakers]);

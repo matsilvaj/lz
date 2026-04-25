@@ -2,20 +2,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 
-import { requireBaseContext } from "@/lib/auth/base-context";
+import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 
 import { AppNavigation } from "./_components/app-navigation";
-import { BaseSwitcher } from "./_components/base-switcher";
+import { WorkspaceSwitcher } from "./_components/workspace-switcher";
 import { UserMenu } from "./_components/user-menu";
-import { getUserFirstName } from "./user-display-name";
 
 export default async function ProtectedAppLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const { activeBase, bases, user } = await requireBaseContext();
-  const firstName = getUserFirstName(user);
+  const { activeWorkspace, workspaces } = await requireWorkspaceContext();
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-950">
@@ -39,8 +37,8 @@ export default async function ProtectedAppLayout({
             <AppNavigation />
 
             <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-              <BaseSwitcher activeBase={activeBase} bases={bases} />
-              <UserMenu firstName={firstName} />
+              <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} />
+              <UserMenu />
             </div>
           </div>
         </div>
