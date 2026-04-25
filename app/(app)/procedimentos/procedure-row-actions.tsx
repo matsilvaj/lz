@@ -50,6 +50,7 @@ export function ProcedureRowActions({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [isPending, startTransition] = useTransition();
@@ -106,6 +107,7 @@ export function ProcedureRowActions({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setMenuOpen(false);
+        setEditOpen(false);
         setNoteOpen(false);
       }
     }
@@ -134,6 +136,37 @@ export function ProcedureRowActions({
 
   return (
     <>
+      <ProcedureModal
+        bookmakers={bookmakers}
+        defaultValues={{
+          procedureType: procedure.tipo_procedimento as
+            | "SureBet"
+            | "Tentativa de Duplo"
+            | "Coletar Freebet"
+            | "Converter Freebet"
+            | "Cassino",
+          operationDate: toDateInputValue(procedure.data_operacao),
+          game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
+          houses: toHousesInputValue(procedure.casas_envolvidas),
+          entryValue: procedure.lucro_final,
+          equalProfit: true,
+          note: procedure.observacao,
+          doubleValue: procedure.valor_freebet_coletada,
+          hitDouble: procedure.bateu_duplo,
+          freebetHouse: procedure.casa_destino_freebet,
+          freebetValue: procedure.valor_da_freebet,
+          freebetCondition: procedure.condicao_freebet,
+        }}
+        hideTrigger
+        mode="edit"
+        onOpenChange={setEditOpen}
+        open={editOpen}
+        procedureId={procedure.id}
+        returnTo="/procedimentos"
+        submitLabel="Salvar alteracoes"
+        title="Editar procedimento"
+      />
+
       <button
         className="rounded-lg px-2 py-1 text-sm text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-950"
         onClick={() => setMenuOpen((current) => !current)}
@@ -150,36 +183,16 @@ export function ProcedureRowActions({
               ref={menuRef}
               style={{ left: menuPosition.left, top: menuPosition.top }}
             >
-              <ProcedureModal
-                bookmakers={bookmakers}
-                defaultValues={{
-                  procedureType: procedure.tipo_procedimento as
-                    | "SureBet"
-                    | "Tentativa de Duplo"
-                    | "Coletar Freebet"
-                    | "Converter Freebet"
-                    | "Cassino",
-                  operationDate: toDateInputValue(procedure.data_operacao),
-                  game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
-                  houses: toHousesInputValue(procedure.casas_envolvidas),
-                  entryValue: procedure.lucro_final,
-                  equalProfit: true,
-                  note: procedure.observacao,
-                  doubleValue: procedure.valor_freebet_coletada,
-                  hitDouble: procedure.bateu_duplo,
-                  freebetHouse: procedure.casa_destino_freebet,
-                  freebetValue: procedure.valor_da_freebet,
-                  freebetCondition: procedure.condicao_freebet,
+              <button
+                className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setEditOpen(true);
                 }}
-                mode="edit"
-                onTrigger={() => setMenuOpen(false)}
-                procedureId={procedure.id}
-                returnTo="/procedimentos"
-                submitLabel="Salvar alteracoes"
-                title="Editar procedimento"
-                triggerClassName="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
-                triggerLabel="Editar"
-              />
+                type="button"
+              >
+                Editar
+              </button>
 
               {hasObservation ? (
                 <button

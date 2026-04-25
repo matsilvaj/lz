@@ -21,7 +21,6 @@ import {
 import {
   enrichProcedure,
   filterProcedures,
-  rankBookmakersByUsage,
 } from "../../domain/procedimentos/procedimentos.service.js";
 
 function normalizeDatabaseData(data = {}) {
@@ -45,6 +44,10 @@ function normalizeDatabaseData(data = {}) {
   };
 }
 
+function normalizeUserId(userId) {
+  return parseText(userId).trim();
+}
+
 export class ProceduresPostgresRepository {
   constructor(db) {
     if (!db || typeof db.query !== "function") {
@@ -56,24 +59,43 @@ export class ProceduresPostgresRepository {
 
   async initialize() {}
 
-  async addBookmaker(name, executor = this.db) {
+  async addBookmaker(name, userId, executor = this.db) {
     const normalizedName = parseText(name).trim();
-    if (!normalizedName) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedName || !normalizedUserId) {
       return;
     }
 
     await executor.query(
       `
-        INSERT INTO casas_de_apostas (nome)
-        VALUES ($1)
-        ON CONFLICT (nome) DO NOTHING
+        INSERT INTO usuarios_bancas (user_id, bookmaker_id)
+        SELECT $1, id
+        FROM casas_de_apostas
+        WHERE lower(nome) = lower($2)
+        ON CONFLICT (user_id, bookmaker_id) DO NOTHING
       `,
-      [normalizedName],
+      [normalizedUserId, normalizedName],
     );
   }
 
-  async deleteBookmaker(name, executor = this.db) {
-    await executor.query("DELETE FROM casas_de_apostas WHERE nome = $1", [name]);
+  async deleteBookmaker(name, userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return;
+    }
+
+    await executor.query(
+      `
+        DELETE FROM usuarios_bancas ub
+        USING casas_de_apostas ca
+        WHERE ub.bookmaker_id = ca.id
+          AND ub.user_id = $1
+          AND lower(ca.nome) = lower($2)
+      `,
+      [normalizedUserId, name],
+    );
   }
 
   async listBookmakers(executor = this.db) {
@@ -84,9 +106,23 @@ export class ProceduresPostgresRepository {
     return rows.map((row) => row.nome);
   }
 
-  async listBookmakersWithBalance(executor = this.db) {
+  async listBookmakersWithBalance(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return [];
+    }
+
     const { rows } = await executor.query(
-      "SELECT nome, saldo FROM casas_de_apostas ORDER BY nome ASC",
+      `
+        SELECT ca.nome, ub.saldo
+        FROM usuarios_bancas ub
+        INNER JOIN casas_de_apostas ca
+          ON ca.id = ub.bookmaker_id
+        WHERE ub.user_id = $1
+        ORDER BY ca.nome ASC
+      `,
+      [normalizedUserId],
     );
 
     return rows.map((row) => ({
@@ -95,30 +131,70 @@ export class ProceduresPostgresRepository {
     }));
   }
 
-  async updateBookmakerBalance(name, balance, executor = this.db) {
+  async updateBookmakerBalance(name, balance, userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return;
+    }
+
     await executor.query(
-      "UPDATE casas_de_apostas SET saldo = $1 WHERE nome = $2",
-      [parseNumber(balance), name],
+      `
+        UPDATE usuarios_bancas ub
+        SET saldo = $1
+        FROM casas_de_apostas ca
+        WHERE ub.bookmaker_id = ca.id
+          AND ub.user_id = $2
+          AND lower(ca.nome) = lower($3)
+      `,
+      [parseNumber(balance), normalizedUserId, name],
     );
   }
 
-  async listBookmakersRankedByUsage(executor = this.db) {
-    const allBookmakers = await this.listBookmakers(executor);
+  async getBookmakersNotes(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return "";
+    }
+
     const { rows } = await executor.query(
       `
-        SELECT casas_envolvidas, casa_destino_freebet
-        FROM procedimentos_historico
+        SELECT texto
+        FROM usuarios_observacoes_bancas
+        WHERE user_id = $1
       `,
+      [normalizedUserId],
     );
 
-    return rankBookmakersByUsage(allBookmakers, rows);
+    return parseText(rows[0]?.texto);
   }
 
-  async saveProcedure(data, executor = this.db) {
+  async updateBookmakersNotes(userId, notes, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return;
+    }
+
+    await executor.query(
+      `
+        INSERT INTO usuarios_observacoes_bancas (user_id, texto)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id)
+        DO UPDATE SET texto = EXCLUDED.texto
+      `,
+      [normalizedUserId, parseText(notes)],
+    );
+  }
+
+  async saveProcedure(data, userId, executor = this.db) {
     const normalized = normalizeDatabaseData(data);
+    const normalizedUserId = normalizeUserId(userId);
     const { rows } = await executor.query(
       `
         INSERT INTO procedimentos_historico (
+          user_id,
           data_operacao,
           tipo_procedimento,
           casas_envolvidas,
@@ -135,11 +211,12 @@ export class ProceduresPostgresRepository {
           valor_da_freebet,
           ganhou_freebet
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
         )
         RETURNING id
       `,
       [
+        normalizedUserId,
         normalized.data_operacao,
         normalized.tipo_procedimento,
         normalized.casas_envolvidas,
@@ -161,7 +238,8 @@ export class ProceduresPostgresRepository {
     return Number(rows[0]?.id);
   }
 
-  async saveFreebetConversion(data, originIds) {
+  async saveFreebetConversion(data, originIds, userId) {
+    const normalizedUserId = normalizeUserId(userId);
     const ids = Array.isArray(originIds) ? originIds : [originIds];
     const payload = {
       ...data,
@@ -171,7 +249,7 @@ export class ProceduresPostgresRepository {
     let conversionId = null;
 
     await this.runInTransaction(async (executor) => {
-      conversionId = await this.saveProcedure(payload, executor);
+      conversionId = await this.saveProcedure(payload, normalizedUserId, executor);
 
       for (const originId of ids) {
         await executor.query(
@@ -179,8 +257,9 @@ export class ProceduresPostgresRepository {
             UPDATE procedimentos_historico
             SET status_freebet = $1
             WHERE id = $2
+              AND user_id = $3
           `,
-          [FREEBET_STATUS_USED, originId],
+          [FREEBET_STATUS_USED, originId, normalizedUserId],
         );
       }
     });
@@ -188,35 +267,43 @@ export class ProceduresPostgresRepository {
     return conversionId;
   }
 
-  async getProcedureById(procedureId, executor = this.db) {
+  async getProcedureById(procedureId, userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
     const { rows } = await executor.query(
-      "SELECT * FROM procedimentos_historico WHERE id = $1",
-      [procedureId],
+      "SELECT * FROM procedimentos_historico WHERE id = $1 AND user_id = $2",
+      [procedureId, normalizedUserId],
     );
 
     const row = rows[0];
     return row ? { ...row } : null;
   }
 
-  async listProcedures(executor = this.db) {
+  async listProcedures(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return [];
+    }
+
     const { rows } = await executor.query(
-      "SELECT * FROM procedimentos_historico ORDER BY id DESC",
+      "SELECT * FROM procedimentos_historico WHERE user_id = $1 ORDER BY id DESC",
+      [normalizedUserId],
     );
 
     return rows.map((row) => enrichProcedure(row));
   }
 
-  async listFilteredProcedures(searchText = "", types = [], houses = []) {
+  async listFilteredProcedures(userId, searchText = "", types = [], houses = []) {
     return filterProcedures(
-      await this.listProcedures(),
+      await this.listProcedures(userId),
       searchText,
       types,
       houses,
     );
   }
 
-  async updateProcedure(procedureId, data, executor = this.db) {
-    const current = await this.getProcedureById(procedureId, executor);
+  async updateProcedure(procedureId, data, userId, executor = this.db) {
+    const current = await this.getProcedureById(procedureId, userId, executor);
     if (!current) {
       throw new Error(`Procedimento ${procedureId} nao encontrado.`);
     }
@@ -245,6 +332,7 @@ export class ProceduresPostgresRepository {
           valor_da_freebet = $14,
           ganhou_freebet = $15
         WHERE id = $16
+          AND user_id = $17
       `,
       [
         normalized.data_operacao,
@@ -263,41 +351,44 @@ export class ProceduresPostgresRepository {
         normalized.valor_da_freebet,
         normalized.ganhou_freebet,
         procedureId,
+        normalizeUserId(userId),
       ],
     );
   }
 
-  async deleteProcedure(procedureId, executor = this.db) {
-    await executor.query("DELETE FROM procedimentos_historico WHERE id = $1", [
-      procedureId,
-    ]);
+  async deleteProcedure(procedureId, userId, executor = this.db) {
+    await executor.query(
+      "DELETE FROM procedimentos_historico WHERE id = $1 AND user_id = $2",
+      [procedureId, normalizeUserId(userId)],
+    );
   }
 
-  async captureAndDeleteProcedure(procedureId, executor = this.db) {
-    const procedure = await this.getProcedureById(procedureId, executor);
+  async captureAndDeleteProcedure(procedureId, userId, executor = this.db) {
+    const procedure = await this.getProcedureById(procedureId, userId, executor);
     if (procedure) {
-      await this.deleteProcedure(procedureId, executor);
+      await this.deleteProcedure(procedureId, userId, executor);
     }
 
     return procedure;
   }
 
-  async restoreProcedure(data, executor = this.db) {
-    return this.saveProcedure(data, executor);
+  async restoreProcedure(data, userId, executor = this.db) {
+    return this.saveProcedure(data, userId, executor);
   }
 
-  async updateDoubleStatus(procedureId, hitDouble, executor = this.db) {
+  async updateDoubleStatus(procedureId, hitDouble, userId, executor = this.db) {
     await executor.query(
       `
         UPDATE procedimentos_historico
         SET bateu_duplo = $1
         WHERE id = $2
+          AND user_id = $3
       `,
-      [parseBoolean(hitDouble), procedureId],
+      [parseBoolean(hitDouble), procedureId, normalizeUserId(userId)],
     );
   }
 
-  async updateFreebetResult(procedureId, result, executor = this.db) {
+  async updateFreebetResult(procedureId, result, userId, executor = this.db) {
     const status =
       result === FREEBET_RESULT_NO
         ? FREEBET_STATUS_FINISHED
@@ -308,19 +399,21 @@ export class ProceduresPostgresRepository {
         UPDATE procedimentos_historico
         SET ganhou_freebet = $1, status_freebet = $2
         WHERE id = $3
+          AND user_id = $4
       `,
-      [result, status, procedureId],
+      [result, status, procedureId, normalizeUserId(userId)],
     );
   }
 
-  async getFreebetState(procedureId, executor = this.db) {
+  async getFreebetState(procedureId, userId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT id, ganhou_freebet, status_freebet
         FROM procedimentos_historico
         WHERE id = $1
+          AND user_id = $2
       `,
-      [procedureId],
+      [procedureId, normalizeUserId(userId)],
     );
 
     const row = rows[0];
@@ -335,9 +428,11 @@ export class ProceduresPostgresRepository {
     };
   }
 
-  async getFreebetStates(procedureIds) {
+  async getFreebetStates(procedureIds, userId) {
     const ids = Array.isArray(procedureIds) ? procedureIds : [procedureIds];
-    const states = await Promise.all(ids.map((id) => this.getFreebetState(id)));
+    const states = await Promise.all(
+      ids.map((id) => this.getFreebetState(id, userId)),
+    );
 
     return states.filter(Boolean);
   }
@@ -346,6 +441,7 @@ export class ProceduresPostgresRepository {
     procedureId,
     freebetResult,
     freebetStatus,
+    userId,
     executor = this.db,
   ) {
     await executor.query(
@@ -353,53 +449,49 @@ export class ProceduresPostgresRepository {
         UPDATE procedimentos_historico
         SET ganhou_freebet = $1, status_freebet = $2
         WHERE id = $3
+          AND user_id = $4
       `,
-      [freebetResult, freebetStatus, procedureId],
+      [
+        freebetResult,
+        freebetStatus,
+        procedureId,
+        normalizeUserId(userId),
+      ],
     );
   }
 
-  async undoFreebetConversion(conversionId, originStates) {
+  async undoFreebetConversion(conversionId, originStates, userId) {
     await this.runInTransaction(async (executor) => {
-      await this.deleteProcedure(conversionId, executor);
+      await this.deleteProcedure(conversionId, userId, executor);
 
       for (const state of originStates ?? []) {
         await this.restoreFreebetState(
           state.id,
           parseText(state.ganhou_freebet),
           parseText(state.status_freebet, FREEBET_STATUS_PENDING),
+          userId,
           executor,
         );
       }
     });
   }
 
-  async listAvailableMonths(executor = this.db) {
-    const { rows } = await executor.query(
-      `
-        SELECT DISTINCT mes_referencia
-        FROM procedimentos_historico
-        ORDER BY mes_referencia DESC
-      `,
-    );
-
-    return rows.map((row) => row.mes_referencia);
-  }
-
-  async getMonthData(referenceMonth, executor = this.db) {
+  async getMonthData(referenceMonth, userId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT *
         FROM procedimentos_historico
         WHERE mes_referencia = $1
+          AND user_id = $2
         ORDER BY id DESC
       `,
-      [referenceMonth],
+      [referenceMonth, normalizeUserId(userId)],
     );
 
     return rows.map((row) => enrichProcedure(row));
   }
 
-  async listActiveFreebets(executor = this.db) {
+  async listActiveFreebets(userId, executor = this.db) {
     const { rows } = await executor.query(
       `
         SELECT
@@ -415,14 +507,17 @@ export class ProceduresPostgresRepository {
         FROM procedimentos_historico
         WHERE tipo_procedimento = 'Coletar Freebet'
           AND status_freebet = 'Pendente'
+          AND user_id = $1
         ORDER BY id DESC
       `,
+      [normalizeUserId(userId)],
     );
 
     return groupActiveFreebets(rows);
   }
 
-  async listConvertedFreebets(executor = this.db) {
+  async listConvertedFreebets(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
     const { rows } = await executor.query(
       `
         SELECT
@@ -442,10 +537,13 @@ export class ProceduresPostgresRepository {
         LEFT JOIN procedimentos_historico v
           ON v.id_freebet_origem = c.id
          AND v.tipo_procedimento = 'Converter Freebet'
+         AND v.user_id = c.user_id
         WHERE c.tipo_procedimento = 'Coletar Freebet'
           AND c.status_freebet IN ('Usada', 'Finalizada')
+          AND c.user_id = $1
         ORDER BY c.id DESC
       `,
+      [normalizedUserId],
     );
 
     return buildConvertedFreebetsHistory(rows);

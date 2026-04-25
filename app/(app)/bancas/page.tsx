@@ -1,9 +1,17 @@
+import { requireUser } from "@/lib/auth/session";
 import { getBookmakersPageData } from "@/lib/server/app-data";
 
 import { BookmakersWorkspace } from "./bookmakers-workspace";
 
 export default async function BookmakersPage() {
-  const data = await getBookmakersPageData();
+  const user = await requireUser();
+  const data = await getBookmakersPageData(user.id);
 
-  return <BookmakersWorkspace bookmakers={data.bookmakers} />;
+  return (
+    <BookmakersWorkspace
+      availableBookmakers={data.availableBookmakers}
+      bookmakers={data.bookmakers}
+      initialNotes={data.notes}
+    />
+  );
 }

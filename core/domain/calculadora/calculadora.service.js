@@ -125,8 +125,9 @@ export function calculateSurebet(
     };
   });
 
-  const stakes = new Array(calculations.length).fill(0);
-  stakes[safeBaseIndex] = baseStake;
+  const stakes = calculations.map((calculation, index) =>
+    index === safeBaseIndex || calculation.stake > 0 ? calculation.stake : 0,
+  );
 
   if (String(model).includes(SUREBET_MODEL_ZERO_ZERO)) {
     let sumW = 0;
@@ -144,7 +145,7 @@ export function calculateSurebet(
       const otherNetReturn = sumW > 0 ? numerator / sumW : 0;
 
       for (let index = 1; index < calculations.length; index += 1) {
-        if (calculations[index].M > 0) {
+        if (calculations[index].M > 0 && stakes[index] <= 0) {
           stakes[index] = otherNetReturn / calculations[index].M;
         }
       }
@@ -152,7 +153,11 @@ export function calculateSurebet(
       const otherNetReturn = baseStake * calculations[safeBaseIndex].M;
 
       for (let index = 1; index < calculations.length; index += 1) {
-        if (index !== safeBaseIndex && calculations[index].M > 0) {
+        if (
+          index !== safeBaseIndex &&
+          calculations[index].M > 0 &&
+          stakes[index] <= 0
+        ) {
           stakes[index] = otherNetReturn / calculations[index].M;
         }
       }
@@ -166,7 +171,7 @@ export function calculateSurebet(
     const targetNetReturn = baseStake * calculations[safeBaseIndex].M;
 
     calculations.forEach((calculation, index) => {
-      if (index !== safeBaseIndex && calculation.M > 0) {
+      if (index !== safeBaseIndex && calculation.M > 0 && stakes[index] <= 0) {
         stakes[index] = targetNetReturn / calculation.M;
       }
     });

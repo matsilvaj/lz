@@ -198,7 +198,8 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     calculation = calculateSurebet(
       lines.map((line, index) => ({
         odd: toNumber(line.odd),
-        stake: index === baseIndex ? toNumber(line.stake) : 0,
+        stake:
+          index === baseIndex || line.stakeEdited ? toNumber(line.stake) : 0,
         tipo: line.tipo,
         responsabilidade: toNumber(line.responsabilidade),
         aumento_percentual: toNumber(line.aumento_percentual),

@@ -49,6 +49,37 @@ export function calculateProcedureBaseProfit(
   return count > 0 ? sum / count : 0;
 }
 
+function buildReferenceMonthFromOperationDate(operationDate) {
+  const [day, month, year] = formatOperationDate(operationDate).split("/");
+
+  if (!day || !month || !year) {
+    return null;
+  }
+
+  return `${month}/${year}`;
+}
+
+/**
+ * @param {{
+ *   procedureType: string;
+ *   entryValue: number;
+ *   game?: string;
+ *   houses?: string | string[];
+ *   freebetCollectedValue?: number;
+ *   freebetValue?: number;
+ *   freebetCondition?: string;
+ *   note?: string;
+ *   freebetHouse?: string;
+ *   hitDouble?: boolean;
+ *   equalProfit?: boolean;
+ *   protections?: Array<string | number>;
+ *   operationDate?: string | null;
+ *   referenceMonth?: string | null;
+ *   freebetStatus?: string | null;
+ *   freebetResult?: string;
+ *   freebetOriginId?: number | null;
+ * }} params
+ */
 export function buildProcedureData({
   procedureType,
   entryValue,
@@ -77,6 +108,10 @@ export function buildProcedureData({
 
   let normalizedHouses = normalizeHouses(houses);
   const normalizedFreebetHouse = parseText(freebetHouse).trim();
+  const normalizedOperationDate = formatOperationDate(operationDate);
+  const normalizedReferenceMonth = formatReferenceMonth(
+    referenceMonth || buildReferenceMonthFromOperationDate(normalizedOperationDate),
+  );
 
   if (
     ["Coletar Freebet", "Converter Freebet"].includes(procedureType) &&
@@ -87,7 +122,7 @@ export function buildProcedureData({
   }
 
   return {
-    data_operacao: formatOperationDate(operationDate),
+    data_operacao: normalizedOperationDate,
     tipo_procedimento: procedureType,
     casas_envolvidas: normalizedHouses,
     jogo_time_pa: procedureType === "Cassino" ? "-" : parseText(game),
@@ -96,7 +131,7 @@ export function buildProcedureData({
     condicao_freebet: parseText(freebetCondition),
     valor_freebet_coletada: parseNumber(freebetCollectedValue),
     observacao: parseText(note),
-    mes_referencia: formatReferenceMonth(referenceMonth),
+    mes_referencia: normalizedReferenceMonth,
     casa_destino_freebet:
       ["Coletar Freebet", "Converter Freebet"].includes(procedureType)
         ? normalizedFreebetHouse
@@ -180,38 +215,6 @@ export function filterProcedures(procedures, searchText = "", types = [], houses
 
       return true;
     });
-}
-
-export function rankBookmakersByUsage(allBookmakers, historyRows) {
-  const frequency = Object.fromEntries((allBookmakers ?? []).map((bookmaker) => [bookmaker, 0]));
-
-  for (const row of historyRows ?? []) {
-    const procedure = toProcedureObject(row);
-    const involvedHouses = parseText(procedure.casas_envolvidas);
-    const freebetHouse = parseText(procedure.casa_destino_freebet);
-
-    if (involvedHouses) {
-      for (const house of involvedHouses.split(" | ")) {
-        if (Object.hasOwn(frequency, house)) {
-          frequency[house] += 1;
-        }
-      }
-    }
-
-    if (freebetHouse && Object.hasOwn(frequency, freebetHouse)) {
-      frequency[freebetHouse] += 1;
-    }
-  }
-
-  const ranked = [...(allBookmakers ?? [])].sort(
-    (left, right) => (frequency[right] ?? 0) - (frequency[left] ?? 0),
-  );
-
-  return {
-    frequencia: frequency,
-    mais_usadas: ranked.slice(0, 9),
-    todas: ranked.slice(9).sort((left, right) => left.localeCompare(right)),
-  };
 }
 
 function toProcedureObject(row) {

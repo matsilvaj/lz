@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireUser } from "@/lib/auth/session";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: string | FormDataEntryValue | null) {
   return String(value ?? "").trim();
 }
 
-function parseNumber(value: string | FormDataEntryValue | null) {
+function parseNumber(value: string | number | FormDataEntryValue | null) {
   const normalized = String(value ?? "").trim().replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -26,6 +27,7 @@ export async function saveBookmakerAction({
 }: {
   name: string;
 }) {
+  const user = await requireUser();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -33,7 +35,7 @@ export async function saveBookmakerAction({
     return;
   }
 
-  await repository.addBookmaker(normalizedName);
+  await repository.addBookmaker(normalizedName, user.id);
 
   revalidateBookmakerScreens();
 }
@@ -45,6 +47,7 @@ export async function updateBookmakerBalanceAction({
   name: string;
   balance: number;
 }) {
+  const user = await requireUser();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -52,11 +55,16 @@ export async function updateBookmakerBalanceAction({
     return;
   }
 
-  await repository.updateBookmakerBalance(normalizedName, parseNumber(balance));
+  await repository.updateBookmakerBalance(
+    normalizedName,
+    parseNumber(balance),
+    user.id,
+  );
   revalidateBookmakerScreens();
 }
 
 export async function deleteBookmakerAction(name: string) {
+  const user = await requireUser();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
@@ -64,6 +72,14 @@ export async function deleteBookmakerAction(name: string) {
     return;
   }
 
-  await repository.deleteBookmaker(normalizedName);
+  await repository.deleteBookmaker(normalizedName, user.id);
+  revalidateBookmakerScreens();
+}
+
+export async function updateBookmakersNotesAction(notes: string) {
+  const user = await requireUser();
+  const repository = getProceduresRepository();
+
+  await repository.updateBookmakersNotes(user.id, parseText(notes));
   revalidateBookmakerScreens();
 }

@@ -17,7 +17,7 @@ export default async function ProtectedAppLayout({
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-950">
       <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 md:px-6 xl:px-8">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-4 py-4 md:px-6 xl:px-8">
           <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[auto_1fr_auto] xl:items-center">
             <Link
               className="inline-flex items-center"
@@ -42,7 +42,7 @@ export default async function ProtectedAppLayout({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-6 md:px-6 xl:px-8">{children}</main>
+      <main className="mx-auto max-w-[1430px] px-4 py-6 md:px-6 xl:px-8">{children}</main>
     </div>
   );
 }
