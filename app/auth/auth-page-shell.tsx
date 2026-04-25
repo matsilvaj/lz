@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 
@@ -20,7 +21,18 @@ export function AuthPageShell({
 }: AuthPageShellProps) {
   return (
     <main className="flex min-h-screen flex-col bg-white px-6 py-6 text-neutral-950">
-      <header className="flex justify-start">
+      <header className="flex items-center justify-between gap-4">
+        <Link className="inline-flex items-center" href="/">
+          <Image
+            alt="LZ"
+            className="h-auto w-24"
+            height={78}
+            priority
+            src="/LOGO_1.png"
+            width={120}
+          />
+        </Link>
+
         <Link className="text-sm text-neutral-600 transition hover:text-neutral-950" href="/">
           Tela inicial
         </Link>

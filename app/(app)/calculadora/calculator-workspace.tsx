@@ -1,7 +1,8 @@
 "use client";
 
 import { calculateSurebet, suggestProcedureFromCalculator } from "@/core";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ProcedureModal } from "../_components/procedure-modal";
 import { formatCurrency } from "../_components/ui";
@@ -38,6 +39,15 @@ function createInitialLine(index: number): CalculatorLine {
   };
 }
 
+function createConversionLine(house: string, freebetValue: number): CalculatorLine {
+  return {
+    ...createInitialLine(0),
+    house: house || "Casa 1",
+    stake: String(freebetValue || 0),
+    freebet: true,
+  };
+}
+
 function getProfitClass(value: number) {
   return value >= 0 ? "text-emerald-400" : "text-rose-400";
 }
@@ -52,10 +62,65 @@ function toNumber(value: string) {
 }
 
 export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const conversionPreset = useMemo(() => {
+    if (searchParams.get("mode") !== "convert-freebet") {
+      return null;
+    }
+
+    const house = searchParams.get("house") ?? "";
+    const freebetValue = Number(searchParams.get("freebetValue") ?? 0);
+    const entryValue = Number(searchParams.get("entryValue") ?? 0);
+    const originIds = searchParams
+      .getAll("originIds")
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value) && value > 0);
+    const key = JSON.stringify({
+      house,
+      freebetValue,
+      entryValue,
+      originIds,
+    });
+
+    return {
+      key,
+      house,
+      freebetValue: Number.isFinite(freebetValue) ? freebetValue : 0,
+      entryValue: Number.isFinite(entryValue) ? entryValue : 0,
+      originIds,
+    };
+  }, [searchParams]);
+  const appliedPresetRef = useRef<string | null>(null);
   const [lineCount, setLineCount] = useState(2);
   const [baseIndex, setBaseIndex] = useState(0);
   const [configExpanded, setConfigExpanded] = useState(false);
-  const [lines, setLines] = useState<CalculatorLine[]>([createInitialLine(0), createInitialLine(1)]);
+  const [lines, setLines] = useState<CalculatorLine[]>(() =>
+    conversionPreset
+      ? [createConversionLine(conversionPreset.house, conversionPreset.freebetValue), createInitialLine(1)]
+      : [createInitialLine(0), createInitialLine(1)],
+  );
+
+  useEffect(() => {
+    if (!conversionPreset) {
+      appliedPresetRef.current = null;
+      return;
+    }
+
+    if (appliedPresetRef.current === conversionPreset.key) {
+      return;
+    }
+
+    setLineCount(2);
+    setBaseIndex(0);
+    setConfigExpanded(false);
+    setLines([
+      createConversionLine(conversionPreset.house, conversionPreset.freebetValue),
+      createInitialLine(1),
+    ]);
+    appliedPresetRef.current = conversionPreset.key;
+  }, [conversionPreset]);
 
   function updateLine(index: number, patch: Partial<CalculatorLine>) {
     setLines((current) =>
@@ -66,6 +131,11 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   }
 
   function resetCalculator() {
+    if (conversionPreset) {
+      appliedPresetRef.current = null;
+      router.replace(pathname);
+    }
+
     setLineCount(2);
     setBaseIndex(0);
     setConfigExpanded(false);
@@ -154,8 +224,9 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   const suggestedProcedure = calculation
     ? suggestProcedureFromCalculator({
         baseProfit: calculation.lucro_liquido,
-        useDouble: calculation.duplo_calculado_final > 0,
+        useDouble: conversionPreset ? false : calculation.duplo_calculado_final > 0,
         doubleValue: calculation.duplo_calculado_final,
+        freebetHouse: conversionPreset?.house ?? "",
       })
     : null;
 
@@ -416,17 +487,23 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             <ProcedureModal
               bookmakers={bookmakers}
               defaultValues={{
-                procedureType:
-                  (suggestedProcedure?.tipo as
-                    | "SureBet"
-                    | "Tentativa de Duplo"
-                    | "Converter Freebet"
-                    | "Coletar Freebet"
-                    | "Cassino") ?? "SureBet",
+                procedureType: conversionPreset
+                  ? "Converter Freebet"
+                  : ((suggestedProcedure?.tipo as
+                      | "SureBet"
+                      | "Tentativa de Duplo"
+                      | "Converter Freebet"
+                      | "Coletar Freebet"
+                      | "Cassino") ?? "SureBet"),
                 houses: housesText,
-                entryValue: suggestedProcedure?.lucro_base ?? 0,
+                entryValue: conversionPreset
+                  ? calculation.lucro_liquido
+                  : (suggestedProcedure?.lucro_base ?? 0),
                 doubleValue: calculation.duplo_calculado_final,
                 hitDouble: calculation.duplo_calculado_final > 0,
+                freebetHouse: conversionPreset?.house ?? "",
+                freebetValue: conversionPreset?.freebetValue ?? 0,
+                originIds: conversionPreset?.originIds ?? [],
               }}
               returnTo="/calculadora"
               submitLabel="Criar procedimento"

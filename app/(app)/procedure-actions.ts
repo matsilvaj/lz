@@ -137,6 +137,71 @@ export async function saveProcedureAction(formData: FormData) {
   redirect(returnTo);
 }
 
+export async function updateProcedureAction(formData: FormData) {
+  const repository = getProceduresRepository();
+  const returnTo = getReturnTo(formData, "/procedimentos");
+  const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
+
+  if (!Number.isInteger(procedureId) || procedureId <= 0) {
+    redirect(returnTo);
+  }
+
+  const current = await repository.getProcedureById(procedureId);
+  if (!current) {
+    redirect(returnTo);
+  }
+
+  const procedureType = parseText(formData.get("procedureType")) || parseText(current.tipo_procedimento);
+  const houses = parseHouses(parseText(formData.get("houses")));
+  const freebetHouse = parseText(formData.get("freebetHouse"));
+
+  const payload = buildProcedureData({
+    procedureType,
+    entryValue: parseNumber(formData.get("entryValue")),
+    game: parseText(formData.get("game")),
+    houses,
+    freebetCollectedValue: parseNumber(formData.get("doubleValue")),
+    freebetValue: parseNumber(formData.get("freebetValue")),
+    freebetCondition: parseText(formData.get("freebetCondition")),
+    note: parseText(formData.get("note")),
+    freebetHouse,
+    hitDouble: parseBoolean(current.bateu_duplo),
+    equalProfit: parseBoolean(formData.get("equalProfit")),
+    protections: parseProtections(formData),
+    operationDate: formatOperationDateInput(parseText(formData.get("operationDate"))),
+    referenceMonth: parseText(current.mes_referencia),
+    freebetStatus: parseText(current.status_freebet),
+    freebetResult: parseText(current.ganhou_freebet),
+    freebetOriginId: current.id_freebet_origem,
+  });
+
+  await syncBookmakers(repository, [...houses, freebetHouse].filter(Boolean));
+  await repository.updateProcedure(procedureId, payload);
+
+  revalidateApplication();
+  redirect(returnTo);
+}
+
+export async function updateProcedureDoubleStatusAction(procedureId: number, hitDouble: boolean) {
+  const repository = getProceduresRepository();
+
+  if (Number.isInteger(procedureId) && procedureId > 0) {
+    await repository.updateDoubleStatus(procedureId, hitDouble);
+  }
+
+  revalidateApplication();
+}
+
+export async function deleteProcedureAction(procedureId: number) {
+  const repository = getProceduresRepository();
+
+  if (Number.isInteger(procedureId) && procedureId > 0) {
+    await repository.deleteProcedure(procedureId);
+  }
+
+  revalidateApplication();
+}
+
 export async function updateFreebetResultAction(formData: FormData) {
   const repository = getProceduresRepository();
   const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
