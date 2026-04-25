@@ -3,7 +3,7 @@
 O projeto agora esta separado em duas camadas para escalar melhor no Next:
 
 - `core/domain/`: regra de negocio pura, sem banco e sem dependencias de ambiente
-- `core/server/`: infraestrutura server-side, como SQLite e repositorios
+- `core/server/`: infraestrutura server-side, como PostgreSQL e repositorios
 - `core/index.js`: entrada segura para importar so o dominio
 - `lib/server/`: ponto oficial de acesso ao repositorio dentro do app Next
 
@@ -19,7 +19,7 @@ O projeto agora esta separado em duas camadas para escalar melhor no Next:
 - `domain/procedimentos/`: montagem, filtros e enriquecimento dos procedimentos
 - `domain/freebets/`: agrupamento de freebets ativas e historico das convertidas
 - `domain/shared/`: constantes e funcoes utilitarias
-- `server/database/`: schema, adaptador SQLite e repositorio
+- `server/database/`: pool PostgreSQL, repositorio e migrations SQL
 
 ## Exemplo de dominio
 
@@ -44,7 +44,7 @@ import { getProceduresRepository } from "@/lib/server";
 
 export default async function Page() {
   const repository = getProceduresRepository();
-  const procedures = repository.listProcedures();
+  const procedures = await repository.listProcedures();
 
   return <pre>{JSON.stringify(procedures, null, 2)}</pre>;
 }
@@ -52,10 +52,16 @@ export default async function Page() {
 
 ## Dependencia de banco
 
-Para usar o adaptador pronto com SQLite, instale:
+Para usar o adaptador pronto com PostgreSQL, instale:
 
 ```bash
-npm install better-sqlite3
+npm install pg
 ```
 
-Se essa dependencia ainda nao estiver instalada, o factory do banco vai falhar com uma mensagem explicando o que falta.
+As tabelas ficam versionadas em `core/server/database/migrations/`.
+Para `Vercel + Supabase`, use:
+
+- `DATABASE_URL`: URL de runtime da aplicacao, preferencialmente a pooler de transaction mode
+- `DATABASE_MIGRATION_URL`: URL direta usada para migrations
+
+No deploy, rode `npm run db:migrate` antes de subir a aplicacao, com `DATABASE_MIGRATION_URL` definida.

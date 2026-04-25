@@ -1,5 +1,3 @@
-export const DB_NAME = "dados_usuario.db";
-
 export const PROCEDURE_TYPES = Object.freeze([
   "SureBet",
   "Tentativa de Duplo",
