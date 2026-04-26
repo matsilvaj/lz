@@ -13,7 +13,7 @@ export default function Home() {
         <Link className="inline-flex items-center gap-3" href="/">
           <span className="flex items-center justify-center rounded-[22px] border border-white/10 bg-white/5 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             <Image
-              alt="LZ"
+              alt="LZ Community"
               className="h-auto w-20 md:w-24"
               height={78}
               priority

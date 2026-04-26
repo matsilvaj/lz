@@ -22,7 +22,7 @@ export default async function ProtectedAppLayout({
           <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[auto_1fr_auto] xl:items-center">
             <Link className="inline-flex items-center gap-3" href="/dashboard">
               <Image
-                alt="LZ"
+                alt="LZ Community"
                 className="h-auto w-14 md:w-16"
                 height={78}
                 priority

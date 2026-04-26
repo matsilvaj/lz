@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LZ",
+  title: "LZ Community",
   description: "Base web organizada para evoluir funcionalidades com seguranca.",
 };
 
