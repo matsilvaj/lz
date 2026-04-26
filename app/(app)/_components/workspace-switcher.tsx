@@ -48,16 +48,30 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
       <button
         aria-expanded={open}
         aria-haspopup="menu"
-        className="rounded-xl border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-900 transition hover:border-neutral-950 hover:bg-neutral-50"
+        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         {activeWorkspace.nome}
+        <svg
+          aria-hidden="true"
+          className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M6.75 9.75L12 15l5.25-5.25"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeWidth="1.8"
+          />
+        </svg>
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-2 min-w-56 rounded-2xl border border-neutral-200 bg-white p-2 shadow-sm">
-          <div className="px-3 pb-2 pt-1 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">
+        <div className="absolute right-0 top-full z-20 mt-3 min-w-64 rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+          <div className="px-3 pb-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-dim)]">
             Workspaces
           </div>
 
@@ -68,7 +82,7 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
               if (active) {
                 return (
                   <div
-                    className="rounded-xl bg-neutral-950 px-3 py-2 text-sm font-medium text-white"
+                    className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(216,31,89,0.92),rgba(122,12,48,0.88))] px-3 py-3 text-sm font-medium text-white shadow-[0_14px_32px_rgba(216,31,89,0.22)]"
                     key={workspace.id}
                   >
                     {workspace.nome}
@@ -82,7 +96,7 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
                   key={workspace.id}
                 >
                   <button
-                    className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+                    className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                     onClick={() => setOpen(false)}
                     type="submit"
                   >
@@ -93,9 +107,9 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
             })}
           </div>
 
-          <div className="mt-2 border-t border-neutral-200 pt-2">
+          <div className="mt-2 border-t border-white/10 pt-2">
             <Link
-              className="block rounded-xl px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+              className="block rounded-2xl px-3 py-3 text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
               href="/workspaces"
               onClick={() => setOpen(false)}
             >

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.redirect(
     new URL(
-      "/login?error=Nao+foi+possivel+confirmar+o+acesso.+Tente+novamente.",
+      "/login?error=Não+foi+possível+confirmar+o+acesso.+Tente+novamente.",
       request.url,
     ),
   );

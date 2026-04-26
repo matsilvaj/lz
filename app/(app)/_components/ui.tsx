@@ -22,19 +22,33 @@ export function PageHeader({
   title,
   description,
   action,
+  eyebrow = "LZ Control Center",
 }: {
   title: string;
   description: string;
   action?: ReactNode;
+  eyebrow?: string;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-6 md:flex-row md:items-start md:justify-between">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950">{title}</h1>
-        <p className="max-w-2xl text-sm leading-6 text-neutral-600">{description}</p>
-      </div>
+    <div className="lz-panel rounded-[30px] px-5 py-6 md:px-7 md:py-7">
+      <div className="lz-hero-orb absolute -right-20 top-[-3.5rem] h-44 w-44 rounded-full" />
+      <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="space-y-3">
+          <span className="inline-flex rounded-full border border-white/10 bg-white/4 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
+            {eyebrow}
+          </span>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight text-white md:text-[2.6rem]">
+              {title}
+            </h1>
+            <p className="max-w-3xl text-sm leading-7 text-[var(--text-muted)] md:text-base">
+              {description}
+            </p>
+          </div>
+        </div>
 
-      {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="relative shrink-0">{action}</div> : null}
+      </div>
     </div>
   );
 }
@@ -49,11 +63,11 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
+    <section className="lz-panel space-y-4 rounded-[28px] p-5 md:p-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-neutral-950">{title}</h2>
+        <h2 className="text-base font-semibold text-white md:text-lg">{title}</h2>
         {description ? (
-          <p className="text-sm leading-6 text-neutral-600">{description}</p>
+          <p className="text-sm leading-6 text-[var(--text-muted)]">{description}</p>
         ) : null}
       </div>
 
@@ -72,10 +86,14 @@ export function StatCard({
   helper?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-      <p className="text-sm text-neutral-500">{label}</p>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">{value}</p>
-      {helper ? <p className="mt-2 text-sm leading-6 text-neutral-600">{helper}</p> : null}
+    <div className="lz-panel-subtle rounded-[24px] p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-dim)]">
+        {label}
+      </p>
+      <p className="mt-3 text-xl font-semibold tracking-tight text-white md:text-2xl">{value}</p>
+      {helper ? (
+        <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{helper}</p>
+      ) : null}
     </div>
   );
 }
@@ -85,14 +103,16 @@ export function StatusTag({
   tone = "neutral",
 }: {
   children: ReactNode;
-  tone?: "neutral" | "positive" | "warning";
+  tone?: "neutral" | "positive" | "warning" | "negative";
 }) {
   const toneClass =
     tone === "positive"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      ? "border-[rgba(73,212,166,0.2)] bg-[rgba(73,212,166,0.12)] text-[var(--positive)]"
+      : tone === "negative"
+        ? "border-[rgba(255,107,133,0.2)] bg-[rgba(255,107,133,0.12)] text-[var(--negative)]"
       : tone === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-neutral-200 bg-neutral-100 text-neutral-700";
+        ? "border-[rgba(255,190,115,0.2)] bg-[rgba(255,190,115,0.12)] text-[var(--warning)]"
+        : "border-white/10 bg-white/5 text-[var(--text-secondary)]";
 
   return (
     <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${toneClass}`}>
@@ -104,14 +124,41 @@ export function StatusTag({
 export function EmptyState({
   title,
   description,
+  action,
+  eyebrow = "Sem registros",
 }: {
   title: string;
   description: string;
+  action?: ReactNode;
+  eyebrow?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 px-4 py-6 text-center">
-      <p className="text-sm font-medium text-neutral-800">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-neutral-500">{description}</p>
+    <div className="relative overflow-hidden rounded-[28px] border border-dashed border-white/12 bg-[rgba(255,255,255,0.025)] px-5 py-8 text-center">
+      <div className="absolute left-1/2 top-0 h-32 w-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,119,163,0.14),transparent_72%)]" />
+      <div className="relative mx-auto max-w-xl">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-[var(--accent-gold)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <svg
+            aria-hidden="true"
+            className="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M6.75 6.75h10.5M6.75 12h10.5M6.75 17.25h6.5"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth="1.8"
+            />
+          </svg>
+        </div>
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
+          {eyebrow}
+        </p>
+        <p className="mt-3 text-base font-semibold text-white md:text-lg">{title}</p>
+        <p className="mt-2 text-sm leading-7 text-[var(--text-muted)]">{description}</p>
+        {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
+      </div>
     </div>
   );
 }

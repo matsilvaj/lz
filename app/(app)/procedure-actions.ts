@@ -9,6 +9,7 @@ import {
   FREEBET_RESULT_YES,
 } from "@/core";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: FormDataEntryValue | null) {
@@ -137,7 +138,7 @@ export async function saveProcedureAction(formData: FormData) {
   }
 
   revalidateApplication();
-  redirect(returnTo);
+  redirect(appendToastParams(returnTo, "success", "Procedimento salvo com sucesso."));
 }
 
 export async function updateProcedureAction(formData: FormData) {
@@ -186,7 +187,7 @@ export async function updateProcedureAction(formData: FormData) {
   await repository.updateProcedure(procedureId, payload, user.id, activeWorkspace.id);
 
   revalidateApplication();
-  redirect(returnTo);
+  redirect(appendToastParams(returnTo, "success", "Procedimento atualizado."));
 }
 
 export async function updateProcedureDoubleStatusAction(procedureId: number, hitDouble: boolean) {
@@ -225,5 +226,5 @@ export async function updateFreebetResultAction(formData: FormData) {
   }
 
   revalidateApplication();
-  redirect(returnTo);
+  redirect(appendToastParams(returnTo, "success", "Resultado da freebet registrado."));
 }

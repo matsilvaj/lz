@@ -64,17 +64,17 @@ export function WorkspaceList({
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {workspaces.map((workspace) => {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
 
         return (
           <div
-            className={`relative rounded-2xl border p-4 ${
+            className={`relative rounded-[28px] border p-4 ${
               isActive
-                ? "border-neutral-950 bg-neutral-950 text-white"
-                : "border-neutral-200 bg-white text-neutral-950"
+                ? "border-[rgba(255,119,163,0.24)] bg-[linear-gradient(180deg,rgba(35,12,22,0.95),rgba(21,8,15,0.95))] text-white shadow-[0_22px_48px_rgba(216,31,89,0.16)]"
+                : "border-white/10 bg-white/5 text-white"
             }`}
             key={workspace.id}
           >
@@ -84,7 +84,7 @@ export function WorkspaceList({
                   <p className="truncate text-base font-semibold">{workspace.nome}</p>
                   <span
                     className={`text-xs font-medium ${
-                      isActive ? "text-neutral-300" : "text-neutral-500"
+                      isActive ? "text-[var(--text-secondary)]" : "text-[var(--text-dim)]"
                     }`}
                   >
                     {isActive ? "Ativo" : "Disponível"}
@@ -96,10 +96,10 @@ export function WorkspaceList({
                 <button
                   aria-expanded={openMenuId === workspace.id}
                   aria-label={`Abrir acoes de ${workspace.nome}`}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition ${
                     isActive
-                      ? "text-neutral-300 hover:bg-white/10 hover:text-white"
-                      : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+                      ? "border-white/10 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white"
+                      : "border-white/10 text-[var(--text-dim)] hover:bg-white/8 hover:text-white"
                   }`}
                   onClick={() =>
                     setOpenMenuId((current) => (current === workspace.id ? null : workspace.id))
@@ -121,18 +121,14 @@ export function WorkspaceList({
 
                 {openMenuId === workspace.id ? (
                   <div
-                    className={`absolute right-0 top-10 z-20 min-w-40 rounded-2xl border p-2 shadow-lg ${
+                    className={`absolute right-0 top-10 z-20 min-w-44 rounded-[24px] border p-2 shadow-[0_24px_60px_rgba(0,0,0,0.36)] backdrop-blur-2xl ${
                       isActive
-                        ? "border-white/10 bg-neutral-900 text-white"
-                        : "border-neutral-200 bg-white text-neutral-950"
+                        ? "border-white/10 bg-[rgba(12,6,10,0.98)] text-white"
+                        : "border-white/10 bg-[rgba(17,8,14,0.98)] text-white"
                     }`}
                   >
                     <button
-                      className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                        isActive
-                          ? "text-neutral-200 hover:bg-white/10 hover:text-white"
-                          : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-950"
-                      }`}
+                      className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
                       onClick={() => startEditing(workspace)}
                       type="button"
                     >
@@ -142,11 +138,7 @@ export function WorkspaceList({
                     {canRemoveWorkspace ? (
                       <form action={deleteWorkspaceAction.bind(null, workspace.id)}>
                         <button
-                          className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                            isActive
-                              ? "text-red-200 hover:bg-white/10 hover:text-red-100"
-                              : "text-red-600 hover:bg-red-50"
-                          }`}
+                          className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ffb6c4]"
                           type="submit"
                         >
                           Remover
@@ -162,10 +154,10 @@ export function WorkspaceList({
               <form action={updateWorkspaceAction} className="mt-4 space-y-3">
                 <input name="workspaceId" type="hidden" value={workspace.id} />
                 <input
-                  className={`w-full rounded-xl border px-3 py-2 text-sm outline-none transition ${
+                  className={`w-full rounded-2xl border px-3 py-3 text-sm outline-none transition ${
                     isActive
-                      ? "border-white/15 bg-white/10 text-white placeholder:text-neutral-400"
-                      : "border-neutral-300 bg-white text-neutral-950"
+                      ? "border-white/15 bg-white/10 text-white placeholder:text-[var(--text-dim)]"
+                      : "border-white/10 bg-white/5 text-white placeholder:text-[var(--text-dim)]"
                   }`}
                   name="name"
                   onChange={(event) => setDraftName(event.target.value)}
@@ -175,10 +167,10 @@ export function WorkspaceList({
                 />
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
-                    className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
                       isActive
                         ? "border border-white/20 bg-white/10 text-white hover:bg-white/15"
-                        : "border border-neutral-300 text-neutral-700 hover:border-neutral-950 hover:text-neutral-950"
+                        : "border border-white/10 bg-white/5 text-[var(--text-secondary)] hover:border-white/20 hover:text-white"
                     }`}
                     onClick={stopEditing}
                     type="button"
@@ -186,10 +178,10 @@ export function WorkspaceList({
                     Cancelar
                   </button>
                   <button
-                    className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
                       isActive
-                        ? "bg-white text-neutral-950 hover:bg-neutral-100"
-                        : "bg-neutral-950 text-white hover:bg-neutral-800"
+                        ? "bg-white text-[#190911] hover:bg-[#fff5f8]"
+                        : "lz-button-primary"
                     }`}
                     type="submit"
                   >
@@ -198,9 +190,12 @@ export function WorkspaceList({
                 </div>
               </form>
             ) : !isActive ? (
-              <form action={switchWorkspaceAction.bind(null, workspace.id, "/workspaces")} className="mt-4">
+              <form
+                action={switchWorkspaceAction.bind(null, workspace.id, "/workspaces")}
+                className="mt-4"
+              >
                 <button
-                  className="rounded-xl bg-neutral-950 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-neutral-800"
+                  className="lz-button-secondary rounded-full px-3 py-2 text-xs font-medium"
                   type="submit"
                 >
                   Utilizar workspace

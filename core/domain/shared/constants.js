@@ -11,7 +11,7 @@ export const FREEBET_CONDITIONS = Object.freeze([
   "Apenas se perder a aposta",
 ]);
 
-export const SUREBET_MODEL_DEFAULT = "Surebet Padr\u00e3o";
+export const SUREBET_MODEL_DEFAULT = "Surebet Padrão\u00e3o";
 export const SUREBET_MODEL_ZERO_ZERO = "Surebet 0x0";
 
 export const FREEBET_STATUS_NA = "N/A";

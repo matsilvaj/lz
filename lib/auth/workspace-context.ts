@@ -36,7 +36,7 @@ export async function requireWorkspaceContext() {
   }
 
   if (workspaces.length === 0) {
-    throw new Error("Nao foi possivel preparar a workspace ativa do usuario.");
+    throw new Error("Não foi possível preparar a workspace ativa do usuário.");
   }
 
   const cookieStore = await cookies();

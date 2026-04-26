@@ -51,7 +51,7 @@ function normalizeUserId(userId) {
 export class ProceduresPostgresRepository {
   constructor(db) {
     if (!db || typeof db.query !== "function") {
-      throw new Error("Informe uma conexao PostgreSQL compativel com query().");
+      throw new Error("Informe uma conexão PostgreSQL compatível com query().");
     }
 
     this.db = db;

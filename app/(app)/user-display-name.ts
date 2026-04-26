@@ -8,10 +8,10 @@ export function getUserFirstName(user: Awaited<ReturnType<typeof requireUser>>) 
 
   const fullName = String(user.user_metadata?.full_name ?? "").trim();
   if (fullName) {
-    return fullName.split(/\s+/)[0] ?? "Usuario";
+    return fullName.split(/\s+/)[0] ?? "Usuário";
   }
 
-  return "Usuario";
+  return "Usuário";
 }
 
 export function getUserDisplayName(user: Awaited<ReturnType<typeof requireUser>>) {
@@ -25,5 +25,5 @@ export function getUserDisplayName(user: Awaited<ReturnType<typeof requireUser>>
     return firstName;
   }
 
-  return "Usuario";
+  return "Usuário";
 }

@@ -23,7 +23,7 @@ export function VerticalBarChart({
     return (
       <EmptyState
         title="Sem dados suficientes"
-        description="Assim que os registros entrarem, os graficos vao aparecer aqui."
+        description="Assim que os registros entrarem, os gráficos vao aparecer aqui."
       />
     );
   }
@@ -43,16 +43,19 @@ export function VerticalBarChart({
               : 28;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div
-        className={`flex h-40 items-end gap-2 overflow-x-auto pb-1 ${
+        className={`flex h-52 items-end gap-3 overflow-x-auto pb-2 ${
           data.length === 1 ? "justify-center" : "justify-start"
         }`}
       >
         {data.map((item) => {
           const ratio = (Math.abs(item.value) / maxValue) * 100;
           const height = item.value === 0 ? 0 : Math.max(ratio, 8);
-          const barClass = item.value >= 0 ? "bg-neutral-950" : "bg-red-400";
+          const barClass =
+            item.value >= 0
+              ? "bg-[linear-gradient(180deg,var(--accent-soft),var(--accent))]"
+              : "bg-[linear-gradient(180deg,#ff9db4,var(--negative))]";
           const hoverValue = formatValue(item.value);
 
           return (
@@ -62,18 +65,20 @@ export function VerticalBarChart({
               style={{ width: `${itemWidth}px` }}
               title={hoverValue}
             >
-              <div className="relative flex h-[7.5rem] items-end rounded-xl bg-neutral-100 px-1.5 py-2">
-                <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 opacity-0 shadow-sm transition group-hover:opacity-100">
+              <div className="relative flex h-[9.5rem] items-end rounded-[24px] border border-white/8 bg-[rgba(255,255,255,0.03)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-[rgba(11,5,9,0.92)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)] opacity-0 shadow-[0_12px_30px_rgba(0,0,0,0.28)] transition group-hover:opacity-100">
                   {hoverValue}
                 </div>
                 <div
-                  className={`w-full rounded-lg ${barClass}`}
+                  className={`w-full rounded-[18px] shadow-[0_14px_30px_rgba(216,31,89,0.24)] ${barClass}`}
                   style={{ height: `${height}%` }}
                 />
               </div>
 
               <div className="text-center">
-                <p className="truncate text-xs font-medium text-neutral-700">{item.label}</p>
+                <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
+                  {item.label}
+                </p>
               </div>
             </div>
           );
@@ -94,7 +99,7 @@ export function HorizontalBarChart({
     return (
       <EmptyState
         title="Nada para mostrar ainda"
-        description="Essa area sera preenchida assim que houver movimentacao."
+        description="Essa area sera preenchida assim que houver movimentação."
       />
     );
   }
@@ -109,19 +114,19 @@ export function HorizontalBarChart({
         return (
           <div className="space-y-1.5" key={item.label}>
             <div className="flex items-center justify-between gap-3 text-sm">
-              <p className="truncate font-medium text-neutral-800">{item.label}</p>
-              <p className="shrink-0 text-neutral-500">{formatValue(item.value)}</p>
+              <p className="truncate font-medium text-white">{item.label}</p>
+              <p className="shrink-0 text-[var(--text-muted)]">{formatValue(item.value)}</p>
             </div>
 
-            <div className="h-2.5 rounded-full bg-neutral-100">
+            <div className="h-2.5 rounded-full bg-white/8">
               <div
-                className="h-full rounded-full bg-neutral-950"
+                className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-soft))]"
                 style={{ width: `${width}%` }}
               />
             </div>
 
             {item.detail ? (
-              <p className="text-xs text-neutral-500">{item.detail}</p>
+              <p className="text-xs text-[var(--text-dim)]">{item.detail}</p>
             ) : null}
           </div>
         );
@@ -139,7 +144,7 @@ export function LineChart({
     return (
       <EmptyState
         title="Sem dados suficientes"
-        description="Assim que os registros entrarem, o grafico vai aparecer aqui."
+        description="Assim que os registros entrarem, o gráfico vai aparecer aqui."
       />
     );
   }
@@ -169,22 +174,37 @@ export function LineChart({
     minValue < 0 && maxValue > 0
       ? paddingY + ((maxValue - 0) / range) * plotHeight
       : null;
+  const areaPoints = `${paddingX},${chartHeight - paddingY} ${points} ${chartWidth - paddingX},${chartHeight - paddingY}`;
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+      <div className="rounded-[28px] border border-white/8 bg-[rgba(255,255,255,0.03)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
         <svg
           aria-hidden="true"
-          className="h-40 w-full"
+          className="h-48 w-full"
           preserveAspectRatio="none"
           viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         >
+          <defs>
+            <linearGradient id="lz-line-gradient" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgba(255,119,163,0.46)" />
+              <stop offset="100%" stopColor="rgba(255,119,163,0)" />
+            </linearGradient>
+            <filter id="lz-line-glow">
+              <feGaussianBlur result="blur" stdDeviation="4" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
           {[0.25, 0.5, 0.75].map((ratio) => {
             const y = paddingY + plotHeight * ratio;
             return (
               <line
                 key={ratio}
-                stroke="#e5e5e5"
+                stroke="rgba(255,255,255,0.08)"
                 strokeDasharray="4 4"
                 strokeWidth="1"
                 x1={paddingX}
@@ -197,7 +217,7 @@ export function LineChart({
 
           {zeroLineY !== null ? (
             <line
-              stroke="#d4d4d4"
+              stroke="rgba(255,255,255,0.14)"
               strokeWidth="1"
               x1={paddingX}
               x2={chartWidth - paddingX}
@@ -206,13 +226,16 @@ export function LineChart({
             />
           ) : null}
 
+          <polygon fill="url(#lz-line-gradient)" points={areaPoints} />
+
           <polyline
             fill="none"
+            filter="url(#lz-line-glow)"
             points={points}
-            stroke="#171717"
+            stroke="var(--accent-soft)"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth="3"
+            strokeWidth="3.5"
           />
 
           {data.map((item, index) => {
@@ -223,13 +246,24 @@ export function LineChart({
               <circle
                 cx={x}
                 cy={y}
-                fill="#171717"
+                fill="#fff4f8"
                 key={item.label}
-                r="4"
+                r="4.5"
               />
             );
           })}
         </svg>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {data.map((item) => (
+            <span
+              className="rounded-full border border-white/8 bg-white/4 px-3 py-1 text-[11px] text-[var(--text-secondary)]"
+              key={item.label}
+            >
+              {item.label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

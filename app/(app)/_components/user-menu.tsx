@@ -37,7 +37,7 @@ export function UserMenu() {
         aria-expanded={open}
         aria-label="Abrir menu"
         aria-haspopup="menu"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-300 text-neutral-900 transition hover:border-neutral-950 hover:bg-neutral-50"
+        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
@@ -58,9 +58,9 @@ export function UserMenu() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-2 min-w-40 rounded-2xl border border-neutral-200 bg-white p-2 shadow-sm">
+        <div className="absolute right-0 top-full z-20 mt-3 min-w-44 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
           <Link
-            className="block rounded-xl px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+            className="block rounded-2xl px-3 py-3 text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
             href="/perfil"
             onClick={() => setOpen(false)}
           >
@@ -69,7 +69,7 @@ export function UserMenu() {
 
           <form action={logout}>
             <button
-              className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+              className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
               type="submit"
             >
               Sair

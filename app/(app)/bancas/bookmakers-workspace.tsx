@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { ButtonSpinner } from "@/app/_components/form-submit-button";
+import { useToast } from "@/app/_components/toast-provider";
+
 import { EmptyState } from "../_components/ui";
 import {
   deleteBookmakerAction,
@@ -34,6 +37,7 @@ export function BookmakersWorkspace({
   initialNotes,
 }: BookmakersWorkspaceProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const autocompleteRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("");
   const [setBalance, setSetBalance] = useState(true);
@@ -80,6 +84,10 @@ export function BookmakersWorkspace({
     await saveBookmakerAction({ name: bookmakerName });
     setName("");
     setAutocompleteOpen(false);
+    showToast({
+      title: "Casa adicionada com sucesso.",
+      tone: "success",
+    });
     router.refresh();
   }
 
@@ -92,18 +100,40 @@ export function BookmakersWorkspace({
       ) ?? "";
 
     if (!normalizedName || selectedBookmakers.has(normalizedName.toLowerCase())) {
+      showToast({
+        title: "Selecione uma casa valida da lista.",
+        tone: "error",
+      });
       return;
     }
 
     startTransition(async () => {
-      await submitBookmaker(normalizedName);
+      try {
+        await submitBookmaker(normalizedName);
+      } catch {
+        showToast({
+          title: "Não foi possível adicionar a casa.",
+          tone: "error",
+        });
+      }
     });
   }
 
   function handleDelete(bookmakerName: string) {
     startTransition(async () => {
-      await deleteBookmakerAction(bookmakerName);
-      router.refresh();
+      try {
+        await deleteBookmakerAction(bookmakerName);
+        showToast({
+          title: "Casa removida.",
+          tone: "success",
+        });
+        router.refresh();
+      } catch {
+        showToast({
+          title: "Não foi possível remover a casa.",
+          tone: "error",
+        });
+      }
     });
   }
 
@@ -119,183 +149,230 @@ export function BookmakersWorkspace({
     }
 
     startTransition(async () => {
-      await updateBookmakerBalanceAction({
-        name: bookmakerName,
-        balance: nextBalance,
-      });
-      router.refresh();
+      try {
+        await updateBookmakerBalanceAction({
+          name: bookmakerName,
+          balance: nextBalance,
+        });
+        showToast({
+          title: "Saldo atualizado.",
+          tone: "success",
+        });
+        router.refresh();
+      } catch {
+        showToast({
+          title: "Não foi possível atualizar o saldo.",
+          tone: "error",
+        });
+      }
     });
   }
 
   function saveNotes() {
     startTransition(async () => {
-      await updateBookmakersNotesAction(notes);
-      setNotesSaved(notes);
-      router.refresh();
+      try {
+        await updateBookmakersNotesAction(notes);
+        setNotesSaved(notes);
+        showToast({
+          title: "Observações salvas.",
+          tone: "success",
+        });
+        router.refresh();
+      } catch {
+        showToast({
+          title: "Não foi possível salvar as observações.",
+          tone: "error",
+        });
+      }
     });
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
-      <section className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-4 md:p-6">
-        <form className="space-y-3" onSubmit={handleSubmit}>
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="relative flex-1" ref={autocompleteRef}>
-              <input
-                className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
-                disabled={isPending}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setAutocompleteOpen(true);
-                }}
-                onFocus={() => setAutocompleteOpen(true)}
-                placeholder="Buscar casa predefinida"
-                type="text"
-                value={name}
-              />
+    <div className="space-y-5">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
+        <section className="lz-panel space-y-4 rounded-[30px] p-4 md:p-6">
+          <form className="space-y-3" onSubmit={handleSubmit}>
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="relative flex-1" ref={autocompleteRef}>
+                <input
+                  className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
+                  disabled={isPending}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setAutocompleteOpen(true);
+                  }}
+                  onFocus={() => setAutocompleteOpen(true)}
+                  placeholder="Buscar casa predefinida"
+                  type="text"
+                  value={name}
+                />
 
-              {autocompleteOpen && suggestions.length > 0 ? (
-                <div className="absolute left-0 right-0 top-full z-20 mt-2 rounded-2xl border border-neutral-200 bg-white p-2 shadow-lg">
-                  <div className="max-h-64 space-y-1 overflow-y-auto">
-                    {suggestions.map((bookmaker) => (
+                {autocompleteOpen && suggestions.length > 0 ? (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-3 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+                    <div className="max-h-64 space-y-1 overflow-y-auto">
+                      {suggestions.map((bookmaker) => (
+                        <button
+                          className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                          disabled={isPending}
+                          key={bookmaker}
+                          onClick={() => {
+                            startTransition(async () => {
+                              try {
+                                await submitBookmaker(bookmaker);
+                              } catch {
+                                showToast({
+                                  title: "Não foi possível adicionar a casa.",
+                                  tone: "error",
+                                });
+                              }
+                            });
+                          }}
+                          type="button"
+                        >
+                          {bookmaker}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/4 px-4 py-3 text-sm text-[var(--text-secondary)]">
+                  <input
+                    checked={setBalance}
+                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                    onChange={(event) => setSetBalance(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Informar saldo
+                </label>
+
+                <button
+                  className="lz-button-primary inline-flex rounded-full px-4 py-3 text-sm font-semibold"
+                  disabled={isPending}
+                  type="submit"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    {isPending ? <ButtonSpinner /> : null}
+                    <span>Adicionar casa</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {bookmakers.length === 0 ? (
+            <EmptyState
+              description="Escolha as casas da lista predefinida para começar a acompanhar saldo e prioridades."
+              eyebrow="Setup inicial"
+              title="Nenhuma casa selecionada"
+            />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {bookmakers.map((bookmaker) => {
+                const balanceInputId = `balance-${bookmaker.nome
+                  .toLowerCase()
+                  .replace(/\s+/g, "-")}`;
+
+                return (
+                  <div
+                    className="rounded-[28px] border border-white/10 bg-white/5 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                    key={bookmaker.nome}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="text-base font-semibold text-white">{bookmaker.nome}</p>
+                      </div>
                       <button
-                        className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+                        aria-label={`Remover ${bookmaker.nome}`}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
                         disabled={isPending}
-                        key={bookmaker}
-                        onClick={() => {
-                          startTransition(async () => {
-                            await submitBookmaker(bookmaker);
-                          });
-                        }}
+                        onClick={() => handleDelete(bookmaker.nome)}
                         type="button"
                       >
-                        {bookmaker}
+                        x
                       </button>
-                    ))}
+                    </div>
+
+                    {setBalance ? (
+                      <div className="mt-3 space-y-2">
+                        <label
+                          className="block text-sm font-medium text-[var(--text-secondary)]"
+                          htmlFor={balanceInputId}
+                        >
+                          Saldo
+                        </label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-white">
+                            R$
+                          </span>
+                          <input
+                            className="lz-input w-full rounded-2xl py-3 pl-11 pr-4 text-center text-sm"
+                            defaultValue={
+                              bookmaker.saldo === 0
+                                ? ""
+                                : String(bookmaker.saldo).replace(".", ",")
+                            }
+                            disabled={isPending}
+                            id={balanceInputId}
+                            inputMode="decimal"
+                            key={`${bookmaker.nome}-${bookmaker.saldo}`}
+                            onBlur={(event) =>
+                              commitBalance(bookmaker.nome, event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitBalance(
+                                  bookmaker.nome,
+                                  event.currentTarget.value,
+                                );
+                              }
+                            }}
+                            placeholder="0,00"
+                            type="text"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              ) : null}
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <aside className="lz-panel rounded-[30px] p-4 md:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-white">Observações</h2>
+              <div className="hidden">
+                Use este espaço para registrar limites, saldos, saques ou casas prioritárias.
+              </div>
             </div>
 
-            <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950">
-              <input
-                checked={setBalance}
-                className="h-4 w-4 rounded border-neutral-300 text-neutral-950 focus:ring-0"
-                onChange={(event) => setSetBalance(event.target.checked)}
-                type="checkbox"
-              />
-              Informar saldo
-            </label>
+            <button
+              className="lz-button-primary inline-flex rounded-full px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+              disabled={isPending || notes === notesSaved}
+              onClick={saveNotes}
+              type="button"
+            >
+              <span className="inline-flex items-center gap-2">
+                {isPending && notes !== notesSaved ? <ButtonSpinner /> : null}
+                <span>Salvar</span>
+              </span>
+            </button>
           </div>
-        </form>
 
-        {bookmakers.length === 0 ? (
-          <EmptyState
-            description="Selecione as casas da lista predefinida para montar sua area de bancas."
-            title="Nenhuma casa selecionada"
+          <textarea
+            className="lz-textarea mt-4 min-h-[360px] w-full rounded-[26px] px-4 py-3 text-sm"
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Anote observações importantes sobre limites, saldos, saques ou casas prioritárias."
+            value={notes}
           />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {bookmakers.map((bookmaker) => {
-              const balanceInputId = `balance-${bookmaker.nome
-                .toLowerCase()
-                .replace(/\s+/g, "-")}`;
-
-              return (
-                <div
-                  className="relative rounded-2xl border border-neutral-200 bg-white p-4"
-                  key={bookmaker.nome}
-                >
-                <button
-                    aria-label={`Remover ${bookmaker.nome}`}
-                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-sm text-neutral-400 transition hover:bg-neutral-100 hover:text-red-600"
-                    disabled={isPending}
-                    onClick={() => handleDelete(bookmaker.nome)}
-                    type="button"
-                  >
-                    x
-                  </button>
-
-                  <div className="flex min-h-16 items-center justify-center px-3 text-center">
-                    <p className="text-base font-semibold text-neutral-950">
-                      {bookmaker.nome}
-                    </p>
-                  </div>
-
-                  {setBalance ? (
-                    <div className="mt-3 space-y-2 text-center">
-                      <label
-                        className="block text-sm font-medium text-neutral-700"
-                        htmlFor={balanceInputId}
-                      >
-                        Saldo
-                      </label>
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-neutral-500">
-                          R$
-                        </span>
-                        <input
-                          className="w-full rounded-xl border border-neutral-300 bg-white py-2.5 pl-11 pr-4 text-center text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
-                          defaultValue={
-                            bookmaker.saldo === 0
-                              ? ""
-                              : String(bookmaker.saldo).replace(".", ",")
-                          }
-                          disabled={isPending}
-                          id={balanceInputId}
-                          inputMode="decimal"
-                          key={`${bookmaker.nome}-${bookmaker.saldo}`}
-                          onBlur={(event) =>
-                            commitBalance(bookmaker.nome, event.target.value)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commitBalance(
-                                bookmaker.nome,
-                                event.currentTarget.value,
-                              );
-                            }
-                          }}
-                          placeholder="0,00"
-                          type="text"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <aside className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-neutral-950">Observacoes</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Use este espaco para registrar controles rapidos das suas bancas.
-            </p>
-          </div>
-
-          <button
-            className="rounded-xl bg-neutral-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isPending || notes === notesSaved}
-            onClick={saveNotes}
-            type="button"
-          >
-            Salvar
-          </button>
-        </div>
-
-        <textarea
-          className="mt-4 min-h-[360px] w-full rounded-2xl border border-neutral-300 px-4 py-3 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
-          onChange={(event) => setNotes(event.target.value)}
-          placeholder="Anote observacoes importantes sobre limites, saldos, saques ou casas prioritarias."
-          value={notes}
-        />
-      </aside>
+        </aside>
+      </div>
     </div>
   );
 }

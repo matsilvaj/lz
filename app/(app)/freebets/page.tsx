@@ -9,6 +9,7 @@ export default async function FreebetsPage() {
 
   return (
     <FreebetsWorkspace
+      bookmakers={data.bookmakers}
       convertibleGroups={data.convertibleGroups}
       convertedHistory={data.convertedHistory}
       pendingConfirmation={data.pendingConfirmation}

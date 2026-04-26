@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
+import { useToast } from "@/app/_components/toast-provider";
+
 import { ProcedureModal } from "../_components/procedure-modal";
 import { deleteProcedureAction } from "../procedure-actions";
 
@@ -47,6 +49,7 @@ export function ProcedureRowActions({
   procedure,
 }: ProcedureRowActionsProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -129,8 +132,19 @@ export function ProcedureRowActions({
 
     setMenuOpen(false);
     startTransition(async () => {
-      await deleteProcedureAction(procedure.id);
-      router.refresh();
+      try {
+        await deleteProcedureAction(procedure.id);
+        showToast({
+          title: "Procedimento excluído.",
+          tone: "success",
+        });
+        router.refresh();
+      } catch {
+        showToast({
+          title: "Nao foi possível excluir o procedimento.",
+          tone: "error",
+        });
+      }
     });
   }
 
@@ -163,28 +177,38 @@ export function ProcedureRowActions({
         open={editOpen}
         procedureId={procedure.id}
         returnTo="/procedimentos"
-        submitLabel="Salvar alteracoes"
+        submitLabel="Salvar alterações"
         title="Editar procedimento"
       />
 
       <button
-        className="rounded-lg px-2 py-1 text-sm text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-950"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/8 hover:text-white"
         onClick={() => setMenuOpen((current) => !current)}
         ref={buttonRef}
         type="button"
       >
-        v
+        <svg
+          aria-hidden="true"
+          className="h-4 w-4"
+          fill="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle cx="12" cy="5" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="12" cy="19" r="1.8" />
+        </svg>
       </button>
 
       {menuOpen && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed z-40 min-w-44 rounded-2xl border border-neutral-200 bg-white p-2 shadow-lg"
+              className="fixed z-40 min-w-48 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
               ref={menuRef}
               style={{ left: menuPosition.left, top: menuPosition.top }}
             >
               <button
-                className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                 onClick={() => {
                   setMenuOpen(false);
                   setEditOpen(true);
@@ -196,19 +220,19 @@ export function ProcedureRowActions({
 
               {hasObservation ? (
                 <button
-                  className="block w-full rounded-xl px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
+                  className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                   onClick={() => {
                     setMenuOpen(false);
                     setNoteOpen(true);
                   }}
                   type="button"
                 >
-                  Ver observacao
+                  Ver observação
                 </button>
               ) : null}
 
               <button
-                className="block w-full rounded-xl px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ff9bb0] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isPending}
                 onClick={handleDelete}
                 type="button"
@@ -221,12 +245,12 @@ export function ProcedureRowActions({
         : null}
 
       {noteOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 p-4">
-          <div className="w-full max-w-lg rounded-3xl border border-neutral-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="lz-panel w-full max-w-lg rounded-[30px] p-6">
             <div className="flex items-center justify-between gap-4">
-              <h3 className="text-lg font-semibold text-neutral-950">Observacao</h3>
+              <h3 className="text-lg font-semibold text-white">Observação</h3>
               <button
-                className="rounded-xl px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-100 hover:text-neutral-950"
+                className="lz-button-secondary rounded-full px-4 py-2 text-sm"
                 onClick={() => setNoteOpen(false)}
                 type="button"
               >
@@ -234,7 +258,7 @@ export function ProcedureRowActions({
               </button>
             </div>
 
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-neutral-700">
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[var(--text-muted)]">
               {procedure.observacao}
             </p>
           </div>

@@ -3,7 +3,12 @@
 import { useState } from "react";
 
 import { LineChart, VerticalBarChart } from "../_components/charts";
-import { SectionCard, formatCurrency, formatNumber } from "../_components/ui";
+import { LzSelect } from "../_components/lz-select";
+import {
+  SectionCard,
+  formatCurrency,
+  formatNumber,
+} from "../_components/ui";
 
 type ChartItem = {
   label: string;
@@ -46,9 +51,9 @@ type DashboardData = {
 };
 
 const DASHBOARD_TABS = [
-  { id: "monthly", label: "Evolucao mensal" },
-  { id: "daily-profit", label: "Lucro diario" },
-  { id: "daily-volume", label: "Volume diario" },
+  { id: "monthly", label: "Evolução mensal" },
+  { id: "daily-profit", label: "Lucro diário" },
+  { id: "daily-volume", label: "Volume diário" },
   { id: "freebets", label: "Freebets" },
 ] as const;
 
@@ -64,14 +69,12 @@ function DashboardMetricCard({
   helper?: string;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5">
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
+    <div className="lz-panel-subtle rounded-[24px] px-4 py-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold tracking-tight text-neutral-950">
-        {value}
-      </p>
-      {helper ? <p className="mt-1 text-xs text-neutral-500">{helper}</p> : null}
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-white">{value}</p>
+      {helper ? <p className="mt-2 text-sm text-[var(--text-muted)]">{helper}</p> : null}
     </div>
   );
 }
@@ -89,7 +92,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
   const metrics = activeView.metrics;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <DashboardMetricCard
           label="Lucro hoje"
@@ -102,12 +105,12 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
           helper={metrics.referenceMonthLabel}
         />
         <DashboardMetricCard
-          label="Media diaria"
+          label="Média diária"
           value={formatCurrency(metrics.dailyAverage)}
-          helper={`${formatNumber(metrics.activeDays)} dias com operacao`}
+          helper={`${formatNumber(metrics.activeDays)} dias com operação`}
         />
         <DashboardMetricCard
-          label="Media por procedimento"
+          label="Média por procedimento"
           value={formatCurrency(metrics.averagePerProcedure)}
           helper={`${formatNumber(metrics.monthlyProcedureCount)} procedimentos no mes`}
         />
@@ -122,14 +125,14 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
         />
       </div>
 
-      <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+      <div className="lz-panel flex flex-col gap-3 rounded-[28px] px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-2">
           {DASHBOARD_TABS.map((tab) => (
             <button
-              className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition ${
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                 activeTab === tab.id
-                  ? "border-neutral-950 bg-neutral-950 text-white"
-                  : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-950 hover:text-neutral-950"
+                  ? "lz-button-primary"
+                  : "lz-button-secondary"
               }`}
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -141,32 +144,30 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
         </div>
 
         {activeTab !== "freebets" ? (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">
             <label
-              className="text-sm font-medium text-neutral-700"
+              className="text-sm font-medium text-[var(--text-secondary)]"
               htmlFor="dashboard-procedure-filter"
             >
               Procedimento
             </label>
-            <select
-              className="rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+            <LzSelect
+              className="w-full rounded-full px-4 py-2 text-sm sm:min-w-[240px]"
               id="dashboard-procedure-filter"
-              onChange={(event) => setSelectedFilter(event.target.value)}
+              onValueChange={setSelectedFilter}
+              options={data.procedureFilters.map((filter) => ({
+                value: filter,
+                label: filter,
+              }))}
               value={selectedFilter}
-            >
-              {data.procedureFilters.map((filter) => (
-                <option key={filter} value={filter}>
-                  {filter}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         ) : null}
       </div>
 
       {activeTab === "monthly" ? (
         <SectionCard
-          title="Evolucao mensal"
+          title="Evolução mensal"
           description={metrics.referenceMonthLabel}
         >
           <LineChart data={activeView.monthlyEvolution} />
@@ -175,7 +176,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
 
       {activeTab === "daily-profit" ? (
         <SectionCard
-          title="Lucro diario"
+          title="Lucro diário"
           description={metrics.referenceMonthLabel}
         >
           <VerticalBarChart
@@ -187,7 +188,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
 
       {activeTab === "daily-volume" ? (
         <SectionCard
-          title="Volume diario"
+          title="Volume diário"
           description={metrics.referenceMonthLabel}
         >
           <VerticalBarChart
@@ -199,16 +200,16 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
 
       {activeTab === "freebets" ? (
         <SectionCard
-          title="Metricas de Freebets"
+          title="Métricas de Freebets"
           description={metrics.referenceMonthLabel}
         >
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <button
-                className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                className={`rounded-full px-3 py-2 text-sm font-medium transition ${
                   activeFreebetView === "collected"
-                    ? "border-neutral-950 bg-neutral-950 text-white"
-                    : "border-neutral-300 bg-white text-neutral-600 hover:border-neutral-950 hover:text-neutral-950"
+                    ? "lz-button-primary"
+                    : "lz-button-secondary"
                 }`}
                 onClick={() => setActiveFreebetView("collected")}
                 type="button"
@@ -216,10 +217,10 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                 Quantidade coletada
               </button>
               <button
-                className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                className={`rounded-full px-3 py-2 text-sm font-medium transition ${
                   activeFreebetView === "profit"
-                    ? "border-neutral-950 bg-neutral-950 text-white"
-                    : "border-neutral-300 bg-white text-neutral-600 hover:border-neutral-950 hover:text-neutral-950"
+                    ? "lz-button-primary"
+                    : "lz-button-secondary"
                 }`}
                 onClick={() => setActiveFreebetView("profit")}
                 type="button"

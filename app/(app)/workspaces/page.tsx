@@ -1,4 +1,5 @@
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import { FormSubmitButton } from "@/app/_components/form-submit-button";
 
 import { createWorkspaceAction } from "./actions";
 import { WorkspaceList } from "./workspace-list";
@@ -7,21 +8,21 @@ export default async function WorkspacesPage() {
   const { activeWorkspace, workspaces } = await requireWorkspaceContext();
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+    <div className="space-y-5">
+      <section className="lz-panel rounded-[30px] p-4">
         <form action={createWorkspaceAction} className="flex flex-col gap-3 md:flex-row">
           <input
-            className="flex-1 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+            className="lz-input flex-1 rounded-2xl px-4 py-3 text-sm"
             name="name"
             placeholder="Criar novo workspace"
             type="text"
           />
-          <button
-            className="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
-            type="submit"
+          <FormSubmitButton
+            className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
+            pendingLabel="Criando..."
           >
             Criar workspace
-          </button>
+          </FormSubmitButton>
         </form>
       </section>
 

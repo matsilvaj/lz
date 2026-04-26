@@ -1,5 +1,7 @@
 "use client";
 
+import { FormSubmitButton } from "@/app/_components/form-submit-button";
+
 import { deleteAccountAction } from "./actions";
 
 export function DeleteAccountForm() {
@@ -8,7 +10,7 @@ export function DeleteAccountForm() {
       action={deleteAccountAction}
       onSubmit={(event) => {
         const confirmed = window.confirm(
-          "Tem certeza? Esta acao vai excluir sua conta e remover todos os dados vinculados.",
+          "Tem certeza? Esta ação vai excluir sua conta e remover todos os dados vinculados.",
         );
 
         if (!confirmed) {
@@ -16,12 +18,12 @@ export function DeleteAccountForm() {
         }
       }}
     >
-      <button
-        className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-700 transition hover:bg-red-50"
-        type="submit"
+      <FormSubmitButton
+        className="rounded-full border border-[rgba(255,107,133,0.24)] bg-[rgba(255,107,133,0.08)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.14)]"
+        pendingLabel="Excluindo..."
       >
         Deletar conta
-      </button>
+      </FormSubmitButton>
     </form>
   );
 }

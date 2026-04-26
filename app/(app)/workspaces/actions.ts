@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/workspace-context";
 import { requireUser } from "@/lib/auth/session";
 import { getProceduresRepository } from "@/lib/server";
+import { appendToastParams } from "@/lib/ui/toast";
 
 function parseText(value: string | FormDataEntryValue | null) {
   return String(value ?? "").trim().replace(/\s+/g, " ");
@@ -21,7 +22,7 @@ function revalidateApplication() {
     "/freebets",
     "/calculadora",
     "/bancas",
-    "/historico",
+    "/histórico",
     "/workspaces",
   ];
 
@@ -46,7 +47,7 @@ export async function createWorkspaceAction(formData: FormData) {
   }
 
   revalidateApplication();
-  redirect("/workspaces");
+  redirect(appendToastParams("/workspaces", "success", "Workspace criado."));
 }
 
 export async function switchWorkspaceAction(workspaceId: number, returnTo = "/dashboard") {
@@ -76,7 +77,7 @@ export async function updateWorkspaceAction(formData: FormData) {
   await repository.updateWorkspace(user.id, workspaceId, name);
 
   revalidateApplication();
-  redirect("/workspaces");
+  redirect(appendToastParams("/workspaces", "success", "Workspace atualizado."));
 }
 
 export async function deleteWorkspaceAction(workspaceId: number) {
@@ -102,5 +103,5 @@ export async function deleteWorkspaceAction(workspaceId: number) {
   }
 
   revalidateApplication();
-  redirect("/workspaces");
+  redirect(appendToastParams("/workspaces", "success", "Workspace removido."));
 }

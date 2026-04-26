@@ -1,8 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { EmptyState, formatCurrency } from "../_components/ui";
+import { LzSelect } from "../_components/lz-select";
+import {
+  EmptyState,
+  StatusTag,
+  formatCurrency,
+} from "../_components/ui";
 
 type HistoryMonth = {
   value: string;
@@ -28,7 +34,11 @@ type HistoryWorkspaceProps = {
 };
 
 function getProfitClass(value: number) {
-  return value >= 0 ? "text-emerald-600" : "text-red-500";
+  return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
+}
+
+function formatOperationCount(count: number) {
+  return `${count} ${count === 1 ? "operacao" : "operacoes"}`;
 }
 
 export function HistoryWorkspace({
@@ -53,79 +63,164 @@ export function HistoryWorkspace({
   }, [operations, selectedMonth]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <select
-          className="rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-900 outline-none transition focus:border-neutral-950"
-          onChange={(event) => setSelectedMonth(event.target.value)}
-          value={selectedMonth}
-        >
-          {months.map((month) => (
-            <option key={month.value} value={month.value}>
-              {month.label}
-            </option>
-          ))}
-        </select>
+    <div className="space-y-5">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="lz-panel rounded-[30px] px-6 py-8 text-center">
+          <p className="text-sm font-medium text-[var(--text-dim)]">Lucro do mês</p>
+          <p
+            className={`mt-4 text-3xl font-semibold md:text-4xl ${getProfitClass(
+              selectedMonthData?.profit ?? 0,
+            )}`}
+          >
+            {formatCurrency(selectedMonthData?.profit ?? 0)}
+          </p>
+          <div className="mt-5 flex justify-center">
+            <StatusTag tone={(selectedMonthData?.profit ?? 0) >= 0 ? "positive" : "negative"}>
+              {formatOperationCount(selectedMonthData?.count ?? 0)}
+            </StatusTag>
+          </div>
+        </div>
+
+        <div className="lz-panel rounded-[30px] p-5">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-white">Mês de referência</span>
+            <LzSelect
+              className="w-full rounded-2xl px-4 py-3 text-sm"
+              onValueChange={setSelectedMonth}
+              options={months.map((month) => ({
+                value: month.value,
+                label: month.label,
+              }))}
+              value={selectedMonth}
+            />
+          </label>
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white px-6 py-8 text-center">
-        <p className="text-sm font-medium text-neutral-500">Lucro do mes</p>
-        <p className={`mt-3 text-4xl font-semibold ${getProfitClass(selectedMonthData?.profit ?? 0)}`}>
-          {formatCurrency(selectedMonthData?.profit ?? 0)}
-        </p>
-      </div>
-
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-6">
+      <div className="lz-panel rounded-[30px] p-4 md:p-6">
         {filteredOperations.length === 0 ? (
           <EmptyState
-            description="Quando houver operacoes neste periodo, elas aparecerao aqui."
+            action={
+              <Link
+                className="lz-button-secondary inline-flex rounded-full px-4 py-3 text-sm font-semibold"
+                href="/procedimentos"
+              >
+                Registrar operacao
+              </Link>
+            }
+            description="Quando houver operacoes neste periodo, o historico passa a organizar tudo de forma cronologica."
+            eyebrow="Sem dados no periodo"
             title="Nenhuma operacao encontrada"
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full table-fixed text-center text-sm">
-              <colgroup>
-                <col className="w-[14%]" />
-                <col className="w-[22%]" />
-                <col className="w-[22%]" />
-                <col className="w-[20%]" />
-                <col className="w-[11%]" />
-                <col className="w-[11%]" />
-              </colgroup>
-              <thead className="text-neutral-500">
-                <tr className="border-b border-neutral-200">
-                  <th className="px-2 py-3 font-medium">Data</th>
-                  <th className="px-2 py-3 font-medium">Tipo</th>
-                  <th className="px-2 py-3 font-medium">Jogo</th>
-                  <th className="px-2 py-3 font-medium">Casas</th>
-                  <th className="px-2 py-3 font-medium">Lucro Base</th>
-                  <th className="px-2 py-3 font-medium">Lucro Final</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOperations.map((operation) => (
-                  <tr className="border-b border-neutral-100 last:border-b-0" key={operation.id}>
-                    <td className="px-2 py-4 text-neutral-700">{operation.data_operacao}</td>
-                    <td className="px-2 py-4 font-medium text-neutral-900">
-                      {operation.tipo_procedimento}
-                    </td>
-                    <td className="px-2 py-4 text-neutral-700">
-                      {operation.jogo_time_pa || "-"}
-                    </td>
-                    <td className="px-2 py-4 text-neutral-700">
-                      {operation.casas_envolvidas || "-"}
-                    </td>
-                    <td className={`px-2 py-4 ${getProfitClass(operation.lucro_final)}`}>
-                      {formatCurrency(operation.lucro_final)}
-                    </td>
-                    <td className={`px-2 py-4 font-medium ${getProfitClass(operation.lucro_real)}`}>
-                      {formatCurrency(operation.lucro_real)}
-                    </td>
+          <>
+            <div className="grid gap-4 md:hidden">
+              {filteredOperations.map((operation) => (
+                <article
+                  className="rounded-[26px] border border-white/10 bg-white/5 p-4"
+                  key={operation.id}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+                        {operation.data_operacao}
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-white">
+                        {operation.tipo_procedimento}
+                      </p>
+                    </div>
+                    <StatusTag>{operation.tipo_procedimento}</StatusTag>
+                  </div>
+
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <p className="text-[var(--text-dim)]">Jogo</p>
+                      <p className="mt-1 text-white">{operation.jogo_time_pa || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-dim)]">Casas</p>
+                      <p className="mt-1 text-white">{operation.casas_envolvidas || "-"}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
+                        Lucro base
+                      </p>
+                      <p
+                        className={`mt-2 text-lg font-semibold ${getProfitClass(
+                          operation.lucro_final,
+                        )}`}
+                      >
+                        {formatCurrency(operation.lucro_final)}
+                      </p>
+                    </div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
+                        Lucro final
+                      </p>
+                      <p
+                        className={`mt-2 text-lg font-semibold ${getProfitClass(
+                          operation.lucro_real,
+                        )}`}
+                      >
+                        {formatCurrency(operation.lucro_real)}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm">
+                <thead className="text-[var(--text-dim)]">
+                  <tr className="border-b border-white/10">
+                    <th className="px-3 py-3 text-center font-medium">Data</th>
+                    <th className="px-3 py-3 text-center font-medium">Tipo</th>
+                    <th className="px-3 py-3 text-center font-medium">Jogo</th>
+                    <th className="px-3 py-3 text-center font-medium">Casas</th>
+                    <th className="px-3 py-3 text-center font-medium">Lucro Base</th>
+                    <th className="px-3 py-3 text-center font-medium">Lucro Final</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredOperations.map((operation) => (
+                    <tr
+                      className="border-b border-white/8 transition hover:bg-white/4"
+                      key={operation.id}
+                    >
+                      <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
+                        {operation.data_operacao}
+                      </td>
+                      <td className="px-3 py-4">
+                        <div className="flex justify-center">
+                          <StatusTag>{operation.tipo_procedimento}</StatusTag>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 text-center text-white">
+                        {operation.jogo_time_pa || "-"}
+                      </td>
+                      <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
+                        {operation.casas_envolvidas || "-"}
+                      </td>
+                      <td className={`px-3 py-4 text-center ${getProfitClass(operation.lucro_final)}`}>
+                        {formatCurrency(operation.lucro_final)}
+                      </td>
+                      <td
+                        className={`px-3 py-4 text-center font-semibold ${getProfitClass(
+                          operation.lucro_real,
+                        )}`}
+                      >
+                        {formatCurrency(operation.lucro_real)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

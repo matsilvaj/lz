@@ -9,5 +9,5 @@ export const appNavigationItems = [
   { href: "/freebets", label: "Freebets" },
   { href: "/bancas", label: "Bancas" },
   { href: "/calculadora", label: "Calculadora" },
-  { href: "/historico", label: "Historico" },
+  { href: "/historico", label: "Histórico" },
 ] as const;

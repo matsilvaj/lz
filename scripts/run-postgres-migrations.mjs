@@ -13,7 +13,7 @@ let Pool;
 try {
   ({ Pool } = require("pg"));
 } catch {
-  console.error('Instale a dependencia "pg" antes de rodar as migrations.');
+  console.error('Instale a dependência "pg" antes de rodar as migrations.');
   process.exit(1);
 }
 

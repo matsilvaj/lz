@@ -1,4 +1,5 @@
 import { logout } from "@/app/auth/actions";
+import { FormSubmitButton } from "@/app/_components/form-submit-button";
 import { requireUser } from "@/lib/auth/session";
 
 import { SectionCard } from "../_components/ui";
@@ -49,15 +50,15 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
   const { firstName, lastName } = getProfileNames(user);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {errorMessage ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="rounded-[24px] border border-[rgba(255,107,133,0.24)] bg-[rgba(41,13,21,0.94)] px-4 py-3 text-sm text-[var(--negative)]">
           {errorMessage}
         </p>
       ) : null}
 
       {successMessage ? (
-        <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <p className="rounded-[24px] border border-[rgba(73,212,166,0.24)] bg-[rgba(13,34,27,0.92)] px-4 py-3 text-sm text-[var(--positive)]">
           {successMessage}
         </p>
       ) : null}
@@ -67,11 +68,11 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           <form action={updateAccountAction} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-neutral-800" htmlFor="firstName">
+                <label className="text-sm font-medium text-white" htmlFor="firstName">
                   Nome
                 </label>
                 <input
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                  className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                   defaultValue={firstName}
                   id="firstName"
                   name="firstName"
@@ -81,11 +82,11 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-neutral-800" htmlFor="lastName">
+                <label className="text-sm font-medium text-white" htmlFor="lastName">
                   Sobrenome
                 </label>
                 <input
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                  className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                   defaultValue={lastName}
                   id="lastName"
                   name="lastName"
@@ -95,29 +96,29 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               </div>
             </div>
 
-            <button
-              className="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
-              type="submit"
+            <FormSubmitButton
+              className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
+              pendingLabel="Salvando..."
             >
               Salvar
-            </button>
+            </FormSubmitButton>
           </form>
         </SectionCard>
 
         <SectionCard title="Email">
           <div className="space-y-4">
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <p className="text-sm text-neutral-500">Email atual</p>
-              <p className="mt-1 text-base font-semibold text-neutral-950">{user.email}</p>
+            <div className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-sm text-[var(--text-dim)]">Email atual</p>
+              <p className="mt-1 text-base font-semibold text-white">{user.email}</p>
             </div>
 
             <form action={updateEmailAction} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-neutral-800" htmlFor="email">
+                <label className="text-sm font-medium text-white" htmlFor="email">
                   Novo email
                 </label>
                 <input
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                  className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                   id="email"
                   name="email"
                   placeholder="voce@empresa.com"
@@ -125,12 +126,12 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 />
               </div>
 
-              <button
-                className="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
-                type="submit"
+              <FormSubmitButton
+                className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
+                pendingLabel="Salvando..."
               >
                 Salvar email
-              </button>
+              </FormSubmitButton>
             </form>
           </div>
         </SectionCard>
@@ -138,25 +139,25 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         <SectionCard title="Senha">
           <form action={updatePasswordAction} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-800" htmlFor="password">
+              <label className="text-sm font-medium text-white" htmlFor="password">
                 Nova senha
               </label>
               <input
-                className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                 id="password"
                 minLength={8}
                 name="password"
-                placeholder="Minimo de 8 caracteres"
+                placeholder="Mínimo de 8 caracteres"
                 type="password"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-800" htmlFor="confirmPassword">
+              <label className="text-sm font-medium text-white" htmlFor="confirmPassword">
                 Confirmar nova senha
               </label>
               <input
-                className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                 id="confirmPassword"
                 minLength={8}
                 name="confirmPassword"
@@ -165,36 +166,36 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               />
             </div>
 
-            <button
-              className="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
-              type="submit"
+            <FormSubmitButton
+              className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
+              pendingLabel="Salvando..."
             >
               Salvar senha
-            </button>
+            </FormSubmitButton>
           </form>
         </SectionCard>
 
         <SectionCard title="Acesso">
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-white/4 px-4 py-4">
               <div>
-                <p className="text-sm font-medium text-neutral-900">Sair da conta</p>
+                <p className="text-sm font-medium text-white">Sair da conta</p>
               </div>
 
               <form action={logout}>
-                <button
-                  className="rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
-                  type="submit"
+                <FormSubmitButton
+                  className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+                  pendingLabel="Saindo..."
                 >
                   Sair
-                </button>
+                </FormSubmitButton>
               </form>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-white/4 px-4 py-4">
               <div>
-                <p className="text-sm font-medium text-neutral-900">Deletar conta</p>
-                <p className="mt-1 text-sm text-neutral-500">
+                <p className="text-sm font-medium text-white">Deletar conta</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
                   Remove a conta e todos os dados vinculados.
                 </p>
               </div>
@@ -205,8 +206,8 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         </SectionCard>
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500">
-        Algumas alteracoes podem exigir confirmacao por email antes de serem aplicadas.
+      <div className="rounded-[24px] border border-white/10 bg-white/4 px-4 py-3 text-sm text-[var(--text-muted)]">
+        Algumas alterações podem exigir confirmação por email antes de serem aplicadas.
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ export function createPostgresPool({
 } = {}) {
   if (!connectionString) {
     throw new Error(
-      'Defina a variavel de ambiente "DATABASE_URL" para o runtime do PostgreSQL.',
+      'Defina a variável de ambiente "DATABASE_URL" para o runtime do PostgreSQL.',
     );
   }
 
@@ -22,7 +22,7 @@ export function createPostgresPool({
     ({ Pool } = require("pg"));
   } catch {
     throw new Error(
-      'Instale a dependencia "pg" antes de usar o repositorio PostgreSQL.',
+      'Instale a dependência "pg" antes de usar o repositório PostgreSQL.',
     );
   }
 

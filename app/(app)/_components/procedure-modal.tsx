@@ -2,7 +2,12 @@
 
 import { PROCEDURE_TYPES, FREEBET_CONDITIONS } from "@/core";
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
+import { FormSubmitButton } from "@/app/_components/form-submit-button";
+
+import { DatePickerField } from "./date-picker-field";
+import { LzSelect } from "./lz-select";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
 
 type ProcedureType = (typeof PROCEDURE_TYPES)[number];
@@ -65,6 +70,21 @@ function getTodayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
+function getInitialProcedureType(
+  defaultValues: ProcedureModalProps["defaultValues"],
+  typeOptions: readonly ProcedureType[],
+) {
+  return defaultValues?.procedureType ?? typeOptions[0] ?? "SureBet";
+}
+
+function getInitialProtectionKeys(
+  defaultValues: ProcedureModalProps["defaultValues"],
+) {
+  return defaultValues?.protections?.length
+    ? defaultValues.protections.map((_, index) => index)
+    : [];
+}
+
 function HousePickerDialog({
   open,
   title,
@@ -93,19 +113,23 @@ function HousePickerDialog({
     return null;
   }
 
+  if (typeof document === "undefined") {
+    return null;
+  }
+
   function handleClose() {
     setSearch("");
     onClose();
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-950/60 p-4">
-      <div className="w-full max-w-xl rounded-3xl border border-neutral-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-neutral-950">{title}</h3>
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
+      <div className="lz-panel w-full max-w-xl rounded-[32px] shadow-[0_30px_90px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <h3 className="text-base font-semibold text-white">{title}</h3>
 
           <button
-            className="rounded-full px-3 py-1.5 text-sm text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
+            className="lz-button-secondary rounded-full px-3 py-1.5 text-sm"
             onClick={handleClose}
             type="button"
           >
@@ -115,7 +139,7 @@ function HousePickerDialog({
 
         <div className="space-y-4 px-5 py-5">
           <input
-            className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+            className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar casa..."
             type="search"
@@ -124,7 +148,7 @@ function HousePickerDialog({
 
           <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
             {visibleOptions.length === 0 ? (
-              <p className="px-1 py-3 text-sm text-neutral-500">
+              <p className="px-1 py-3 text-sm text-[var(--text-muted)]">
                 Nenhuma casa encontrada.
               </p>
             ) : (
@@ -133,10 +157,8 @@ function HousePickerDialog({
 
                 return (
                   <button
-                    className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${
-                      active
-                        ? "border-neutral-950 bg-neutral-950 text-white"
-                        : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
+                      active ? "lz-button-primary" : "lz-button-secondary"
                     }`}
                     key={option}
                     onClick={() => {
@@ -155,9 +177,9 @@ function HousePickerDialog({
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-neutral-200 pt-4">
+          <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-4">
             <button
-              className="text-sm text-neutral-500 transition hover:text-neutral-950"
+              className="text-sm text-[var(--text-dim)] transition hover:text-white"
               onClick={() => {
                 setSearch("");
                 onClear();
@@ -169,7 +191,7 @@ function HousePickerDialog({
 
             {multiple ? (
               <button
-                className="rounded-xl bg-neutral-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-800"
+                className="lz-button-primary rounded-full px-4 py-2 text-sm font-semibold"
                 onClick={handleClose}
                 type="button"
               >
@@ -179,7 +201,8 @@ function HousePickerDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -201,15 +224,16 @@ export function ProcedureModal({
 }: ProcedureModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<ProcedureType>(
-    defaultValues?.procedureType ?? typeOptions[0] ?? "SureBet",
+    getInitialProcedureType(defaultValues, typeOptions),
+  );
+  const [operationDate, setOperationDate] = useState(
+    defaultValues?.operationDate ?? getTodayInputValue(),
   );
   const [equalProfitEnabled, setEqualProfitEnabled] = useState(
     defaultValues?.equalProfit ?? true,
   );
   const [protectionKeys, setProtectionKeys] = useState<number[]>(
-    defaultValues?.protections?.length
-      ? defaultValues.protections.map((_, index) => index)
-      : [],
+    getInitialProtectionKeys(defaultValues),
   );
   const [noteExpanded, setNoteExpanded] = useState(Boolean(defaultValues?.note));
   const [noteValue, setNoteValue] = useState(defaultValues?.note ?? "");
@@ -219,6 +243,7 @@ export function ProcedureModal({
   const [selectedFreebetHouse, setSelectedFreebetHouse] = useState(
     defaultValues?.freebetHouse ?? "",
   );
+  const [autoIncludedFreebetHouse, setAutoIncludedFreebetHouse] = useState("");
   const [housesPickerOpen, setHousesPickerOpen] = useState(false);
   const [freebetHousePickerOpen, setFreebetHousePickerOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
@@ -234,19 +259,72 @@ export function ProcedureModal({
   const showFreebetBeforeHouses = isFreebetType;
 
   function toggleSelectedHouse(value: string) {
-    setSelectedHouses((current) =>
-      current.includes(value)
+    setSelectedHouses((current) => {
+      const isRemoving = current.includes(value);
+
+      if (isRemoving && value === autoIncludedFreebetHouse) {
+        setAutoIncludedFreebetHouse("");
+      }
+
+      return isRemoving
         ? current.filter((item) => item !== value)
-        : [...current, value],
-    );
+        : [...current, value];
+    });
   }
 
   function clearSelectedHouses() {
     setSelectedHouses([]);
+    setAutoIncludedFreebetHouse("");
   }
 
   function toggleSelectedFreebetHouse(value: string) {
-    setSelectedFreebetHouse((current) => (current === value ? "" : value));
+    setSelectedFreebetHouse((current) => {
+      const nextValue = current === value ? "" : value;
+
+      if (selectedType === "Coletar Freebet") {
+        setSelectedHouses((currentHouses) => {
+          let nextHouses = currentHouses;
+
+          if (autoIncludedFreebetHouse) {
+            nextHouses = nextHouses.filter((item) => item !== autoIncludedFreebetHouse);
+          }
+
+          if (nextValue && !nextHouses.includes(nextValue)) {
+            nextHouses = [...nextHouses, nextValue];
+          }
+
+          return nextHouses;
+        });
+        setAutoIncludedFreebetHouse(nextValue);
+      }
+
+      return nextValue;
+    });
+  }
+
+  function clearSelectedFreebetHouse() {
+    if (selectedType === "Coletar Freebet" && autoIncludedFreebetHouse) {
+      setSelectedHouses((current) =>
+        current.filter((item) => item !== autoIncludedFreebetHouse),
+      );
+      setAutoIncludedFreebetHouse("");
+    }
+
+    setSelectedFreebetHouse("");
+  }
+
+  function resetFormState() {
+    setSelectedType(getInitialProcedureType(defaultValues, typeOptions));
+    setOperationDate(defaultValues?.operationDate ?? getTodayInputValue());
+    setEqualProfitEnabled(defaultValues?.equalProfit ?? true);
+    setProtectionKeys(getInitialProtectionKeys(defaultValues));
+    setNoteExpanded(Boolean(defaultValues?.note));
+    setNoteValue(defaultValues?.note ?? "");
+    setSelectedHouses(parseHouseList(defaultValues?.houses));
+    setSelectedFreebetHouse(defaultValues?.freebetHouse ?? "");
+    setAutoIncludedFreebetHouse("");
+    setHousesPickerOpen(false);
+    setFreebetHousePickerOpen(false);
   }
 
   function setOpen(nextValue: boolean) {
@@ -263,9 +341,10 @@ export function ProcedureModal({
         <button
           className={
             triggerClassName ??
-            "rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
+            "lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
           }
           onClick={() => {
+            resetFormState();
             onTrigger?.();
             setOpen(true);
           }}
@@ -275,14 +354,16 @@ export function ProcedureModal({
         </button>
       ) : null}
 
-      {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-neutral-200 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-neutral-950">{title}</h2>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-4 backdrop-blur-sm">
+          <div className="flex min-h-full items-start justify-center py-2 md:py-4">
+          <div className="lz-panel w-full max-w-3xl rounded-[34px] shadow-[0_30px_90px_rgba(0,0,0,0.5)]">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+              <h2 className="text-lg font-semibold text-white">{title}</h2>
 
               <button
-                className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
+                className="lz-button-secondary rounded-full p-2"
                 onClick={() => setOpen(false)}
                 type="button"
               >
@@ -310,17 +391,15 @@ export function ProcedureModal({
               ))}
 
               <div className="space-y-3">
-                <p className="text-sm font-medium text-neutral-900">Tipo de procedimento</p>
+                <p className="text-sm font-medium text-white">Tipo de procedimento</p>
                 <div className="flex flex-wrap gap-2">
                   {typeOptions.map((type) => {
                     const active = selectedType === type;
 
                     return (
                       <button
-                        className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                          active
-                            ? "bg-neutral-950 text-white"
-                            : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                          active ? "lz-button-primary" : "lz-button-secondary"
                         }`}
                         key={type}
                         onClick={() => {
@@ -341,20 +420,19 @@ export function ProcedureModal({
 
               <div className={`grid gap-4 ${supportsGame ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
                 <label className="space-y-2 text-sm">
-                  <span className="font-medium text-neutral-900">Data</span>
-                  <input
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
-                    defaultValue={defaultValues?.operationDate ?? getTodayInputValue()}
+                  <span className="font-medium text-white">Data</span>
+                  <DatePickerField
                     name="operationDate"
-                    type="date"
+                    onChange={setOperationDate}
+                    value={operationDate}
                   />
                 </label>
 
                 {supportsGame ? (
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-neutral-900">Jogo</span>
+                    <span className="font-medium text-white">Jogo</span>
                     <input
-                      className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
+                      className="lz-input w-full rounded-2xl px-3 py-3"
                       defaultValue={defaultValues?.game ?? ""}
                       name="game"
                       placeholder="Ex.: Seattle Sounders"
@@ -367,12 +445,12 @@ export function ProcedureModal({
               {showFreebetBeforeHouses ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2 text-sm">
-                    <span className="font-medium text-neutral-900">Casa da freebet</span>
+                    <span className="font-medium text-white">Casa da freebet</span>
                     <button
-                      className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+                      className={`w-full rounded-2xl px-3 py-3 text-left transition ${
                         isConversionOnly
-                          ? "cursor-default border-neutral-200 bg-neutral-50 text-neutral-500"
-                          : "border-neutral-300 bg-white text-neutral-900 hover:border-neutral-950"
+                          ? "cursor-default border border-white/10 bg-white/5 text-[var(--text-dim)]"
+                          : "lz-button-secondary"
                       }`}
                       disabled={isConversionOnly}
                       onClick={() => setFreebetHousePickerOpen(true)}
@@ -383,9 +461,9 @@ export function ProcedureModal({
                   </div>
 
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-neutral-900">Valor da freebet</span>
+                    <span className="font-medium text-white">Valor da freebet</span>
                     <input
-                      className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
+                      className="lz-input w-full rounded-2xl px-3 py-3"
                       defaultValue={defaultValues?.freebetValue ?? ""}
                       name="freebetValue"
                       placeholder="0,00"
@@ -397,30 +475,28 @@ export function ProcedureModal({
 
                   {supportsFreebetCondition ? (
                     <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="font-medium text-neutral-900">Condicao da freebet</span>
-                      <select
-                        className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
+                      <span className="font-medium text-white">Condição da freebet</span>
+                      <LzSelect
+                        className="w-full rounded-2xl px-3 py-3"
                         defaultValue={
                           defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0]
                         }
                         name="freebetCondition"
-                      >
-                        {FREEBET_CONDITIONS.map((condition) => (
-                          <option key={condition} value={condition}>
-                            {condition}
-                          </option>
-                        ))}
-                      </select>
+                        options={FREEBET_CONDITIONS.map((condition) => ({
+                          value: condition,
+                          label: condition,
+                        }))}
+                      />
                     </label>
                   ) : null}
                 </div>
               ) : null}
 
-              <div className="space-y-3 text-sm">
+              <div className="space-y-3 rounded-[24px] border border-white/10 bg-white/4 p-4 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-neutral-900">Casas envolvidas</span>
+                  <span className="font-medium text-white">Casas envolvidas</span>
                   <button
-                    className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
+                    className="lz-button-secondary rounded-full px-3 py-2 text-sm font-medium"
                     onClick={() => setHousesPickerOpen(true)}
                     type="button"
                   >
@@ -432,7 +508,7 @@ export function ProcedureModal({
                   <div className="flex flex-wrap gap-2">
                     {selectedHouses.map((house) => (
                       <button
-                        className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-700 transition hover:border-neutral-400"
+                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-white/20"
                         key={house}
                         onClick={() => toggleSelectedHouse(house)}
                         type="button"
@@ -442,15 +518,15 @@ export function ProcedureModal({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-neutral-500">Nenhuma casa selecionada.</p>
+                  <p className="text-sm text-[var(--text-muted)]">Nenhuma casa selecionada.</p>
                 )}
               </div>
 
               <div className={`grid gap-4 ${supportsProfitDistribution ? "md:grid-cols-[1.1fr,0.9fr]" : "md:grid-cols-1"}`}>
                 <label className="space-y-2 text-sm">
-                  <span className="font-medium text-neutral-900">Lucro da entrada</span>
+                  <span className="font-medium text-white">Lucro da entrada</span>
                   <input
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
+                    className="lz-input w-full rounded-2xl px-3 py-3"
                     defaultValue={defaultValues?.entryValue ?? ""}
                     name="entryValue"
                     placeholder="0,00"
@@ -461,53 +537,53 @@ export function ProcedureModal({
                 </label>
 
                 {supportsProfitDistribution ? (
-                  <label className="flex items-center gap-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm">
+                  <label className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-white/4 px-4 py-3 text-sm">
                     <input
                       checked={equalProfitEnabled}
                       name="equalProfit"
                       onChange={(event) => setEqualProfitEnabled(event.target.checked)}
                       type="checkbox"
                     />
-                    <span className="font-medium text-neutral-900">
-                      Lucro Igual nas Protecoes
+                    <span className="font-medium text-white">
+                      Lucro Igual nas Proteções
                     </span>
                   </label>
                 ) : null}
               </div>
 
               {supportsProfitDistribution && !equalProfitEnabled ? (
-                <div className="space-y-3 rounded-2xl border border-neutral-200 p-4">
+                <div className="space-y-3 rounded-[24px] border border-white/10 bg-white/4 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-neutral-900">Lucro nas Protecoes</p>
+                    <p className="text-sm font-medium text-white">Lucro nas Proteções</p>
                     <button
-                      className="text-sm text-neutral-600 transition hover:text-neutral-950"
+                      className="text-sm text-[var(--text-dim)] transition hover:text-white"
                       onClick={() =>
                         setProtectionKeys((current) => [...current, Date.now() + current.length])
                       }
                       type="button"
                     >
-                      Adicionar protecao
+                      Adicionar proteção
                     </button>
                   </div>
 
                   {protectionKeys.length === 0 ? (
-                    <p className="text-sm text-neutral-500">
-                      Use apenas se precisar distribuir o lucro entre protecoes.
+                    <p className="text-sm text-[var(--text-muted)]">
+                      Use apenas se precisar distribuir o lucro entre proteções.
                     </p>
                   ) : (
                     <div className="space-y-3">
                       {protectionKeys.map((key, index) => (
                         <div className="flex items-center gap-3" key={key}>
                           <input
-                            className="flex-1 rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                            className="lz-input flex-1 rounded-2xl px-3 py-3 text-sm"
                             defaultValue={defaultValues?.protections?.[index] ?? ""}
                             name="protections"
-                            placeholder={`Lucro na protecao ${index + 1}`}
+                            placeholder={`Lucro na proteção ${index + 1}`}
                             step="0.01"
                             type="number"
                           />
                           <button
-                            className="text-sm text-neutral-500 transition hover:text-red-600"
+                            className="text-sm text-[var(--text-dim)] transition hover:text-[var(--negative)]"
                             onClick={() =>
                               setProtectionKeys((current) => current.filter((item) => item !== key))
                             }
@@ -524,9 +600,9 @@ export function ProcedureModal({
 
               {supportsDouble ? (
                 <label className="space-y-2 text-sm">
-                  <span className="font-medium text-neutral-900">Valor do duplo</span>
+                  <span className="font-medium text-white">Valor do duplo</span>
                   <input
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none transition focus:border-neutral-950"
+                    className="lz-input w-full rounded-2xl px-3 py-3"
                     defaultValue={defaultValues?.doubleValue ?? ""}
                     name="doubleValue"
                     placeholder="0,00"
@@ -539,20 +615,20 @@ export function ProcedureModal({
               <input name="note" type="hidden" value={noteValue} />
 
               {noteExpanded ? (
-                <div className="space-y-3 rounded-2xl border border-neutral-200 p-4">
+                <div className="mt-2 space-y-3 rounded-[24px] border border-white/10 bg-white/4 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-neutral-900">Observacoes</p>
+                    <p className="text-sm font-medium text-white">Observações</p>
                     <button
-                      className="text-sm text-neutral-600 transition hover:text-neutral-950"
+                      className="text-sm text-[var(--text-dim)] transition hover:text-white"
                       onClick={() => setNoteExpanded(false)}
                       type="button"
                     >
-                      Recolher observacoes
+                      Recolher observações
                     </button>
                   </div>
 
                   <textarea
-                    className="min-h-28 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm outline-none transition focus:border-neutral-950"
+                    className="lz-textarea min-h-28 w-full rounded-2xl px-3 py-3 text-sm"
                     onChange={(event) => setNoteValue(event.target.value)}
                     placeholder="Adicione qualquer contexto importante"
                     value={noteValue}
@@ -560,30 +636,31 @@ export function ProcedureModal({
                 </div>
               ) : (
                 <button
-                  className="text-left text-sm font-medium text-neutral-600 transition hover:text-neutral-950"
+                  className="mt-1 text-left text-sm font-medium text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => setNoteExpanded(true)}
                   type="button"
                 >
-                  Adicionar observacoes
+                  Adicionar observações
                 </button>
               )}
 
               <div className="flex items-center justify-end gap-3">
                 <button
-                  className="rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
+                  className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
                   onClick={() => setOpen(false)}
                   type="button"
                 >
                   Cancelar
                 </button>
-                <button
-                  className="rounded-xl bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
-                  type="submit"
+                <FormSubmitButton
+                  className="lz-button-primary rounded-full px-5 py-2.5 text-sm font-semibold"
+                  pendingLabel={mode === "edit" ? "Salvando..." : "Criando..."}
                 >
                   {submitLabel}
-                </button>
+                </FormSubmitButton>
               </div>
             </form>
+          </div>
           </div>
 
           <HousePickerDialog
@@ -598,7 +675,7 @@ export function ProcedureModal({
           />
 
           <HousePickerDialog
-            onClear={() => setSelectedFreebetHouse("")}
+            onClear={clearSelectedFreebetHouse}
             onClose={() => setFreebetHousePickerOpen(false)}
             onToggle={toggleSelectedFreebetHouse}
             open={freebetHousePickerOpen}
@@ -606,8 +683,10 @@ export function ProcedureModal({
             selectedValues={selectedFreebetHouse ? [selectedFreebetHouse] : []}
             title="Escolher casa da freebet"
           />
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

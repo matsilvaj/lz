@@ -16,22 +16,23 @@ export default async function ProtectedAppLayout({
   const { activeWorkspace, workspaces } = await requireWorkspaceContext();
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-950">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-4 py-4 md:px-6 xl:px-8">
+    <div className="min-h-screen text-[var(--text-primary)]">
+      <header className="sticky top-0 z-40 border-b border-white/8 bg-[rgba(6,2,7,0.78)] backdrop-blur-2xl">
+        <div className="mx-auto max-w-[1480px] px-4 py-3 md:px-6 xl:px-8">
           <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[auto_1fr_auto] xl:items-center">
-            <Link
-              className="inline-flex items-center"
-              href="/dashboard"
-            >
+            <Link className="inline-flex items-center gap-3" href="/dashboard">
               <Image
                 alt="LZ"
-                className="h-auto w-24"
+                className="h-auto w-14 md:w-16"
                 height={78}
                 priority
+                sizes="(max-width: 768px) 56px, 64px"
                 src="/LOGO_1.png"
                 width={120}
               />
+              <span className="text-xs font-semibold uppercase tracking-[0.34em] text-[var(--text-secondary)]">
+                LZ Community
+              </span>
             </Link>
 
             <AppNavigation />
@@ -44,7 +45,9 @@ export default async function ProtectedAppLayout({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1430px] px-4 py-6 md:px-6 xl:px-8">{children}</main>
+      <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
+        <div className="lz-page-enter">{children}</div>
+      </main>
     </div>
   );
 }

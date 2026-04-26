@@ -11,6 +11,33 @@ import {
 } from "../shared/normalizers.js";
 import { calculateRealProfit } from "../procedimentos/procedimentos.service.js";
 
+function normalizeOperationDateLabel(value) {
+  if (value instanceof Date) {
+    const day = String(value.getDate()).padStart(2, "0");
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const year = value.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  const text = parseText(value).trim();
+
+  if (!text) {
+    return "";
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(text)) {
+    return text;
+  }
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${day}/${month}/${year}`;
+  }
+
+  return text;
+}
+
 export function groupActiveFreebets(rows) {
   const pendingConfirmation = [];
   const grouped = new Map();
@@ -18,7 +45,7 @@ export function groupActiveFreebets(rows) {
   for (const row of rows ?? []) {
     const freebet = toPlainObject(row);
     const procedureId = Number(freebet.id);
-    const operationDate = parseText(freebet.data_operacao);
+    const operationDate = normalizeOperationDateLabel(freebet.data_operacao);
     const house = parseText(freebet.casa_destino_freebet, "Desconhecida") || "Desconhecida";
     const freebetValue = parseNumber(freebet.valor_da_freebet);
     const baseProfit = parseNumber(freebet.lucro_final);
@@ -45,6 +72,7 @@ export function groupActiveFreebets(rows) {
 
     if (!grouped.has(house)) {
       grouped.set(house, {
+        data: operationDate,
         casa: house,
         ids: [],
         quantidade: 0,
@@ -54,6 +82,9 @@ export function groupActiveFreebets(rows) {
     }
 
     const current = grouped.get(house);
+    if (!current.data && operationDate) {
+      current.data = operationDate;
+    }
     current.ids.push(procedureId);
     current.quantidade += 1;
     current.valor_total += freebetValue;

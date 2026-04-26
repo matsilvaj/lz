@@ -70,7 +70,7 @@ export async function updateEmailAction(formData: FormData) {
   redirect(
     buildProfileRedirect(
       "message",
-      "Solicitacao enviada. Verifique seu email para confirmar a alteracao.",
+      "Solicitação enviada. Verifique seu email para confirmar a alteração.",
     ),
   );
 }
@@ -115,7 +115,7 @@ export async function deleteAccountAction() {
     const message =
       error instanceof Error
         ? error.message
-        : "Nao foi possivel excluir a conta neste momento.";
+        : "Nao foi possível excluir a conta neste momento.";
 
     redirect(buildProfileRedirect("error", message));
   }

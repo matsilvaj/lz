@@ -4,6 +4,7 @@ import { calculateSurebet, suggestProcedureFromCalculator } from "@/core";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { LzSelect } from "../_components/lz-select";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { formatCurrency } from "../_components/ui";
 
@@ -211,7 +212,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     );
   } catch (error) {
     calculationError =
-      error instanceof Error ? error.message : "Nao foi possivel calcular.";
+      error instanceof Error ? error.message : "Não foi possível calcular.";
   }
 
   const stakeTotal =
@@ -232,20 +233,21 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm font-medium text-neutral-700">Casas</p>
-        <select
-          className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-900 outline-none transition focus:border-neutral-950"
-          onChange={(event) => updateLineCount(Number(event.target.value))}
-          value={lineCount}
-        >
-          <option value={2}>2 casas</option>
-          <option value={3}>3 casas</option>
-          <option value={4}>4 casas</option>
-          <option value={5}>5 casas</option>
-          <option value={6}>6 casas</option>
-        </select>
+    <div className="space-y-5">
+      <div className="lz-panel flex flex-wrap items-center gap-3 rounded-[28px] p-4">
+        <p className="text-sm font-medium text-[var(--text-secondary)]">Casas</p>
+        <LzSelect
+          className="rounded-full px-4 py-2.5 text-sm font-medium"
+          onValueChange={(value) => updateLineCount(Number(value))}
+          options={[
+            { value: "2", label: "2 casas" },
+            { value: "3", label: "3 casas" },
+            { value: "4", label: "4 casas" },
+            { value: "5", label: "5 casas" },
+            { value: "6", label: "6 casas" },
+          ]}
+          value={String(lineCount)}
+        />
       </div>
 
       <div className="overflow-x-auto pb-2">
@@ -279,12 +281,12 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
 
           return (
             <div
-              className="flex h-full min-w-0 flex-col gap-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-4"
+              className="lz-panel-subtle flex h-full min-w-0 flex-col gap-4 overflow-hidden rounded-[28px] p-4"
               key={`${line.house}-${index}`}
             >
               <div className="flex items-center justify-between">
                 <input
-                  className="calculator-house-input min-w-0 flex-1 rounded-lg bg-transparent px-0 text-base font-semibold text-neutral-950 outline-none"
+                  className="calculator-house-input min-w-0 flex-1 rounded-lg bg-transparent px-0 text-base font-semibold text-white outline-none"
                   list={`calculator-houses-${index}`}
                   onChange={(event) => updateLine(index, { house: event.target.value })}
                   type="text"
@@ -300,9 +302,9 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                 </datalist>
 
                 <label className="space-y-2 text-sm">
-                  <span className="font-medium text-neutral-700">Odd</span>
+                  <span className="font-medium text-[var(--text-secondary)]">Odd</span>
                   <input
-                    className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-950 outline-none transition focus:border-neutral-950"
+                    className="lz-input w-full rounded-2xl px-3 py-3 text-white"
                     onChange={(event) => updateLine(index, { odd: event.target.value })}
                     step="0.01"
                     type="number"
@@ -317,9 +319,9 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                 >
                   {line.tipo === "L" ? (
                     <label className="space-y-2 text-sm">
-                      <span className="font-medium text-neutral-700">Responsabilidade</span>
+                      <span className="font-medium text-[var(--text-secondary)]">Responsabilidade</span>
                       <input
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-950 outline-none transition focus:border-neutral-950"
+                        className="lz-input w-full rounded-2xl px-3 py-3 text-white"
                         onChange={(event) =>
                           updateLine(index, { responsabilidade: event.target.value })
                         }
@@ -331,17 +333,17 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                   ) : null}
 
                   <div className="space-y-2 text-sm">
-                    <span className="font-medium text-neutral-700">Stake</span>
+                    <span className="font-medium text-[var(--text-secondary)]">Stake</span>
                     <div className="flex gap-2">
                       <input
-                        className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-950 outline-none transition focus:border-neutral-950"
+                        className="lz-input w-full rounded-2xl px-3 py-3 text-white"
                         onChange={(event) => handleStakeChange(index, event.target.value)}
                         step="0.01"
                         type="number"
                         value={displayedStake}
                       />
                       <button
-                        className="min-w-11 rounded-xl border border-neutral-300 px-3 py-2.5 text-sm font-semibold text-neutral-900 transition hover:border-neutral-950"
+                        className="lz-button-secondary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
                         onClick={() => toggleLineType(index)}
                         type="button"
                       >
@@ -353,10 +355,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               </div>
 
               <div
-                className={`rounded-2xl border p-3 transition ${
+                className={`rounded-[24px] border p-3 transition ${
                   hasCustomConfig
-                    ? "border-neutral-950 bg-neutral-50"
-                    : "border-neutral-200 bg-white"
+                    ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
+                    : "border-white/10 bg-white/4"
                 }`}
               >
                 <button
@@ -365,21 +367,21 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                   type="button"
                 >
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-neutral-700">
-                      Configuracoes
+                    <p className="text-sm font-medium text-[var(--text-secondary)]">
+                      Configurações
                     </p>
                     {hasCustomConfig ? (
-                      <span className="h-2 w-2 rounded-full bg-neutral-950" />
+                      <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
                     ) : null}
                   </div>
                 </button>
 
                 {configExpanded ? (
                   <div className="mt-3 space-y-3">
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm">
-                      <span className="min-w-0 text-neutral-700">Aumento (%)</span>
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                      <span className="min-w-0 text-[var(--text-secondary)]">Aumento (%)</span>
                       <input
-                        className="min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-right text-neutral-950 outline-none transition focus:border-neutral-950"
+                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
                         onChange={(event) =>
                           updateLine(index, { aumento_percentual: event.target.value })
                         }
@@ -389,10 +391,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       />
                     </label>
 
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm">
-                      <span className="min-w-0 text-neutral-700">Comissao (%)</span>
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                      <span className="min-w-0 text-[var(--text-secondary)]">Comissão (%)</span>
                       <input
-                        className="min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-right text-neutral-950 outline-none transition focus:border-neutral-950"
+                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
                         onChange={(event) =>
                           updateLine(index, { comissao_percentual: event.target.value })
                         }
@@ -402,10 +404,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       />
                     </label>
 
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm">
-                      <span className="min-w-0 text-neutral-700">Cashback (%)</span>
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                      <span className="min-w-0 text-[var(--text-secondary)]">Cashback (%)</span>
                       <input
-                        className="min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-right text-neutral-950 outline-none transition focus:border-neutral-950"
+                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
                         onChange={(event) =>
                           updateLine(index, { cashback_percentual: event.target.value })
                         }
@@ -415,7 +417,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       />
                     </label>
 
-                    <label className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-3 text-sm">
+                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
                       <input
                         checked={line.freebet}
                         onChange={(event) =>
@@ -423,29 +425,29 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                         }
                         type="checkbox"
                       />
-                      <span className="text-neutral-700">Freebet</span>
+                      <span className="text-[var(--text-secondary)]">Freebet</span>
                     </label>
                   </div>
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-white p-3">
+              <div className="rounded-[24px] border border-white/10 bg-white/4 p-3">
                 <div className="mb-3">
-                  <p className="text-sm font-medium text-neutral-700">
+                  <p className="text-sm font-medium text-[var(--text-secondary)]">
                     Resultado
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-3 text-sm">
-                    <span className="text-neutral-700">Lucro</span>
+                  <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                    <span className="text-[var(--text-secondary)]">Lucro</span>
                     <span className={`font-semibold ${getProfitClass(lineProfit)}`}>
                       {formatCurrency(lineProfit)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-3 text-sm">
-                    <span className="text-neutral-700">ROI</span>
-                    <span className="font-semibold text-neutral-950">
+                  <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                    <span className="text-[var(--text-secondary)]">ROI</span>
+                    <span className="font-semibold text-white">
                       {formatPercent(lineRoi)}
                     </span>
                   </div>
@@ -453,10 +455,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               </div>
 
               <button
-                className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                className={`w-full rounded-[24px] px-4 py-3 text-sm font-semibold transition ${
                   index === workspaceIndex
-                    ? "bg-neutral-950 text-white hover:bg-neutral-800"
-                    : "border border-neutral-300 text-neutral-700 hover:border-neutral-950 hover:text-neutral-950"
+                    ? "lz-button-primary"
+                    : "lz-button-secondary"
                 }`}
                 onClick={() => fixStake(index, displayedStake)}
                 type="button"
@@ -470,15 +472,15 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       </div>
 
       {calculationError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4">
-          <p className="text-sm font-medium text-red-700">Calculo indisponivel</p>
-          <p className="mt-2 text-sm leading-6 text-red-600">{calculationError}</p>
+        <div className="rounded-[28px] border border-[rgba(255,107,133,0.24)] bg-[rgba(41,13,21,0.94)] px-5 py-4">
+          <p className="text-sm font-medium text-[var(--negative)]">Calculo indisponível</p>
+          <p className="mt-2 text-sm leading-7 text-[#f7a1b5]">{calculationError}</p>
         </div>
       ) : calculation ? (
-        <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-5">
+        <div className="lz-panel space-y-4 rounded-[30px] p-5">
           <div className="flex flex-wrap items-center justify-end gap-3">
             <button
-              className="rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
+              className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
               onClick={resetCalculator}
               type="button"
             >
@@ -509,29 +511,29 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               returnTo="/calculadora"
               submitLabel="Criar procedimento"
               title="Novo procedimento"
-              triggerClassName="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"
+              triggerClassName="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
               triggerLabel="Novo procedimento"
             />
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <p className="text-sm font-medium text-neutral-500">Stake total</p>
-              <p className="mt-2 text-2xl font-semibold text-neutral-950">
+            <div className="lz-panel-subtle rounded-[24px] p-4">
+              <p className="text-sm font-medium text-[var(--text-dim)]">Stake total</p>
+              <p className="mt-2 text-xl font-semibold text-white md:text-2xl">
                 {formatCurrency(stakeTotal)}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <p className="text-sm font-medium text-neutral-500">Lucro</p>
-              <p className={`mt-2 text-2xl font-semibold ${getProfitClass(calculation.lucro_liquido)}`}>
+            <div className="lz-panel-subtle rounded-[24px] p-4">
+              <p className="text-sm font-medium text-[var(--text-dim)]">Lucro</p>
+              <p className={`mt-2 text-xl font-semibold ${getProfitClass(calculation.lucro_liquido)} md:text-2xl`}>
                 {formatCurrency(calculation.lucro_liquido)}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <p className="text-sm font-medium text-neutral-500">ROI</p>
-              <p className="mt-2 text-2xl font-semibold text-neutral-950">
+            <div className="lz-panel-subtle rounded-[24px] p-4">
+              <p className="text-sm font-medium text-[var(--text-dim)]">ROI</p>
+              <p className="mt-2 text-xl font-semibold text-white md:text-2xl">
                 {calculation.lucro_percentual.toFixed(2)}%
               </p>
             </div>
