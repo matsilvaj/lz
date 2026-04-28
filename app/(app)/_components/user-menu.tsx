@@ -37,7 +37,7 @@ export function UserMenu() {
         aria-expanded={open}
         aria-label="Abrir menu"
         aria-haspopup="menu"
-        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >

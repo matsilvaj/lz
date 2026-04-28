@@ -13,9 +13,9 @@ export function AppNavigation() {
   const pathname = usePathname();
 
   return (
-    <nav className="overflow-x-auto">
-      <div className="flex min-w-max flex-wrap items-center justify-center gap-2 xl:min-w-0 xl:justify-center">
-        <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
+    <nav className="lz-scrollbar-hidden overflow-x-auto">
+      <div className="flex min-w-max flex-nowrap items-center gap-2 px-px xl:min-w-0 xl:justify-center">
+        <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
           {comingSoonNavigationItems.map((item) => {
             const active = isActivePath(pathname, item.href);
 
@@ -35,9 +35,9 @@ export function AppNavigation() {
           })}
         </div>
 
-        <div className="hidden h-6 w-px lz-divider xl:block" />
+        <div className="h-6 w-px shrink-0 lz-divider" />
 
-        <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
+        <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
           {appNavigationItems.map((item) => {
             const active = isActivePath(pathname, item.href);
 

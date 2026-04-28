@@ -14,6 +14,7 @@ type ChartItem = {
   label: string;
   value: number;
   detail?: string;
+  fullLabel?: string;
 };
 
 type DashboardMetrics = {
@@ -170,7 +171,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
           title="Evolução mensal"
           description={metrics.referenceMonthLabel}
         >
-          <LineChart data={activeView.monthlyEvolution} />
+          <LineChart data={activeView.monthlyEvolution} formatValue={formatCurrency} />
         </SectionCard>
       ) : null}
 

@@ -106,11 +106,6 @@ textarea:disabled {
   backdrop-filter: blur(20px);
 }
 
-.lz-panel-scroll {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
 .lz-panel::before {
   content: "";
   position: absolute;
@@ -208,6 +203,14 @@ textarea:disabled {
 
 .lz-divider {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+}
+
+.lz-scrollbar-hidden {
+  scrollbar-width: none;
+}
+
+.lz-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes lz-fade-up {

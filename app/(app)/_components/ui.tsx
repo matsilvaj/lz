@@ -18,41 +18,6 @@ export function formatNumber(value: number) {
   return numberFormatter.format(value);
 }
 
-export function PageHeader({
-  title,
-  description,
-  action,
-  eyebrow = "LZ Control Center",
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-  eyebrow?: string;
-}) {
-  return (
-    <div className="lz-panel rounded-[30px] px-5 py-6 md:px-7 md:py-7">
-      <div className="lz-hero-orb absolute -right-20 top-[-3.5rem] h-44 w-44 rounded-full" />
-      <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div className="space-y-3">
-          <span className="inline-flex rounded-full border border-white/10 bg-white/4 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
-            {eyebrow}
-          </span>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight text-white md:text-[2.6rem]">
-              {title}
-            </h1>
-            <p className="max-w-3xl text-sm leading-7 text-[var(--text-muted)] md:text-base">
-              {description}
-            </p>
-          </div>
-        </div>
-
-        {action ? <div className="relative shrink-0">{action}</div> : null}
-      </div>
-    </div>
-  );
-}
-
 export function SectionCard({
   title,
   description,
@@ -73,28 +38,6 @@ export function SectionCard({
 
       {children}
     </section>
-  );
-}
-
-export function StatCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-}) {
-  return (
-    <div className="lz-panel-subtle rounded-[24px] p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-dim)]">
-        {label}
-      </p>
-      <p className="mt-3 text-xl font-semibold tracking-tight text-white md:text-2xl">{value}</p>
-      {helper ? (
-        <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{helper}</p>
-      ) : null}
-    </div>
   );
 }
 

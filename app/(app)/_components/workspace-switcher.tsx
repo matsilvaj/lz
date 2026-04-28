@@ -48,11 +48,11 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
       <button
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8"
+        className="inline-flex h-11 max-w-[180px] items-center justify-between gap-2 rounded-full border border-white/10 bg-white/4 px-4 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8 sm:max-w-[220px]"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        {activeWorkspace.nome}
+        <span className="truncate">{activeWorkspace.nome}</span>
         <svg
           aria-hidden="true"
           className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`}

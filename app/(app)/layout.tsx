@@ -19,7 +19,7 @@ export default async function ProtectedAppLayout({
     <div className="min-h-screen text-[var(--text-primary)]">
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[rgba(6,2,7,0.78)] backdrop-blur-2xl">
         <div className="mx-auto max-w-[1480px] px-4 py-3 md:px-6 xl:px-8">
-          <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[auto_1fr_auto] xl:items-center">
+          <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[auto_1fr_auto] lg:items-center lg:gap-4">
             <Link className="inline-flex items-center gap-3" href="/dashboard">
               <Image
                 alt="LZ Community"
@@ -30,16 +30,20 @@ export default async function ProtectedAppLayout({
                 src="/LOGO_1.png"
                 width={120}
               />
-              <span className="text-xs font-semibold uppercase tracking-[0.34em] text-[var(--text-secondary)]">
+              <span className="hidden text-xs font-semibold uppercase tracking-[0.34em] text-[var(--text-secondary)] sm:inline-flex">
                 LZ Community
               </span>
             </Link>
 
             <AppNavigation />
 
-            <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-              <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} />
-              <UserMenu />
+            <div className="grid grid-cols-[1fr_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
+              <div className="col-start-2 justify-self-center lg:col-auto lg:justify-self-auto">
+                <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} />
+              </div>
+              <div className="col-start-3 justify-self-start lg:col-auto lg:justify-self-auto">
+                <UserMenu />
+              </div>
             </div>
           </div>
         </div>

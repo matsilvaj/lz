@@ -62,6 +62,12 @@ function toNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const calculatorConfigFieldClass =
+  "grid min-w-0 grid-cols-[minmax(0,1fr)_64px] items-center gap-2 rounded-2xl border border-white/10 bg-white/4 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_74px] sm:gap-3 sm:px-3 sm:py-2.5 sm:text-sm";
+
+const calculatorConfigInputClass =
+  "lz-input min-w-0 w-full rounded-xl px-2 py-1 text-right text-xs sm:py-1.5 sm:text-sm";
+
 export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -378,10 +384,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
 
                 {configExpanded ? (
                   <div className="mt-3 space-y-3">
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                    <label className={calculatorConfigFieldClass}>
                       <span className="min-w-0 text-[var(--text-secondary)]">Aumento (%)</span>
                       <input
-                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
+                        className={calculatorConfigInputClass}
                         onChange={(event) =>
                           updateLine(index, { aumento_percentual: event.target.value })
                         }
@@ -391,10 +397,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       />
                     </label>
 
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                    <label className={calculatorConfigFieldClass}>
                       <span className="min-w-0 text-[var(--text-secondary)]">Comissão (%)</span>
                       <input
-                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
+                        className={calculatorConfigInputClass}
                         onChange={(event) =>
                           updateLine(index, { comissao_percentual: event.target.value })
                         }
@@ -404,10 +410,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       />
                     </label>
 
-                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm">
+                    <label className={calculatorConfigFieldClass}>
                       <span className="min-w-0 text-[var(--text-secondary)]">Cashback (%)</span>
                       <input
-                        className="lz-input min-w-0 w-full rounded-xl px-2 py-1.5 text-right"
+                        className={calculatorConfigInputClass}
                         onChange={(event) =>
                           updateLine(index, { cashback_percentual: event.target.value })
                         }

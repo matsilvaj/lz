@@ -291,7 +291,20 @@ export function BookmakersWorkspace({
                         onClick={() => handleDelete(bookmaker.nome)}
                         type="button"
                       >
-                        x
+                        <svg
+                          aria-hidden="true"
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M6 6L18 18M18 6L6 18"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
                       </button>
                     </div>
 
@@ -347,9 +360,6 @@ export function BookmakersWorkspace({
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-white">Observações</h2>
-              <div className="hidden">
-                Use este espaço para registrar limites, saldos, saques ou casas prioritárias.
-              </div>
             </div>
 
             <button
@@ -366,7 +376,7 @@ export function BookmakersWorkspace({
           </div>
 
           <textarea
-            className="lz-textarea mt-4 min-h-[360px] w-full rounded-[26px] px-4 py-3 text-sm"
+            className="lz-textarea mt-4 min-h-[280px] w-full rounded-[26px] px-4 py-3 text-sm md:min-h-[360px]"
             onChange={(event) => setNotes(event.target.value)}
             placeholder="Anote observações importantes sobre limites, saldos, saques ou casas prioritárias."
             value={notes}
