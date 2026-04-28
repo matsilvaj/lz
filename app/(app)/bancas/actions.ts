@@ -3,16 +3,25 @@
 import { revalidatePath } from "next/cache";
 
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import { normalizeLongText, normalizeText, parseLimitedNumber } from "@/lib/security/input";
+import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: string | FormDataEntryValue | null) {
-  return String(value ?? "").trim();
+  return normalizeText(value, 120);
 }
 
 function parseNumber(value: string | number | FormDataEntryValue | null) {
-  const normalized = String(value ?? "").trim().replace(",", ".");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseLimitedNumber(value);
+}
+
+async function canWriteBookmakers(userId: string) {
+  return consumeRateLimit({
+    identity: userId,
+    key: "bookmakers:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
 }
 
 function revalidateBookmakerScreens() {
@@ -31,7 +40,7 @@ export async function saveBookmakerAction({
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
-  if (!normalizedName) {
+  if (!normalizedName || !(await canWriteBookmakers(user.id))) {
     return;
   }
 
@@ -51,7 +60,7 @@ export async function updateBookmakerBalanceAction({
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
-  if (!normalizedName) {
+  if (!normalizedName || !(await canWriteBookmakers(user.id))) {
     return;
   }
 
@@ -69,7 +78,7 @@ export async function deleteBookmakerAction(name: string) {
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
 
-  if (!normalizedName) {
+  if (!normalizedName || !(await canWriteBookmakers(user.id))) {
     return;
   }
 
@@ -81,6 +90,14 @@ export async function updateBookmakersNotesAction(notes: string) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
 
-  await repository.updateBookmakersNotes(user.id, activeWorkspace.id, parseText(notes));
+  if (!(await canWriteBookmakers(user.id))) {
+    return;
+  }
+
+  await repository.updateBookmakersNotes(
+    user.id,
+    activeWorkspace.id,
+    normalizeLongText(notes, 4_000),
+  );
   revalidateBookmakerScreens();
 }

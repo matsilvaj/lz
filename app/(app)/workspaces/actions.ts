@@ -3,16 +3,28 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getSafeAppPath } from "@/lib/auth/redirects";
 import {
   requireWorkspaceContext,
   setActiveWorkspaceCookie,
 } from "@/lib/auth/workspace-context";
 import { requireUser } from "@/lib/auth/session";
+import { normalizeText, parsePositiveInteger } from "@/lib/security/input";
+import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getProceduresRepository } from "@/lib/server";
 import { appendToastParams } from "@/lib/ui/toast";
 
 function parseText(value: string | FormDataEntryValue | null) {
-  return String(value ?? "").trim().replace(/\s+/g, " ");
+  return normalizeText(value, 80);
+}
+
+async function canWriteWorkspaces(userId: string) {
+  return consumeRateLimit({
+    identity: userId,
+    key: "workspaces:write",
+    limit: 30,
+    windowMs: 60_000,
+  });
 }
 
 function revalidateApplication() {
@@ -22,7 +34,7 @@ function revalidateApplication() {
     "/freebets",
     "/calculadora",
     "/bancas",
-    "/histórico",
+    "/historico",
     "/workspaces",
   ];
 
@@ -35,6 +47,10 @@ export async function createWorkspaceAction(formData: FormData) {
   const user = await requireUser();
   const repository = getProceduresRepository();
   const name = parseText(formData.get("name"));
+
+  if (!(await canWriteWorkspaces(user.id))) {
+    redirect(appendToastParams("/workspaces", "error", "Muitas tentativas. Aguarde um pouco."));
+  }
 
   if (!name) {
     redirect("/workspaces");
@@ -54,6 +70,7 @@ export async function switchWorkspaceAction(workspaceId: number, returnTo = "/da
   const user = await requireUser();
   const repository = getProceduresRepository();
   const workspace = await repository.getWorkspaceById(user.id, workspaceId);
+  const safeReturnTo = getSafeAppPath(returnTo, "/dashboard");
 
   if (!workspace) {
     return;
@@ -61,16 +78,20 @@ export async function switchWorkspaceAction(workspaceId: number, returnTo = "/da
 
   await setActiveWorkspaceCookie(workspace.id);
   revalidateApplication();
-  redirect(returnTo);
+  redirect(safeReturnTo);
 }
 
 export async function updateWorkspaceAction(formData: FormData) {
   const user = await requireUser();
   const repository = getProceduresRepository();
-  const workspaceId = Number.parseInt(parseText(formData.get("workspaceId")), 10);
+  const workspaceId = parsePositiveInteger(formData.get("workspaceId"));
   const name = parseText(formData.get("name"));
 
-  if (!Number.isInteger(workspaceId) || workspaceId <= 0 || !name) {
+  if (!(await canWriteWorkspaces(user.id))) {
+    redirect(appendToastParams("/workspaces", "error", "Muitas tentativas. Aguarde um pouco."));
+  }
+
+  if (workspaceId <= 0 || !name) {
     redirect("/workspaces");
   }
 
@@ -83,6 +104,10 @@ export async function updateWorkspaceAction(formData: FormData) {
 export async function deleteWorkspaceAction(workspaceId: number) {
   const { activeWorkspace, user, workspaces } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
+
+  if (!(await canWriteWorkspaces(user.id))) {
+    redirect(appendToastParams("/workspaces", "error", "Muitas tentativas. Aguarde um pouco."));
+  }
 
   if (!Number.isInteger(workspaceId) || workspaceId <= 0 || workspaces.length <= 1) {
     redirect("/workspaces");

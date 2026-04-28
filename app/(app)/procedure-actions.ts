@@ -8,18 +8,24 @@ import {
   FREEBET_RESULT_NO,
   FREEBET_RESULT_YES,
 } from "@/core";
+import { getSafeAppPath } from "@/lib/auth/redirects";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import {
+  normalizeLongText,
+  normalizeText,
+  parseLimitedNumber,
+  parsePositiveInteger,
+} from "@/lib/security/input";
+import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: FormDataEntryValue | null) {
-  return String(value ?? "").trim();
+  return normalizeText(value, 180);
 }
 
 function parseNumber(value: FormDataEntryValue | null) {
-  const normalized = String(value ?? "").trim().replace(",", ".");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseLimitedNumber(value);
 }
 
 function parseBoolean(value: FormDataEntryValue | null) {
@@ -51,8 +57,9 @@ function parseHouses(value: string) {
 function parseOriginIds(formData: FormData) {
   return formData
     .getAll("originIds")
-    .map((value) => Number.parseInt(String(value), 10))
-    .filter((value) => Number.isInteger(value) && value > 0);
+    .map((value) => parsePositiveInteger(value))
+    .filter((value) => value > 0)
+    .slice(0, 20);
 }
 
 function parseProtections(formData: FormData) {
@@ -60,6 +67,7 @@ function parseProtections(formData: FormData) {
     .getAll("protections")
     .map((value) => String(value).trim())
     .filter(Boolean)
+    .slice(0, 20)
     .map((value) => parseNumber(value));
 }
 
@@ -82,8 +90,7 @@ async function normalizeBookmakerSelection(
 }
 
 function getReturnTo(formData: FormData, fallback: string) {
-  const returnTo = parseText(formData.get("returnTo"));
-  return returnTo || fallback;
+  return getSafeAppPath(formData.get("returnTo"), fallback);
 }
 
 function revalidateApplication() {
@@ -105,6 +112,17 @@ export async function saveProcedureAction(formData: FormData) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
   const returnTo = getReturnTo(formData, "/procedimentos");
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    redirect(appendToastParams(returnTo, "error", "Muitas tentativas. Aguarde um pouco."));
+  }
+
   const procedureType = parseText(formData.get("procedureType")) || "SureBet";
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
@@ -123,7 +141,7 @@ export async function saveProcedureAction(formData: FormData) {
     freebetCollectedValue: parseNumber(formData.get("doubleValue")),
     freebetValue: parseNumber(formData.get("freebetValue")),
     freebetCondition: parseText(formData.get("freebetCondition")),
-    note: parseText(formData.get("note")),
+    note: normalizeLongText(formData.get("note"), 2_000),
     freebetHouse,
     hitDouble: parseBoolean(formData.get("hitDouble")),
     equalProfit: parseBoolean(formData.get("equalProfit")),
@@ -145,9 +163,19 @@ export async function updateProcedureAction(formData: FormData) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
   const returnTo = getReturnTo(formData, "/procedimentos");
-  const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
+  const procedureId = parsePositiveInteger(formData.get("procedureId"));
 
-  if (!Number.isInteger(procedureId) || procedureId <= 0) {
+  if (!canWrite) {
+    redirect(appendToastParams(returnTo, "error", "Muitas tentativas. Aguarde um pouco."));
+  }
+
+  if (procedureId <= 0) {
     redirect(returnTo);
   }
 
@@ -173,7 +201,7 @@ export async function updateProcedureAction(formData: FormData) {
     freebetCollectedValue: parseNumber(formData.get("doubleValue")),
     freebetValue: parseNumber(formData.get("freebetValue")),
     freebetCondition: parseText(formData.get("freebetCondition")),
-    note: parseText(formData.get("note")),
+    note: normalizeLongText(formData.get("note"), 2_000),
     freebetHouse,
     hitDouble: parseBoolean(current.bateu_duplo),
     equalProfit: parseBoolean(formData.get("equalProfit")),
@@ -193,6 +221,16 @@ export async function updateProcedureAction(formData: FormData) {
 export async function updateProcedureDoubleStatusAction(procedureId: number, hitDouble: boolean) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    throw new Error("Rate limit exceeded.");
+  }
 
   if (Number.isInteger(procedureId) && procedureId > 0) {
     await repository.updateDoubleStatus(procedureId, hitDouble, user.id, activeWorkspace.id);
@@ -204,6 +242,16 @@ export async function updateProcedureDoubleStatusAction(procedureId: number, hit
 export async function deleteProcedureAction(procedureId: number) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:delete",
+    limit: 30,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    throw new Error("Rate limit exceeded.");
+  }
 
   if (Number.isInteger(procedureId) && procedureId > 0) {
     await repository.deleteProcedure(procedureId, user.id, activeWorkspace.id);
@@ -215,11 +263,21 @@ export async function deleteProcedureAction(procedureId: number) {
 export async function updateFreebetResultAction(formData: FormData) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
-  const procedureId = Number.parseInt(parseText(formData.get("procedureId")), 10);
+  const procedureId = parsePositiveInteger(formData.get("procedureId"));
   const rawResult = parseText(formData.get("result"));
   const result =
     rawResult.toLowerCase() === "nao" ? FREEBET_RESULT_NO : rawResult;
   const returnTo = getReturnTo(formData, "/freebets");
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    redirect(appendToastParams(returnTo, "error", "Muitas tentativas. Aguarde um pouco."));
+  }
 
   if (Number.isInteger(procedureId) && [FREEBET_RESULT_YES, FREEBET_RESULT_NO].includes(result)) {
     await repository.updateFreebetResult(procedureId, result, user.id, activeWorkspace.id);

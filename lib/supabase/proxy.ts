@@ -4,8 +4,13 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseConfig } from "./config";
 
 export async function updateSession(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-middleware-subrequest");
+
   let response = NextResponse.next({
-    request,
+    request: {
+      headers: requestHeaders,
+    },
   });
 
   const { url, publishableKey } = getSupabaseConfig();
@@ -21,7 +26,9 @@ export async function updateSession(request: NextRequest) {
         });
 
         response = NextResponse.next({
-          request,
+          request: {
+            headers: requestHeaders,
+          },
         });
 
         cookiesToSet.forEach(({ name, value, options }) => {

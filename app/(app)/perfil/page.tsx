@@ -126,6 +126,21 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 />
               </div>
 
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white" htmlFor="emailCurrentPassword">
+                  Senha atual
+                </label>
+                <input
+                  className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
+                  id="emailCurrentPassword"
+                  minLength={8}
+                  name="currentPassword"
+                  placeholder="Confirme sua senha"
+                  required
+                  type="password"
+                />
+              </div>
+
               <FormSubmitButton
                 className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
                 pendingLabel="Salvando..."
@@ -139,6 +154,21 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         <SectionCard title="Senha">
           <form action={updatePasswordAction} className="space-y-4">
             <div className="space-y-2">
+              <label className="text-sm font-medium text-white" htmlFor="currentPassword">
+                Senha atual
+              </label>
+              <input
+                className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
+                id="currentPassword"
+                minLength={8}
+                name="currentPassword"
+                placeholder="Sua senha atual"
+                required
+                type="password"
+              />
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium text-white" htmlFor="password">
                 Nova senha
               </label>
@@ -148,6 +178,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 minLength={8}
                 name="password"
                 placeholder="Mínimo de 8 caracteres"
+                required
                 type="password"
               />
             </div>
@@ -162,6 +193,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 minLength={8}
                 name="confirmPassword"
                 placeholder="Repita a nova senha"
+                required
                 type="password"
               />
             </div>

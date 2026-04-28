@@ -22,6 +22,7 @@ export async function setActiveWorkspaceCookie(workspaceId: number) {
     maxAge: 60 * 60 * 24 * 365,
     path: "/",
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
   });
 }
 
