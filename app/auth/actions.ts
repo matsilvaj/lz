@@ -12,6 +12,25 @@ function buildAuthRedirect(path: string, key: "error" | "message", message: stri
   return `${path}?${key}=${encodeURIComponent(message)}`;
 }
 
+function getSignupErrorMessage(error: { message?: string }) {
+  const message = String(error.message ?? "").trim();
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("smtp") ||
+    normalizedMessage.includes("send") ||
+    normalizedMessage.includes("email")
+  ) {
+    return "Nao foi possivel enviar o email de confirmacao. Verifique as configuracoes de SMTP no Supabase.";
+  }
+
+  if (process.env.NODE_ENV !== "production" && message) {
+    return `Supabase: ${message}`;
+  }
+
+  return "Nao foi possivel criar a conta.";
+}
+
 function normalizeName(value: FormDataEntryValue | null) {
   return normalizeText(value, 80);
 }
@@ -74,7 +93,7 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    redirect(buildAuthRedirect("/login", "error", "Email ou senha inválidos."));
+    redirect(buildAuthRedirect("/login", "error", "Email ou senha invalidos."));
   }
 
   revalidatePath("/", "layout");
@@ -115,7 +134,12 @@ export async function signup(formData: FormData) {
   });
 
   if (error) {
-    redirect(buildAuthRedirect("/cadastro", "error", "Nao foi possivel criar a conta."));
+    console.error("Supabase signup error", {
+      message: error.message,
+      name: error.name,
+      status: error.status,
+    });
+    redirect(buildAuthRedirect("/cadastro", "error", getSignupErrorMessage(error)));
   }
 
   revalidatePath("/", "layout");

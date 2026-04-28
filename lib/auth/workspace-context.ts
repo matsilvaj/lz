@@ -7,7 +7,7 @@ import { getProceduresRepository } from "@/lib/server";
 import { requireUser } from "./session";
 
 export const ACTIVE_WORKSPACE_COOKIE = "lz-active-workspace";
-export const DEFAULT_WORKSPACE_NAME = "Meu";
+export const DEFAULT_WORKSPACE_NAME = "Meu Workspace";
 
 type UserWorkspace = {
   id: number;

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { useToast } from "@/app/_components/toast-provider";
 
+import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { deleteProcedureAction } from "../procedure-actions";
 
@@ -55,6 +56,7 @@ export function ProcedureRowActions({
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [isPending, startTransition] = useTransition();
   const hasObservation = procedure.observacao.trim().length > 0;
@@ -112,6 +114,7 @@ export function ProcedureRowActions({
         setMenuOpen(false);
         setEditOpen(false);
         setNoteOpen(false);
+        setDeleteOpen(false);
       }
     }
 
@@ -125,12 +128,8 @@ export function ProcedureRowActions({
   }, []);
 
   function handleDelete() {
-    const confirmed = window.confirm("Deseja excluir este procedimento?");
-    if (!confirmed) {
-      return;
-    }
-
     setMenuOpen(false);
+    setDeleteOpen(false);
     startTransition(async () => {
       try {
         await deleteProcedureAction(procedure.id);
@@ -141,7 +140,7 @@ export function ProcedureRowActions({
         router.refresh();
       } catch {
         showToast({
-          title: "Nao foi possível excluir o procedimento.",
+          title: "Não foi possível excluir o procedimento.",
           tone: "error",
         });
       }
@@ -234,7 +233,10 @@ export function ProcedureRowActions({
               <button
                 className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ff9bb0] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isPending}
-                onClick={handleDelete}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDeleteOpen(true);
+                }}
                 type="button"
               >
                 Excluir
@@ -264,6 +266,32 @@ export function ProcedureRowActions({
           </div>
         </div>
       ) : null}
+
+      <ConfirmationDialog
+        description="O procedimento será removido do histórico e dos indicadores vinculados a ele."
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        title="Excluir procedimento?"
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+            disabled={isPending}
+            onClick={() => setDeleteOpen(false)}
+            type="button"
+          >
+            Cancelar
+          </button>
+          <button
+            className="rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isPending}
+            onClick={handleDelete}
+            type="button"
+          >
+            {isPending ? "Excluindo..." : "Confirmar exclusão"}
+          </button>
+        </div>
+      </ConfirmationDialog>
     </>
   );
 }

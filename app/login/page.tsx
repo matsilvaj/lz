@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       successMessage={successMessage}
       footer={
         <p>
-          Ainda nao tem conta?{" "}
+          Ainda não tem conta?{" "}
           <Link
             className="text-white underline-offset-4 hover:underline"
             href="/cadastro"

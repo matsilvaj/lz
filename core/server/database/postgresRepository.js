@@ -261,38 +261,39 @@ export class ProceduresPostgresRepository {
       return null;
     }
 
-    const existing = await executor.query(
-      `
-        SELECT id, nome, created_at
-        FROM bases_usuario
-        WHERE user_id = $1
-          AND lower(nome) = lower($2)
-        LIMIT 1
-      `,
-      [normalizedUserId, normalizedName],
-    );
-
-    if (existing.rows[0]) {
-      return {
-        id: parseNumber(existing.rows[0].id),
-        nome: parseText(existing.rows[0].nome),
-        created_at: existing.rows[0].created_at,
-      };
-    }
-
-    const { rows } = await executor.query(
+    const inserted = await executor.query(
       `
         INSERT INTO bases_usuario (user_id, nome)
         VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
         RETURNING id, nome, created_at
       `,
       [normalizedUserId, normalizedName],
     );
 
+    const existing =
+      inserted.rows[0] ??
+      (
+        await executor.query(
+          `
+            SELECT id, nome, created_at
+            FROM bases_usuario
+            WHERE user_id = $1
+              AND lower(nome) = lower($2)
+            LIMIT 1
+          `,
+          [normalizedUserId, normalizedName],
+        )
+      ).rows[0];
+
+    if (!existing) {
+      return null;
+    }
+
     return {
-      id: parseNumber(rows[0]?.id),
-      nome: parseText(rows[0]?.nome),
-      created_at: rows[0]?.created_at,
+      id: parseNumber(existing.id),
+      nome: parseText(existing.nome),
+      created_at: existing.created_at,
     };
   }
 

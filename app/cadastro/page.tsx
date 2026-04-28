@@ -34,7 +34,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
       successMessage={successMessage}
       footer={
         <p>
-          Ja tem conta?{" "}
+          Já tem conta?{" "}
           <Link className="text-white underline-offset-4 hover:underline" href="/login">
             Entrar
           </Link>

@@ -266,7 +266,7 @@ export async function updateFreebetResultAction(formData: FormData) {
   const procedureId = parsePositiveInteger(formData.get("procedureId"));
   const rawResult = parseText(formData.get("result"));
   const result =
-    rawResult.toLowerCase() === "nao" ? FREEBET_RESULT_NO : rawResult;
+    rawResult.toLowerCase() === "não" ? FREEBET_RESULT_NO : rawResult;
   const returnTo = getReturnTo(formData, "/freebets");
   const canWrite = await consumeRateLimit({
     identity: user.id,

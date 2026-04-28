@@ -405,7 +405,7 @@ export function ProceduresWorkspace({
             }
             description={
               procedures.length === 0
-                ? "Assim que voce registrar a primeira operação, esta area passa a mostrar a linha do tempo completa."
+                ? "Assim que você registrar a primeira operação, esta área passa a mostrar a linha do tempo completa."
                 : "Ajuste a busca ou limpe os filtros para voltar a visualizar os procedimentos."
             }
             eyebrow={procedures.length === 0 ? "Primeiros passos" : "Sem resultados"}

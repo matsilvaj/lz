@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "LZ Community",
-  description: "Base web organizada para evoluir funcionalidades com seguranca.",
+  description: "Base web organizada para evoluir funcionalidades com segurança.",
 };
 
 export default function RootLayout({

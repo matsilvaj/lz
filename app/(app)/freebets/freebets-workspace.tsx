@@ -205,7 +205,7 @@ export function FreebetsWorkspace({
                           <th className="px-3 py-3 text-center font-medium">Casa</th>
                           <th className="px-3 py-3 text-center font-medium">Valor FB</th>
                           <th className="px-3 py-3 text-center font-medium">Lucro Base</th>
-                          <th className="px-3 py-3 text-center font-medium">AÃ§Ã£o</th>
+                          <th className="px-3 py-3 text-center font-medium">Ação</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -250,7 +250,7 @@ export function FreebetsWorkspace({
               )
             ) : pendingConfirmation.length === 0 ? (
               <EmptyState
-                description="Quando alguma freebet depender do resultado da aposta, ela aparecera aqui com a aÃ§Ã£o certa."
+                description="Quando alguma freebet depender do resultado da aposta, ela aparecera aqui com a opção de confirmar o resultado assim que estiver disponível."
                 eyebrow="Sem pendências"
                 title="Nenhuma freebet aguardando resultado"
               />
@@ -305,7 +305,7 @@ export function FreebetsWorkspace({
                         </form>
                         <form action={updateFreebetResultAction}>
                           <input name="procedureId" type="hidden" value={item.id} />
-                          <input name="result" type="hidden" value="Nao" />
+                          <input name="result" type="hidden" value="Não" />
                           <input name="returnTo" type="hidden" value="/freebets" />
                           <FormSubmitButton
                             className="lz-button-secondary rounded-full px-4 py-3 text-sm font-semibold"
@@ -365,13 +365,13 @@ export function FreebetsWorkspace({
                               </form>
                               <form action={updateFreebetResultAction}>
                                 <input name="procedureId" type="hidden" value={item.id} />
-                                <input name="result" type="hidden" value="Nao" />
+                                <input name="result" type="hidden" value="Não" />
                                 <input name="returnTo" type="hidden" value="/freebets" />
                                 <FormSubmitButton
                                   className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
                                   pendingLabel="Salvando..."
                                 >
-                                  Nao
+                                  Não
                                 </FormSubmitButton>
                               </form>
                             </div>

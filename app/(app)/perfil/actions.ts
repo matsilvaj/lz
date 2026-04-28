@@ -145,7 +145,7 @@ export async function updatePasswordAction(formData: FormData) {
   }
 
   if (password !== confirmPassword) {
-    redirect(buildProfileRedirect("error", "As senhas nao conferem."));
+    redirect(buildProfileRedirect("error", "As senhas não conferem."));
   }
 
   await verifyCurrentPassword(supabase, user.email, formData);
@@ -189,7 +189,7 @@ export async function deleteAccountAction(formData: FormData) {
     deletionError =
       error instanceof Error
         ? error.message
-        : "Nao foi possível excluir a conta neste momento.";
+        : "Não foi possível excluir a conta neste momento.";
 
   }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import {
   deleteWorkspaceAction,
   switchWorkspaceAction,
@@ -24,6 +25,7 @@ export function WorkspaceList({
 }: WorkspaceListProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [deleteWorkspaceId, setDeleteWorkspaceId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState("");
   const canRemoveWorkspace = workspaces.length > 1;
 
@@ -40,6 +42,7 @@ export function WorkspaceList({
       if (event.key === "Escape") {
         setOpenMenuId(null);
         setEditingId(null);
+        setDeleteWorkspaceId(null);
       }
     }
 
@@ -136,19 +139,47 @@ export function WorkspaceList({
                     </button>
 
                     {canRemoveWorkspace ? (
-                      <form action={deleteWorkspaceAction.bind(null, workspace.id)}>
-                        <button
-                          className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ffb6c4]"
-                          type="submit"
-                        >
-                          Remover
-                        </button>
-                      </form>
+                      <button
+                        className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ffb6c4]"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          setDeleteWorkspaceId(workspace.id);
+                        }}
+                        type="button"
+                      >
+                        Remover
+                      </button>
                     ) : null}
                   </div>
                 ) : null}
               </div>
             </div>
+
+            <ConfirmationDialog
+              description="Os dados vinculados a este workspace deixam de aparecer na sua operacao atual."
+              onOpenChange={(open) => setDeleteWorkspaceId(open ? workspace.id : null)}
+              open={deleteWorkspaceId === workspace.id}
+              title="Remover workspace?"
+            >
+              <form
+                action={deleteWorkspaceAction.bind(null, workspace.id)}
+                className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
+              >
+                <button
+                  className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+                  onClick={() => setDeleteWorkspaceId(null)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)]"
+                  type="submit"
+                >
+                  Confirmar remocao
+                </button>
+              </form>
+            </ConfirmationDialog>
 
             {isEditing ? (
               <form action={updateWorkspaceAction} className="mt-4 space-y-3">

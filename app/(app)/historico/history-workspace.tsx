@@ -38,7 +38,7 @@ function getProfitClass(value: number) {
 }
 
 function formatOperationCount(count: number) {
-  return `${count} ${count === 1 ? "operacao" : "operacoes"}`;
+  return `${count} ${count === 1 ? "operação" : "operações"}`;
 }
 
 export function HistoryWorkspace({
@@ -105,12 +105,12 @@ export function HistoryWorkspace({
                 className="lz-button-secondary inline-flex rounded-full px-4 py-3 text-sm font-semibold"
                 href="/procedimentos"
               >
-                Registrar operacao
+                Registrar operação
               </Link>
             }
-            description="Quando houver operacoes neste periodo, o historico passa a organizar tudo de forma cronologica."
-            eyebrow="Sem dados no periodo"
-            title="Nenhuma operacao encontrada"
+            description="Quando houver operações neste período, o histórico passa a organizar tudo de forma cronológica."
+            eyebrow="Sem dados no período"
+            title="Nenhuma operação encontrada"
           />
         ) : (
           <>

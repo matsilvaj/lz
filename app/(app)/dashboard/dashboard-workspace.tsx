@@ -113,7 +113,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
         <DashboardMetricCard
           label="Média por procedimento"
           value={formatCurrency(metrics.averagePerProcedure)}
-          helper={`${formatNumber(metrics.monthlyProcedureCount)} procedimentos no mes`}
+          helper={`${formatNumber(metrics.monthlyProcedureCount)} procedimentos no mês`}
         />
         <DashboardMetricCard
           label="Procedimentos hoje"
@@ -194,7 +194,6 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
         >
           <VerticalBarChart
             data={activeView.dailyVolume}
-            formatValue={(value) => `${formatNumber(value)} procedimentos`}
           />
         </SectionCard>
       ) : null}
@@ -235,11 +234,6 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                 activeFreebetView === "collected"
                   ? data.freebets.collectedDaily
                   : data.freebets.convertedProfitDaily
-              }
-              formatValue={
-                activeFreebetView === "collected"
-                  ? (value) => `${formatNumber(value)} freebets`
-                  : formatCurrency
               }
             />
           </div>

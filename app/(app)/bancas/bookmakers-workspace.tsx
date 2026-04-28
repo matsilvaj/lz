@@ -378,7 +378,7 @@ export function BookmakersWorkspace({
           <textarea
             className="lz-textarea mt-4 min-h-[280px] w-full rounded-[26px] px-4 py-3 text-sm md:min-h-[360px]"
             onChange={(event) => setNotes(event.target.value)}
-            placeholder="Anote observações importantes sobre limites, saldos, saques ou casas prioritárias."
+            placeholder="Anote observações importantes."
             value={notes}
           />
         </aside>
