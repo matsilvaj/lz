@@ -7,6 +7,7 @@ import {
 } from "@/core";
 import {
   type Dispatch,
+  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   useDeferredValue,
   useEffect,
@@ -19,7 +20,11 @@ import { DatePickerField } from "../_components/date-picker-field";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
 import { ProcedureDoubleToggle } from "./procedure-double-toggle";
-import { ProcedureRowActions } from "./procedure-row-actions";
+import {
+  ProcedureRowActions,
+  requestProcedureEdit,
+  requestProcedureMenu,
+} from "./procedure-row-actions";
 
 type ProcedureRow = {
   id: number;
@@ -73,6 +78,18 @@ function getProfitClass(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function isInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      "a, button, input, select, textarea, [role='button'], [role='switch'], [data-procedure-row-action]",
+    ),
+  );
 }
 
 export function ProceduresWorkspace({
@@ -224,6 +241,25 @@ export function ProceduresWorkspace({
       ...current,
       [procedureId]: hitDouble,
     }));
+  }
+
+  function handleProcedureClick(
+    event: ReactMouseEvent<HTMLElement>,
+    procedureId: number,
+  ) {
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+
+    requestProcedureEdit(procedureId);
+  }
+
+  function handleProcedureContextMenu(
+    event: ReactMouseEvent<HTMLElement>,
+    procedureId: number,
+  ) {
+    event.preventDefault();
+    requestProcedureMenu(procedureId, event.clientX, event.clientY);
   }
 
   return (
@@ -455,8 +491,12 @@ export function ProceduresWorkspace({
             <div className="grid gap-4 md:hidden">
               {filteredProcedures.map((procedure) => (
                 <article
-                  className="rounded-[26px] border border-white/10 bg-white/5 p-4"
+                  className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
                   key={procedure.id}
+                  onClick={(event) => handleProcedureClick(event, procedure.id)}
+                  onContextMenu={(event) =>
+                    handleProcedureContextMenu(event, procedure.id)
+                  }
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -545,8 +585,12 @@ export function ProceduresWorkspace({
                 <tbody>
                   {filteredProcedures.map((procedure) => (
                     <tr
-                      className="border-b border-white/8 align-middle transition hover:bg-white/4"
+                      className="cursor-pointer border-b border-white/8 align-middle transition hover:bg-white/4"
                       key={procedure.id}
+                      onClick={(event) => handleProcedureClick(event, procedure.id)}
+                      onContextMenu={(event) =>
+                        handleProcedureContextMenu(event, procedure.id)
+                      }
                     >
                       <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
                         {procedure.data_operacao}

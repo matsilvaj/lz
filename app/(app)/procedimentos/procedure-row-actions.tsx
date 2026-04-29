@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { useToast } from "@/app/_components/toast-provider";
@@ -9,6 +9,9 @@ import { useToast } from "@/app/_components/toast-provider";
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { deleteProcedureAction } from "../procedure-actions";
+
+const PROCEDURE_EDIT_EVENT = "lz:procedure-edit";
+const PROCEDURE_MENU_EVENT = "lz:procedure-menu";
 
 type ProcedureRowActionsProps = {
   bookmakers: string[];
@@ -28,6 +31,38 @@ type ProcedureRowActionsProps = {
   };
 };
 
+type ProcedureMenuEventDetail = {
+  left: number;
+  procedureId: number;
+  top: number;
+};
+
+export function requestProcedureEdit(procedureId: number) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(PROCEDURE_EDIT_EVENT, { detail: { procedureId } }),
+  );
+}
+
+export function requestProcedureMenu(
+  procedureId: number,
+  left: number,
+  top: number,
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(PROCEDURE_MENU_EVENT, {
+      detail: { procedureId, left, top },
+    }),
+  );
+}
+
 function toDateInputValue(value: string) {
   const [day, month, year] = String(value).split("/");
   if (!day || !month || !year) {
@@ -45,6 +80,27 @@ function toHousesInputValue(value: string) {
     .join(", ");
 }
 
+function getMenuPosition(left: number, top: number, hasObservation: boolean) {
+  if (typeof window === "undefined") {
+    return { left, top };
+  }
+
+  const menuWidth = 176;
+  const menuHeight = hasObservation ? 132 : 88;
+  const padding = 12;
+
+  return {
+    left: Math.min(
+      Math.max(left, padding),
+      window.innerWidth - menuWidth - padding,
+    ),
+    top: Math.min(
+      Math.max(top, padding),
+      window.innerHeight - menuHeight - padding,
+    ),
+  };
+}
+
 export function ProcedureRowActions({
   bookmakers,
   procedure,
@@ -54,6 +110,7 @@ export function ProcedureRowActions({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<"button" | "pointer">("button");
   const [editOpen, setEditOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -61,31 +118,48 @@ export function ProcedureRowActions({
   const [isPending, startTransition] = useTransition();
   const hasObservation = procedure.observacao.trim().length > 0;
 
+  const getButtonMenuPosition = useCallback(() => {
+    if (!buttonRef.current || typeof window === "undefined") {
+      return { top: 0, left: 0 };
+    }
+
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = hasObservation ? 132 : 88;
+    const spacing = 8;
+    const openUp = rect.bottom + menuHeight > window.innerHeight - 16;
+
+    return getMenuPosition(
+      rect.right - menuWidth,
+      openUp ? rect.top - menuHeight - spacing : rect.bottom + spacing,
+      hasObservation,
+    );
+  }, [hasObservation]);
+
+  function openMenuFromButton() {
+    if (menuOpen && menuAnchor === "button") {
+      setMenuOpen(false);
+      return;
+    }
+
+    setMenuAnchor("button");
+    setMenuPosition(getButtonMenuPosition());
+    setMenuOpen(true);
+  }
+
+  const openMenuAt = useCallback((left: number, top: number) => {
+    setMenuAnchor("pointer");
+    setMenuPosition(getMenuPosition(left, top, hasObservation));
+    setMenuOpen(true);
+  }, [hasObservation]);
+
   useEffect(() => {
-    if (!menuOpen) {
+    if (!menuOpen || menuAnchor !== "button") {
       return;
     }
 
     function updateMenuPosition() {
-      if (!buttonRef.current || typeof window === "undefined") {
-        return;
-      }
-
-      const rect = buttonRef.current.getBoundingClientRect();
-      const menuWidth = 176;
-      const menuHeight = hasObservation ? 132 : 88;
-      const spacing = 8;
-      const padding = 12;
-      const openUp = rect.bottom + menuHeight > window.innerHeight - 16;
-      const left = Math.min(
-        Math.max(rect.right - menuWidth, padding),
-        window.innerWidth - menuWidth - padding,
-      );
-      const top = openUp
-        ? Math.max(rect.top - menuHeight - spacing, padding)
-        : rect.bottom + spacing;
-
-      setMenuPosition({ top, left });
+      setMenuPosition(getButtonMenuPosition());
     }
 
     updateMenuPosition();
@@ -96,7 +170,38 @@ export function ProcedureRowActions({
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [hasObservation, menuOpen]);
+  }, [getButtonMenuPosition, menuAnchor, menuOpen]);
+
+  useEffect(() => {
+    function handleEditRequest(event: Event) {
+      const detail = (event as CustomEvent<{ procedureId: number }>).detail;
+
+      if (detail?.procedureId !== procedure.id) {
+        return;
+      }
+
+      setMenuOpen(false);
+      setEditOpen(true);
+    }
+
+    function handleMenuRequest(event: Event) {
+      const detail = (event as CustomEvent<ProcedureMenuEventDetail>).detail;
+
+      if (detail?.procedureId !== procedure.id) {
+        return;
+      }
+
+      openMenuAt(detail.left, detail.top);
+    }
+
+    window.addEventListener(PROCEDURE_EDIT_EVENT, handleEditRequest);
+    window.addEventListener(PROCEDURE_MENU_EVENT, handleMenuRequest);
+
+    return () => {
+      window.removeEventListener(PROCEDURE_EDIT_EVENT, handleEditRequest);
+      window.removeEventListener(PROCEDURE_MENU_EVENT, handleMenuRequest);
+    };
+  }, [openMenuAt, procedure.id]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -181,8 +286,9 @@ export function ProcedureRowActions({
       />
 
       <button
+        data-procedure-row-action
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/8 hover:text-white"
-        onClick={() => setMenuOpen((current) => !current)}
+        onClick={openMenuFromButton}
         ref={buttonRef}
         type="button"
       >
@@ -202,6 +308,7 @@ export function ProcedureRowActions({
       {menuOpen && typeof document !== "undefined"
         ? createPortal(
             <div
+              data-procedure-row-action
               className="fixed z-40 min-w-48 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
               ref={menuRef}
               style={{ left: menuPosition.left, top: menuPosition.top }}

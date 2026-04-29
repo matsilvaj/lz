@@ -8,7 +8,7 @@ const features = [
   },
   {
     title: "Dashboard",
-    description: "Veja lucro, medias, volume diário e evolução mensal sem abrir planilhas.",
+    description: "Veja lucro, médias, volume diário e evolução mensal sem abrir planilhas.",
   },
   {
     title: "Procedimentos",
