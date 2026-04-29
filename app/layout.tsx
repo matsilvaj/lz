@@ -4,6 +4,8 @@ import "./globals.css";
 
 import { ToastProvider } from "@/app/_components/toast-provider";
 
+import { SpeedInsights } from "@vercel/speed-insights/next";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -33,6 +35,8 @@ export default function RootLayout({
         <ToastProvider>
           <div className="lz-shell flex min-h-full flex-col">{children}</div>
         </ToastProvider>
+        
+        <SpeedInsights />
       </body>
     </html>
   );

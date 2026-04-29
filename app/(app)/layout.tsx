@@ -8,8 +8,6 @@ import { AppNavigation } from "./_components/app-navigation";
 import { WorkspaceSwitcher } from "./_components/workspace-switcher";
 import { UserMenu } from "./_components/user-menu";
 
-import { SpeedInsights } from "@vercel/speed-insights/next";
-
 export default async function ProtectedAppLayout({
   children,
 }: Readonly<{
@@ -52,10 +50,7 @@ export default async function ProtectedAppLayout({
       </header>
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
-        <div className="lz-page-enter">
-          {children}
-          <SpeedInsights /> {/* <-- VEJA QUE EU ADICIONEI ELE AQUI */}
-        </div>
+        <div className="lz-page-enter">{children}</div>
       </main>
     </div>
   );
