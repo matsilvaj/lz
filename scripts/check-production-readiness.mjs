@@ -105,6 +105,16 @@ function checkDatabaseUrl() {
       "DATABASE_URL appears to use the postgres/admin Supabase role. For launch, create a lower-privilege runtime role and keep DATABASE_MIGRATION_URL for migrations only.",
     );
   }
+
+  if (isSupabaseDatabaseHost(url.hostname) && url.port !== "6543") {
+    errors.push(
+      "DATABASE_URL must use the Supabase Connection Pooler transaction URL on port 6543 for serverless runtime. Keep the direct 5432 URL only in DATABASE_MIGRATION_URL.",
+    );
+  }
+}
+
+function isSupabaseDatabaseHost(hostname) {
+  return /\.supabase\.(co|com)$/iu.test(hostname) || hostname.includes("pooler.supabase.com");
 }
 
 function checkUpstash() {

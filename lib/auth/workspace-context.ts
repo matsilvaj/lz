@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { getProceduresRepository } from "@/lib/server";
 
@@ -26,7 +27,7 @@ export async function setActiveWorkspaceCookie(workspaceId: number) {
   });
 }
 
-export async function requireWorkspaceContext() {
+export const requireWorkspaceContext = cache(async function requireWorkspaceContext() {
   const user = await requireUser();
   const repository = getProceduresRepository();
   let workspaces = (await repository.listWorkspaces(user.id)) as UserWorkspace[];
@@ -52,4 +53,4 @@ export async function requireWorkspaceContext() {
     workspaces,
     user,
   };
-}
+});

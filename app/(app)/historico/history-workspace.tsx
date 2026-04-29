@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useTransition } from "react";
 
 import { LzSelect } from "../_components/lz-select";
 import {
@@ -31,6 +32,7 @@ type HistoryOperation = {
 type HistoryWorkspaceProps = {
   months: HistoryMonth[];
   operations: HistoryOperation[];
+  selectedMonth: string;
 };
 
 function getProfitClass(value: number) {
@@ -44,23 +46,34 @@ function formatOperationCount(count: number) {
 export function HistoryWorkspace({
   months,
   operations,
+  selectedMonth,
 }: HistoryWorkspaceProps) {
-  const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? "");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const selectedMonthData = useMemo(
     () => months.find((month) => month.value === selectedMonth) ?? null,
     [months, selectedMonth],
   );
 
-  const filteredOperations = useMemo(() => {
-    if (!selectedMonth) {
-      return operations;
+  function updateSelectedMonth(nextMonth: string) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextMonth) {
+      params.set("month", nextMonth);
+    } else {
+      params.delete("month");
     }
 
-    return operations.filter(
-      (operation) => String(operation.mes_referencia ?? "").trim() === selectedMonth,
-    );
-  }, [operations, selectedMonth]);
+    const query = params.toString();
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    });
+  }
 
   return (
     <div className="space-y-5">
@@ -86,19 +99,22 @@ export function HistoryWorkspace({
             <span className="font-medium text-white">Mês de referência</span>
             <LzSelect
               className="w-full rounded-2xl px-4 py-3 text-sm"
-              onValueChange={setSelectedMonth}
+              onValueChange={updateSelectedMonth}
               options={months.map((month) => ({
                 value: month.value,
                 label: month.label,
               }))}
               value={selectedMonth}
             />
+            {isPending ? (
+              <span className="text-xs text-[var(--text-dim)]">Atualizando...</span>
+            ) : null}
           </label>
         </div>
       </div>
 
       <div className="lz-panel rounded-[30px] p-4 md:p-6">
-        {filteredOperations.length === 0 ? (
+        {operations.length === 0 ? (
           <EmptyState
             action={
               <Link
@@ -115,7 +131,7 @@ export function HistoryWorkspace({
         ) : (
           <>
             <div className="grid gap-4 md:hidden">
-              {filteredOperations.map((operation) => (
+              {operations.map((operation) => (
                 <article
                   className="rounded-[26px] border border-white/10 bg-white/5 p-4"
                   key={operation.id}
@@ -186,7 +202,7 @@ export function HistoryWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOperations.map((operation) => (
+                  {operations.map((operation) => (
                     <tr
                       className="border-b border-white/8 transition hover:bg-white/4"
                       key={operation.id}

@@ -5,14 +5,15 @@ import {
   PROCEDURE_TYPES,
   resolveProcedureDoubleValue,
 } from "@/core";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  type Dispatch,
+  useCallback,
   type MouseEvent as ReactMouseEvent,
-  type SetStateAction,
   useDeferredValue,
   useEffect,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -44,6 +45,19 @@ type ProcedureRow = {
 
 type ProceduresWorkspaceProps = {
   bookmakers: string[];
+  filters: {
+    searchText: string;
+    types: string[];
+    houses: string[];
+    dateFrom: string;
+    dateTo: string;
+  };
+  pagination: {
+    page: number;
+    pageSize: number;
+    pageCount: number;
+    totalItems: number;
+  };
   procedures: ProcedureRow[];
 };
 
@@ -51,25 +65,6 @@ function supportsDouble(procedureType: string) {
   return ["Tentativa de Duplo", "Coletar Freebet", "Converter Freebet"].includes(
     procedureType,
   );
-}
-
-function matchesSelectedHouse(houses: string, selectedHouses: string[]) {
-  if (selectedHouses.length === 0) {
-    return true;
-  }
-
-  const normalizedHouses = String(houses ?? "").toLowerCase();
-  return selectedHouses.some((house) => normalizedHouses.includes(house.toLowerCase()));
-}
-
-function parseOperationDate(value: string) {
-  const [day, month, year] = String(value ?? "").split("/").map(Number);
-
-  if (!day || !month || !year) {
-    return 0;
-  }
-
-  return year * 10000 + month * 100 + day;
 }
 
 function getProfitClass(value: number) {
@@ -92,21 +87,45 @@ function isInteractiveTarget(target: EventTarget | null) {
   );
 }
 
+function setRepeatedParam(params: URLSearchParams, key: string, values: string[]) {
+  params.delete(key);
+
+  for (const value of values) {
+    const normalized = value.trim();
+
+    if (normalized) {
+      params.append(key, normalized);
+    }
+  }
+}
+
+function setSingleParam(params: URLSearchParams, key: string, value: string) {
+  const normalized = value.trim();
+
+  if (normalized) {
+    params.set(key, normalized);
+  } else {
+    params.delete(key);
+  }
+}
+
 export function ProceduresWorkspace({
   bookmakers,
+  filters,
+  pagination,
   procedures,
 }: ProceduresWorkspaceProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
   const [optimisticDoubleById, setOptimisticDoubleById] = useState<
     Record<number, boolean>
   >({});
-  const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [selectedHouses, setSelectedHouses] = useState<string[]>([]);
   const [housesOpen, setHousesOpen] = useState(false);
   const [houseSearch, setHouseSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const searchDebounceRef = useRef<number | null>(null);
   const housesTriggerRef = useRef<HTMLButtonElement>(null);
   const housesPopoverRef = useRef<HTMLDivElement>(null);
   const [housesPopoverPosition, setHousesPopoverPosition] = useState({
@@ -114,10 +133,12 @@ export function ProceduresWorkspace({
     top: 16,
     width: 320,
   });
-  const deferredSearch = useDeferredValue(search);
   const deferredHouseSearch = useDeferredValue(houseSearch);
-  const normalizedSearch = deferredSearch.trim().toLowerCase();
   const normalizedHouseSearch = deferredHouseSearch.trim().toLowerCase();
+  const selectedTypes = filters.types;
+  const selectedHouses = filters.houses;
+  const dateFrom = filters.dateFrom;
+  const dateTo = filters.dateTo;
   const visibleBookmakers = bookmakers.filter((bookmaker) =>
     bookmaker.toLowerCase().includes(normalizedHouseSearch),
   );
@@ -142,6 +163,36 @@ export function ProceduresWorkspace({
       ),
     };
   });
+
+  const replaceWithParams = useCallback(
+    (params: URLSearchParams) => {
+      const query = params.toString();
+
+      startTransition(() => {
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+          scroll: false,
+        });
+      });
+    },
+    [pathname, router],
+  );
+
+  const updateParams = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(searchParams.toString());
+      mutate(params);
+      replaceWithParams(params);
+    },
+    [replaceWithParams, searchParams],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current !== null) {
+        window.clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!housesOpen) {
@@ -197,43 +248,77 @@ export function ProceduresWorkspace({
     };
   }, [housesOpen]);
 
-  const filteredProcedures = procedureRows.filter((procedure) => {
-    const matchesSearch =
-      !normalizedSearch ||
-      procedure.tipo_procedimento.toLowerCase().includes(normalizedSearch) ||
-      procedure.jogo_time_pa.toLowerCase().includes(normalizedSearch) ||
-      procedure.casas_envolvidas.toLowerCase().includes(normalizedSearch);
-
-    const matchesType =
-      selectedTypes.length === 0 || selectedTypes.includes(procedure.tipo_procedimento);
-
-    const operationDate = parseOperationDate(procedure.data_operacao);
-    const fromDate = dateFrom ? Number(dateFrom.replaceAll("-", "")) : 0;
-    const toDate = dateTo ? Number(dateTo.replaceAll("-", "")) : 99999999;
-    const matchesDate = operationDate >= fromDate && operationDate <= toDate;
-
-    return (
-      matchesSearch &&
-      matchesType &&
-      matchesSelectedHouse(procedure.casas_envolvidas, selectedHouses) &&
-      matchesDate
-    );
-  });
+  const hasSearchFilter = filters.searchText.trim().length > 0;
   const activeFiltersCount =
     selectedTypes.length +
     selectedHouses.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
+  const hasAnyFilter = hasSearchFilter || activeFiltersCount > 0;
+  const isEmptyWorkspace = !hasAnyFilter && pagination.totalItems === 0;
+  const firstVisibleItem =
+    pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const lastVisibleItem = Math.min(
+    pagination.page * pagination.pageSize,
+    pagination.totalItems,
+  );
 
-  function toggleSelection(
-    value: string,
-    setValues: Dispatch<SetStateAction<string[]>>,
-  ) {
-    setValues((current) =>
-      current.includes(value)
-        ? current.filter((item) => item !== value)
-        : [...current, value],
+  function updateRepeatedFilter(key: string, values: string[]) {
+    updateParams((params) => {
+      setRepeatedParam(params, key, values);
+      params.delete("page");
+    });
+  }
+
+  function toggleFilterValue(key: string, value: string, currentValues: string[]) {
+    updateRepeatedFilter(
+      key,
+      currentValues.includes(value)
+        ? currentValues.filter((item) => item !== value)
+        : [...currentValues, value],
     );
+  }
+
+  function updateDateFilter(key: "from" | "to", value: string) {
+    updateParams((params) => {
+      setSingleParam(params, key, value);
+      params.delete("page");
+    });
+  }
+
+  function updateSearchFilter(value: string) {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current);
+    }
+
+    searchDebounceRef.current = window.setTimeout(() => {
+      updateParams((params) => {
+        setSingleParam(params, "q", value);
+        params.delete("page");
+      });
+    }, 300);
+  }
+
+  function clearFilters() {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current);
+    }
+
+    updateParams((params) => {
+      for (const key of ["q", "type", "house", "from", "to", "page"]) {
+        params.delete(key);
+      }
+    });
+  }
+
+  function goToPage(page: number) {
+    updateParams((params) => {
+      if (page <= 1) {
+        params.delete("page");
+      } else {
+        params.set("page", String(page));
+      }
+    });
   }
 
   function handleDoubleStatusChange(procedureId: number, hitDouble: boolean) {
@@ -268,10 +353,11 @@ export function ProceduresWorkspace({
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <input
             className="lz-input w-full rounded-2xl px-4 py-3 text-sm sm:max-w-xl"
-            onChange={(event) => setSearch(event.target.value)}
+            defaultValue={filters.searchText}
+            key={filters.searchText}
+            onChange={(event) => updateSearchFilter(event.target.value)}
             placeholder="Buscar jogo, tipo ou casa..."
             type="search"
-            value={search}
           />
 
           <button
@@ -283,9 +369,25 @@ export function ProceduresWorkspace({
           >
             {activeFiltersCount > 0 ? `Filtros (${activeFiltersCount})` : "Filtros"}
           </button>
+
+          {hasAnyFilter ? (
+            <button
+              className="text-sm text-[var(--text-dim)] transition hover:text-white"
+              onClick={clearFilters}
+              type="button"
+            >
+              Limpar filtros
+            </button>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {isPending ? (
+            <span className="self-center text-sm text-[var(--text-dim)]">
+              Atualizando...
+            </span>
+          ) : null}
+
           <ProcedureModal
             bookmakers={bookmakers}
             returnTo="/procedimentos"
@@ -303,7 +405,7 @@ export function ProceduresWorkspace({
               {selectedTypes.length > 0 ? (
                 <button
                   className="text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => setSelectedTypes([])}
+                  onClick={() => updateRepeatedFilter("type", [])}
                   type="button"
                 >
                   Limpar
@@ -321,7 +423,7 @@ export function ProceduresWorkspace({
                       active ? "lz-button-primary" : "lz-button-secondary"
                     }`}
                     key={type}
-                    onClick={() => toggleSelection(type, setSelectedTypes)}
+                    onClick={() => toggleFilterValue("type", type, selectedTypes)}
                     type="button"
                   >
                     {type}
@@ -337,7 +439,7 @@ export function ProceduresWorkspace({
               {selectedHouses.length > 0 ? (
                 <button
                   className="text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => setSelectedHouses([])}
+                  onClick={() => updateRepeatedFilter("house", [])}
                   type="button"
                 >
                   Limpar
@@ -387,7 +489,9 @@ export function ProceduresWorkspace({
                               active ? "lz-button-primary" : "lz-button-secondary"
                             }`}
                             key={bookmaker}
-                            onClick={() => toggleSelection(bookmaker, setSelectedHouses)}
+                            onClick={() =>
+                              toggleFilterValue("house", bookmaker, selectedHouses)
+                            }
                             type="button"
                           >
                             <span>{bookmaker}</span>
@@ -412,7 +516,7 @@ export function ProceduresWorkspace({
                     <button
                       className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-white/20"
                       key={house}
-                      onClick={() => toggleSelection(house, setSelectedHouses)}
+                      onClick={() => toggleFilterValue("house", house, selectedHouses)}
                       type="button"
                     >
                       {house}
@@ -430,8 +534,11 @@ export function ProceduresWorkspace({
                 <button
                   className="text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => {
-                    setDateFrom("");
-                    setDateTo("");
+                    updateParams((params) => {
+                      params.delete("from");
+                      params.delete("to");
+                      params.delete("page");
+                    });
                   }}
                   type="button"
                 >
@@ -444,7 +551,7 @@ export function ProceduresWorkspace({
               <label className="space-y-2 text-sm">
                 <span className="text-[var(--text-muted)]">De</span>
                 <DatePickerField
-                  onChange={setDateFrom}
+                  onChange={(value) => updateDateFilter("from", value)}
                   value={dateFrom}
                 />
               </label>
@@ -452,7 +559,7 @@ export function ProceduresWorkspace({
               <label className="space-y-2 text-sm">
                 <span className="text-[var(--text-muted)]">Até</span>
                 <DatePickerField
-                  onChange={setDateTo}
+                  onChange={(value) => updateDateFilter("to", value)}
                   value={dateTo}
                 />
               </label>
@@ -462,10 +569,10 @@ export function ProceduresWorkspace({
       ) : null}
 
       <div className="lz-panel rounded-[30px] p-4 md:p-6">
-        {filteredProcedures.length === 0 ? (
+        {procedureRows.length === 0 ? (
           <EmptyState
             action={
-              procedures.length === 0 ? (
+              isEmptyWorkspace ? (
                 <ProcedureModal
                   bookmakers={bookmakers}
                   returnTo="/procedimentos"
@@ -475,13 +582,13 @@ export function ProceduresWorkspace({
               ) : null
             }
             description={
-              procedures.length === 0
+              isEmptyWorkspace
                 ? "Assim que você registrar a primeira operação, esta área passa a mostrar a linha do tempo completa."
                 : "Ajuste a busca ou limpe os filtros para voltar a visualizar os procedimentos."
             }
-            eyebrow={procedures.length === 0 ? "Primeiros passos" : "Sem resultados"}
+            eyebrow={isEmptyWorkspace ? "Primeiros passos" : "Sem resultados"}
             title={
-              procedures.length === 0
+              isEmptyWorkspace
                 ? "Nenhum procedimento registrado"
                 : "Nenhum procedimento encontrado"
             }
@@ -489,7 +596,7 @@ export function ProceduresWorkspace({
         ) : (
           <>
             <div className="grid gap-4 md:hidden">
-              {filteredProcedures.map((procedure) => (
+              {procedureRows.map((procedure) => (
                 <article
                   className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
                   key={procedure.id}
@@ -583,7 +690,7 @@ export function ProceduresWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProcedures.map((procedure) => (
+                  {procedureRows.map((procedure) => (
                     <tr
                       className="cursor-pointer border-b border-white/8 align-middle transition hover:bg-white/4"
                       key={procedure.id}
@@ -646,6 +753,35 @@ export function ProceduresWorkspace({
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Mostrando {firstVisibleItem}-{lastVisibleItem} de{" "}
+                {pagination.totalItems} procedimentos
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  className="lz-button-secondary rounded-full px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={pagination.page <= 1 || isPending}
+                  onClick={() => goToPage(pagination.page - 1)}
+                  type="button"
+                >
+                  Anterior
+                </button>
+                <span className="px-2">
+                  Pagina {pagination.page} de {pagination.pageCount}
+                </span>
+                <button
+                  className="lz-button-secondary rounded-full px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={pagination.page >= pagination.pageCount || isPending}
+                  onClick={() => goToPage(pagination.page + 1)}
+                  type="button"
+                >
+                  Proxima
+                </button>
+              </div>
             </div>
           </>
         )}

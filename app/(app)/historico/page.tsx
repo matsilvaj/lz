@@ -3,14 +3,30 @@ import { getHistoryPageData } from "@/lib/server/app-data";
 
 import { HistoryWorkspace } from "./history-workspace";
 
-export default async function HistoryPage() {
+type HistoryPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getSearchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
+
+export default async function HistoryPage({
+  searchParams,
+}: HistoryPageProps) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
-  const data = await getHistoryPageData(user.id, activeWorkspace.id);
+  const params = await searchParams;
+  const data = await getHistoryPageData(
+    user.id,
+    activeWorkspace.id,
+    getSearchParamValue(params.month),
+  );
 
   return (
     <HistoryWorkspace
       months={data.months}
       operations={data.operations}
+      selectedMonth={data.selectedMonth}
     />
   );
 }

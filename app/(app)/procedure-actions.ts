@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/core";
 import { getSafeAppPath } from "@/lib/auth/redirects";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import { getBookmakersCatalog } from "@/lib/server/app-data";
 import {
   normalizeLongText,
   normalizeText,
@@ -72,11 +73,10 @@ function parseProtections(formData: FormData) {
 }
 
 async function normalizeBookmakerSelection(
-  repository: ReturnType<typeof getProceduresRepository>,
   houses: string[],
   freebetHouse: string,
 ) {
-  const availableBookmakers = (await repository.listBookmakers()) as string[];
+  const availableBookmakers = (await getBookmakersCatalog()) as string[];
   const bookmakerMap = new Map(
     availableBookmakers.map((bookmaker) => [bookmaker.toLowerCase(), bookmaker]),
   );
@@ -106,6 +106,8 @@ function revalidateApplication() {
   for (const path of paths) {
     revalidatePath(path);
   }
+
+  updateTag("dashboard-data");
 }
 
 export async function saveProcedureAction(formData: FormData) {
@@ -128,7 +130,6 @@ export async function saveProcedureAction(formData: FormData) {
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
   const originIds = parseOriginIds(formData);
   const { houses, freebetHouse } = await normalizeBookmakerSelection(
-    repository,
     parsedHouses,
     parsedFreebetHouse,
   );
@@ -188,7 +189,6 @@ export async function updateProcedureAction(formData: FormData) {
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
   const { houses, freebetHouse } = await normalizeBookmakerSelection(
-    repository,
     parsedHouses,
     parsedFreebetHouse,
   );

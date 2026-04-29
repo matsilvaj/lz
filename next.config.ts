@@ -33,7 +33,6 @@ const supabaseOrigin = getOrigin(configuredSupabaseUrl);
 const connectSources = [
   "'self'",
   "https://*.supabase.co",
-  "wss://*.supabase.co",
   supabaseOrigin,
   ...(isDevelopment
     ? ["http://localhost:*", "ws://localhost:*", "http://127.0.0.1:*", "ws://127.0.0.1:*"]
