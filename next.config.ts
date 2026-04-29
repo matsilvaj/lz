@@ -97,6 +97,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pg"],
   experimental: {
     serverActions: {
       ...(allowedServerActionOrigin

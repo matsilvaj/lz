@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useState, useTransition } from "react";
 
-import { LineChart, VerticalBarChart } from "../_components/charts";
 import { LzSelect } from "../_components/lz-select";
 import {
   SectionCard,
@@ -60,18 +60,49 @@ const DASHBOARD_TABS = [
 
 type DashboardTabId = (typeof DASHBOARD_TABS)[number]["id"];
 
+function ChartSkeleton() {
+  return (
+    <div className="h-[240px] rounded-[24px] border border-white/8 bg-white/4 p-4 sm:h-[280px] lg:h-[320px]">
+      <div className="flex h-full items-end gap-2">
+        {Array.from({ length: 14 }).map((_, index) => (
+          <div
+            className="flex-1 rounded-t-lg bg-white/8"
+            key={index}
+            style={{ height: `${28 + ((index * 17) % 58)}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const LineChart = dynamic(
+  () => import("../_components/charts").then((module) => module.LineChart),
+  {
+    loading: () => <ChartSkeleton />,
+    ssr: false,
+  },
+);
+
+const VerticalBarChart = dynamic(
+  () => import("../_components/charts").then((module) => module.VerticalBarChart),
+  {
+    loading: () => <ChartSkeleton />,
+    ssr: false,
+  },
+);
+
 function getColorClass(value: number) {
   if (value > 0) return "text-[var(--positive)]";
   if (value < 0) return "text-[var(--negative)]";
   return "text-white";
 }
 
-// 2. Atualize a tipagem e o componente DashboardMetricCard para receber a cor
 function DashboardMetricCard({
   label,
   value,
   helper,
-  valueColorClass = "text-white", // Cor padrão
+  valueColorClass = "text-white",
 }: {
   label: string;
   value: string;
@@ -101,6 +132,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
 
   const activeView = data.views[selectedFilter] ?? data.views.Todos;
   const metrics = activeView.metrics;
+  const [, startChartTransition] = useTransition();
 
   return (
     <div className="space-y-5">
@@ -151,7 +183,7 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                   : "lz-button-secondary"
               }`}
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => startChartTransition(() => setActiveTab(tab.id))}
               type="button"
             >
               {tab.label}
@@ -170,7 +202,9 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
             <LzSelect
               className="w-full rounded-full px-4 py-2 text-sm sm:min-w-[240px]"
               id="dashboard-procedure-filter"
-              onValueChange={setSelectedFilter}
+              onValueChange={(value) =>
+                startChartTransition(() => setSelectedFilter(value))
+              }
               options={data.procedureFilters.map((filter) => ({
                 value: filter,
                 label: filter,
@@ -226,7 +260,9 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                     ? "lz-button-primary"
                     : "lz-button-secondary"
                 }`}
-                onClick={() => setActiveFreebetView("collected")}
+                onClick={() =>
+                  startChartTransition(() => setActiveFreebetView("collected"))
+                }
                 type="button"
               >
                 Quantidade coletada
@@ -237,7 +273,9 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                     ? "lz-button-primary"
                     : "lz-button-secondary"
                 }`}
-                onClick={() => setActiveFreebetView("profit")}
+                onClick={() =>
+                  startChartTransition(() => setActiveFreebetView("profit"))
+                }
                 type="button"
               >
                 Lucro

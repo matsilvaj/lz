@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { normalizeLongText, normalizeText, parseLimitedNumber } from "@/lib/security/input";
@@ -29,6 +29,9 @@ function revalidateBookmakerScreens() {
   for (const path of paths) {
     revalidatePath(path);
   }
+
+  updateTag("bookmakers-page-data");
+  updateTag("freebets-page-data");
 }
 
 export async function saveBookmakerAction({

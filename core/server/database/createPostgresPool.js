@@ -36,11 +36,18 @@ function assertSupabasePoolerUrl(connectionString) {
   }
 }
 
+function parsePoolMax(value) {
+  const parsed = Number(value ?? 3);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 3;
+}
+
 export function createPostgresPool({
   connectionString = process.env[DATABASE_RUNTIME_URL_ENV],
   ssl,
-  max = 10,
-  idleTimeoutMillis = 30_000,
+  max = parsePoolMax(process.env.POSTGRES_POOL_MAX),
+  idleTimeoutMillis = 10_000,
+  connectionTimeoutMillis = 5_000,
+  allowExitOnIdle = true,
 } = {}) {
   if (!connectionString) {
     throw new Error(
@@ -65,5 +72,7 @@ export function createPostgresPool({
     ssl,
     max,
     idleTimeoutMillis,
+    connectionTimeoutMillis,
+    allowExitOnIdle,
   });
 }

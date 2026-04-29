@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getSafeAppPath } from "@/lib/auth/redirects";
@@ -40,6 +40,15 @@ function revalidateApplication() {
 
   for (const path of paths) {
     revalidatePath(path);
+  }
+
+  for (const tag of [
+    "dashboard-data",
+    "freebets-page-data",
+    "bookmakers-page-data",
+    "history-page-data",
+  ]) {
+    updateTag(tag);
   }
 }
 

@@ -4,10 +4,10 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
-  buildProcedureData,
   FREEBET_RESULT_NO,
   FREEBET_RESULT_YES,
-} from "@/core";
+} from "@/core/domain/shared/constants.js";
+import { buildProcedureData } from "@/core/domain/procedimentos/procedimentos.service.js";
 import { getSafeAppPath } from "@/lib/auth/redirects";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { getBookmakersCatalog } from "@/lib/server/app-data";
@@ -107,7 +107,14 @@ function revalidateApplication() {
     revalidatePath(path);
   }
 
-  updateTag("dashboard-data");
+  for (const tag of [
+    "dashboard-data",
+    "freebets-page-data",
+    "bookmakers-page-data",
+    "history-page-data",
+  ]) {
+    updateTag(tag);
+  }
 }
 
 export async function saveProcedureAction(formData: FormData) {
