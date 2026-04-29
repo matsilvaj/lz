@@ -21,14 +21,14 @@ function getSignupErrorMessage(error: { message?: string }) {
     normalizedMessage.includes("send") ||
     normalizedMessage.includes("email")
   ) {
-    return "Nao foi possivel enviar o email de confirmacao. Verifique as configuracoes de SMTP no Supabase.";
+    return "Não foi possível enviar o email de confirmação. Verifique as configurações de SMTP no Supabase.";
   }
 
   if (process.env.NODE_ENV !== "production" && message) {
     return `Supabase: ${message}`;
   }
 
-  return "Nao foi possivel criar a conta.";
+  return "Não foi possível criar a conta.";
 }
 
 function normalizeName(value: FormDataEntryValue | null) {
@@ -93,7 +93,7 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    redirect(buildAuthRedirect("/login", "error", "Email ou senha invalidos."));
+    redirect(buildAuthRedirect("/login", "error", "Email ou senha inválidos."));
   }
 
   revalidatePath("/", "layout");

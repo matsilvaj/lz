@@ -21,7 +21,7 @@ export async function getAppUrl() {
   }
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error('Defina "NEXT_PUBLIC_APP_URL" com o dominio publico HTTPS em producao.');
+    throw new Error('Defina "NEXT_PUBLIC_APP_URL" com o domínio publico HTTPS em produção.');
   }
 
   const headerStore = await headers();

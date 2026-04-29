@@ -121,7 +121,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                   className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                   id="email"
                   name="email"
-                  placeholder="voce@empresa.com"
+                  placeholder="Seu novo e-mail"
                   type="email"
                 />
               </div>
