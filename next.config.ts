@@ -97,6 +97,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   serverExternalPackages: ["pg"],
   experimental: {
     serverActions: {
