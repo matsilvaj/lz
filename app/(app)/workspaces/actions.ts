@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath, updateTag } from "next/cache";
+import { refresh, revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getSafeAppPath } from "@/lib/auth/redirects";
@@ -88,6 +88,20 @@ export async function switchWorkspaceAction(workspaceId: number, returnTo = "/da
   await setActiveWorkspaceCookie(workspace.id);
   revalidateApplication();
   redirect(safeReturnTo);
+}
+
+export async function selectWorkspaceAction(workspaceId: number) {
+  const user = await requireUser();
+  const repository = getProceduresRepository();
+  const workspace = await repository.getWorkspaceById(user.id, workspaceId);
+
+  if (!workspace) {
+    return;
+  }
+
+  await setActiveWorkspaceCookie(workspace.id);
+  revalidateApplication();
+  refresh();
 }
 
 export async function updateWorkspaceAction(formData: FormData) {

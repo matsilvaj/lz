@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
-import { switchWorkspaceAction } from "../workspaces/actions";
+import { selectWorkspaceAction } from "../workspaces/actions";
+import { setWorkspacePageLoading } from "./workspace-loading-boundary";
 
 type WorkspaceItem = {
   id: number;
@@ -17,8 +17,8 @@ type WorkspaceSwitcherProps = {
 };
 
 export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwitcherProps) {
-  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,6 +42,19 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  function selectWorkspace(workspaceId: number) {
+    setOpen(false);
+    setWorkspacePageLoading(true);
+
+    startTransition(async () => {
+      try {
+        await selectWorkspaceAction(workspaceId);
+      } finally {
+        setWorkspacePageLoading(false);
+      }
+    });
+  }
 
   return (
     <div className="relative" ref={menuRef}>
@@ -70,39 +83,43 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-3 min-w-64 rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+        <div
+          className="absolute right-0 top-full z-20 mt-3 w-72 max-w-[calc(100vw-2rem)] rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+          role="menu"
+        >
           <div className="px-3 pb-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-dim)]">
             Workspaces
           </div>
 
-          <div className="space-y-1">
+          <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
             {workspaces.map((workspace) => {
               const active = workspace.id === activeWorkspace.id;
 
               if (active) {
                 return (
                   <div
-                    className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(216,31,89,0.92),rgba(122,12,48,0.88))] px-3 py-3 text-sm font-medium text-white shadow-[0_14px_32px_rgba(216,31,89,0.22)]"
+                    aria-checked="true"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(216,31,89,0.92),rgba(122,12,48,0.88))] px-3 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(216,31,89,0.22)]"
                     key={workspace.id}
+                    role="menuitemradio"
                   >
-                    {workspace.nome}
+                    <span className="truncate">{workspace.nome}</span>
                   </div>
                 );
               }
 
               return (
-                <form
-                  action={switchWorkspaceAction.bind(null, workspace.id, pathname)}
+                <button
+                  aria-checked="false"
+                  className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-transparent px-3 py-3 text-left text-sm font-medium text-[var(--text-secondary)] transition hover:border-white/10 hover:bg-white/6 hover:text-white disabled:cursor-wait disabled:opacity-70"
+                  disabled={isPending}
                   key={workspace.id}
+                  onClick={() => selectWorkspace(workspace.id)}
+                  role="menuitemradio"
+                  type="button"
                 >
-                  <button
-                    className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
-                    onClick={() => setOpen(false)}
-                    type="submit"
-                  >
-                    {workspace.nome}
-                  </button>
-                </form>
+                  <span className="truncate">{workspace.nome}</span>
+                </button>
               );
             })}
           </div>

@@ -6,6 +6,7 @@ import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 
 import { AppNavigation } from "./_components/app-navigation";
 import { WorkspaceSwitcher } from "./_components/workspace-switcher";
+import { WorkspaceLoadingBoundary } from "./_components/workspace-loading-boundary";
 import { UserMenu } from "./_components/user-menu";
 
 export default async function ProtectedAppLayout({
@@ -50,7 +51,9 @@ export default async function ProtectedAppLayout({
       </header>
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
-        <div className="lz-page-enter">{children}</div>
+        <WorkspaceLoadingBoundary key={activeWorkspace.id}>
+          <div className="lz-page-enter">{children}</div>
+        </WorkspaceLoadingBoundary>
       </main>
     </div>
   );
