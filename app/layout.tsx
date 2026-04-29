@@ -4,7 +4,9 @@ import "./globals.css";
 
 import { ToastProvider } from "@/app/_components/toast-provider";
 
+// Importações da Vercel
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,6 +39,7 @@ export default function RootLayout({
         </ToastProvider>
         
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );

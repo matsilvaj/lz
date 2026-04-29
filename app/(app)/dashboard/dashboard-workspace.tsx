@@ -60,21 +60,31 @@ const DASHBOARD_TABS = [
 
 type DashboardTabId = (typeof DASHBOARD_TABS)[number]["id"];
 
+function getColorClass(value: number) {
+  if (value > 0) return "text-[var(--positive)]";
+  if (value < 0) return "text-[var(--negative)]";
+  return "text-white";
+}
+
+// 2. Atualize a tipagem e o componente DashboardMetricCard para receber a cor
 function DashboardMetricCard({
   label,
   value,
   helper,
+  valueColorClass = "text-white", // Cor padrão
 }: {
   label: string;
   value: string;
   helper?: string;
+  valueColorClass?: string;
 }) {
   return (
     <div className="lz-panel-subtle rounded-[24px] px-4 py-4">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
         {label}
       </p>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-white">{value}</p>
+
+      <p className={`mt-3 text-2xl font-semibold tracking-tight ${valueColorClass}`}>{value}</p>
       {helper ? <p className="mt-2 text-sm text-[var(--text-muted)]">{helper}</p> : null}
     </div>
   );
@@ -95,24 +105,29 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+
         <DashboardMetricCard
           label="Lucro hoje"
           value={formatCurrency(metrics.todayProfit)}
+          valueColorClass={getColorClass(metrics.todayProfit)}
           helper={metrics.todayLabel}
         />
         <DashboardMetricCard
           label="Lucro mensal"
           value={formatCurrency(metrics.monthlyProfit)}
+          valueColorClass={getColorClass(metrics.monthlyProfit)}
           helper={metrics.referenceMonthLabel}
         />
         <DashboardMetricCard
           label="Média diária"
           value={formatCurrency(metrics.dailyAverage)}
+          valueColorClass={getColorClass(metrics.dailyAverage)}
           helper={`${formatNumber(metrics.activeDays)} dias com operação`}
         />
         <DashboardMetricCard
           label="Média por procedimento"
           value={formatCurrency(metrics.averagePerProcedure)}
+          valueColorClass={getColorClass(metrics.averagePerProcedure)}
           helper={`${formatNumber(metrics.monthlyProcedureCount)} procedimentos no mês`}
         />
         <DashboardMetricCard
