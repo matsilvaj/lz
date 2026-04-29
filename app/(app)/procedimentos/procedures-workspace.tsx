@@ -1,6 +1,10 @@
 "use client";
 
-import { PROCEDURE_TYPES } from "@/core";
+import {
+  calculateRealProfit,
+  PROCEDURE_TYPES,
+  resolveProcedureDoubleValue,
+} from "@/core";
 import {
   type Dispatch,
   type SetStateAction,
@@ -75,6 +79,9 @@ export function ProceduresWorkspace({
   bookmakers,
   procedures,
 }: ProceduresWorkspaceProps) {
+  const [optimisticDoubleById, setOptimisticDoubleById] = useState<
+    Record<number, boolean>
+  >({});
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -97,6 +104,27 @@ export function ProceduresWorkspace({
   const visibleBookmakers = bookmakers.filter((bookmaker) =>
     bookmaker.toLowerCase().includes(normalizedHouseSearch),
   );
+  const procedureRows = procedures.map((procedure) => {
+    const optimisticDouble = optimisticDoubleById[procedure.id];
+
+    if (optimisticDouble === undefined) {
+      return procedure;
+    }
+
+    const updatedProcedure = {
+      ...procedure,
+      bateu_duplo: optimisticDouble,
+    };
+
+    return {
+      ...updatedProcedure,
+      lucro_real: calculateRealProfit(
+        updatedProcedure.lucro_final,
+        updatedProcedure.bateu_duplo,
+        resolveProcedureDoubleValue(updatedProcedure),
+      ),
+    };
+  });
 
   useEffect(() => {
     if (!housesOpen) {
@@ -152,7 +180,7 @@ export function ProceduresWorkspace({
     };
   }, [housesOpen]);
 
-  const filteredProcedures = procedures.filter((procedure) => {
+  const filteredProcedures = procedureRows.filter((procedure) => {
     const matchesSearch =
       !normalizedSearch ||
       procedure.tipo_procedimento.toLowerCase().includes(normalizedSearch) ||
@@ -189,6 +217,13 @@ export function ProceduresWorkspace({
         ? current.filter((item) => item !== value)
         : [...current, value],
     );
+  }
+
+  function handleDoubleStatusChange(procedureId: number, hitDouble: boolean) {
+    setOptimisticDoubleById((current) => ({
+      ...current,
+      [procedureId]: hitDouble,
+    }));
   }
 
   return (
@@ -476,6 +511,9 @@ export function ProceduresWorkspace({
                         {supportsDouble(procedure.tipo_procedimento) ? (
                           <ProcedureDoubleToggle
                             checked={procedure.bateu_duplo}
+                            onCheckedChange={(checked) =>
+                              handleDoubleStatusChange(procedure.id, checked)
+                            }
                             procedureId={procedure.id}
                           />
                         ) : (
@@ -537,6 +575,9 @@ export function ProceduresWorkspace({
                           {supportsDouble(procedure.tipo_procedimento) ? (
                             <ProcedureDoubleToggle
                               checked={procedure.bateu_duplo}
+                              onCheckedChange={(checked) =>
+                                handleDoubleStatusChange(procedure.id, checked)
+                              }
                               procedureId={procedure.id}
                             />
                           ) : (

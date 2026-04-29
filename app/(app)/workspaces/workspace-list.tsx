@@ -176,7 +176,7 @@ export function WorkspaceList({
                   className="rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)]"
                   type="submit"
                 >
-                  Confirmar remocao
+                  Confirmar remoção
                 </button>
               </form>
             </ConfirmationDialog>

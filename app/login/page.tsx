@@ -55,7 +55,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             name="email"
             type="email"
             autoComplete="email"
-            placeholder="voce@empresa.com"
+            placeholder="Seu e-mail"
             required
           />
         </div>

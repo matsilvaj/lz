@@ -84,7 +84,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
             name="email"
             type="email"
             autoComplete="email"
-            placeholder="voce@empresa.com"
+            placeholder="Seu e-mail"
             required
           />
         </div>

@@ -17,6 +17,20 @@ export function calculateRealProfit(baseProfit, hitDouble = false, doubleValue =
   return base + (parseBoolean(hitDouble) ? doubleProfit : 0);
 }
 
+export function resolveProcedureDoubleValue(procedure) {
+  const doubleValue = parseNumber(procedure?.valor_freebet_coletada);
+
+  if (doubleValue !== 0) {
+    return doubleValue;
+  }
+
+  if (parseText(procedure?.tipo_procedimento) === "Coletar Freebet") {
+    return parseNumber(procedure?.valor_da_freebet);
+  }
+
+  return doubleValue;
+}
+
 export function calculateProcedureBaseProfit(
   procedureType,
   entryValue,
@@ -176,7 +190,7 @@ export function enrichProcedure(row) {
   procedure.lucro_real = calculateRealProfit(
     procedure.lucro_final,
     procedure.bateu_duplo,
-    procedure.valor_freebet_coletada,
+    resolveProcedureDoubleValue(procedure),
   );
   return procedure;
 }

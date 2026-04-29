@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 
 import { useToast } from "@/app/_components/toast-provider";
 
@@ -9,20 +9,22 @@ import { updateProcedureDoubleStatusAction } from "../procedure-actions";
 
 type ProcedureDoubleToggleProps = {
   checked: boolean;
+  onCheckedChange?: (checked: boolean) => void;
   procedureId: number;
 };
 
 export function ProcedureDoubleToggle({
   checked,
+  onCheckedChange,
   procedureId,
 }: ProcedureDoubleToggleProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const [value, setValue] = useState(checked);
+  const value = checked;
 
   function handleChange(nextValue: boolean) {
-    setValue(nextValue);
+    onCheckedChange?.(nextValue);
 
     startTransition(async () => {
       try {
@@ -33,7 +35,7 @@ export function ProcedureDoubleToggle({
         });
         router.refresh();
       } catch {
-        setValue(!nextValue);
+        onCheckedChange?.(!nextValue);
         showToast({
           title: "Não foi possível atualizar o duplo.",
           tone: "error",

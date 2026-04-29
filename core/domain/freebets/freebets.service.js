@@ -9,7 +9,10 @@ import {
   parseText,
   toPlainObject,
 } from "../shared/normalizers.js";
-import { calculateRealProfit } from "../procedimentos/procedimentos.service.js";
+import {
+  calculateRealProfit,
+  resolveProcedureDoubleValue,
+} from "../procedimentos/procedimentos.service.js";
 
 function normalizeOperationDateLabel(value) {
   if (value instanceof Date) {
@@ -50,7 +53,11 @@ export function groupActiveFreebets(rows) {
     const freebetValue = parseNumber(freebet.valor_da_freebet);
     const baseProfit = parseNumber(freebet.lucro_final);
     const hitDouble = parseBoolean(freebet.bateu_duplo);
-    const doubleValue = parseNumber(freebet.valor_freebet_coletada);
+    const doubleValue = resolveProcedureDoubleValue({
+      tipo_procedimento: "Coletar Freebet",
+      valor_freebet_coletada: freebet.valor_freebet_coletada,
+      valor_da_freebet: freebet.valor_da_freebet,
+    });
     const condition = parseText(freebet.condicao_freebet);
     const result = parseText(freebet.ganhou_freebet);
     const realProfit = calculateRealProfit(baseProfit, hitDouble, doubleValue);
@@ -104,10 +111,15 @@ export function buildConvertedFreebetsHistory(rows) {
     const conversionDate = parseText(item.data_conversao);
     const house = parseText(item.casa, "Desconhecida") || "Desconhecida";
     const freebetValue = parseNumber(item.valor_freebet);
+    const collectionDoubleValue = resolveProcedureDoubleValue({
+      tipo_procedimento: "Coletar Freebet",
+      valor_freebet_coletada: item.valor_duplo_coleta,
+      valor_da_freebet: item.valor_freebet,
+    });
     const collectionProfit = calculateRealProfit(
       item.lucro_base_coleta,
       item.bateu_duplo_coleta,
-      item.valor_duplo_coleta,
+      collectionDoubleValue,
     );
     const hasConversion = conversionDate !== "" && conversionDate !== "None";
     const conversionProfit = hasConversion
