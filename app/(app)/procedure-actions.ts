@@ -225,9 +225,13 @@ export async function updateProcedureAction(formData: FormData) {
   redirect(appendToastParams(returnTo, "success", "Procedimento atualizado."));
 }
 
-export async function updateProcedureDoubleStatusAction(procedureId: number, hitDouble: boolean) {
+export async function updateProcedureDoubleStatusAction(
+  procedureId: number | string,
+  hitDouble: boolean,
+) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
+  const parsedProcedureId = parsePositiveInteger(procedureId);
   const canWrite = await consumeRateLimit({
     identity: user.id,
     key: "procedures:write",
@@ -239,16 +243,17 @@ export async function updateProcedureDoubleStatusAction(procedureId: number, hit
     throw new Error("Rate limit exceeded.");
   }
 
-  if (Number.isInteger(procedureId) && procedureId > 0) {
-    await repository.updateDoubleStatus(procedureId, hitDouble, user.id, activeWorkspace.id);
+  if (parsedProcedureId > 0) {
+    await repository.updateDoubleStatus(parsedProcedureId, hitDouble, user.id, activeWorkspace.id);
   }
 
   revalidateApplication();
 }
 
-export async function deleteProcedureAction(procedureId: number) {
+export async function deleteProcedureAction(procedureId: number | string) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
+  const parsedProcedureId = parsePositiveInteger(procedureId);
   const canWrite = await consumeRateLimit({
     identity: user.id,
     key: "procedures:delete",
@@ -260,8 +265,8 @@ export async function deleteProcedureAction(procedureId: number) {
     throw new Error("Rate limit exceeded.");
   }
 
-  if (Number.isInteger(procedureId) && procedureId > 0) {
-    await repository.deleteProcedure(procedureId, user.id, activeWorkspace.id);
+  if (parsedProcedureId > 0) {
+    await repository.deleteProcedure(parsedProcedureId, user.id, activeWorkspace.id);
   }
 
   revalidateApplication();
