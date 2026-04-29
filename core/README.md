@@ -1,27 +1,27 @@
-# Core reutilizavel em JS
+# Core reutilizável em JS
 
-O projeto agora esta separado em duas camadas para escalar melhor no Next:
+O projeto agora está separado em duas camadas para escalar melhor no Next:
 
-- `core/domain/`: regra de negocio pura, sem banco e sem dependencias de ambiente
-- `core/server/`: infraestrutura server-side, como PostgreSQL e repositorios
-- `core/index.js`: entrada segura para importar so o dominio
-- `lib/server/`: ponto oficial de acesso ao repositorio dentro do app Next
+- `core/domain/`: regra de negócio pura, sem banco e sem dependências de ambiente
+- `core/server/`: infraestrutura server-side, como PostgreSQL e repositórios
+- `core/index.js`: entrada segura para importar só o domínio
+- `lib/server/`: ponto oficial de acesso ao repositório dentro do app Next
 
 ## Como usar cada camada
 
 - UI e componentes podem reaproveitar regra pura por `@/core`
 - Pages, Server Components, Server Actions e Route Handlers devem acessar o banco por `@/lib/server`
-- Evite importar `@/core/server` direto na UI; essa camada e marcada como server-only
+- Evite importar `@/core/server` direto na UI; essa camada é marcada como server-only
 
 ## Estrutura atual
 
-- `domain/calculadora/`: regras da surebet e media ponderada
+- `domain/calculadora/`: regras da surebet e média ponderada
 - `domain/procedimentos/`: montagem, filtros e enriquecimento dos procedimentos
-- `domain/freebets/`: agrupamento de freebets ativas e historico das convertidas
-- `domain/shared/`: constantes e funcoes utilitarias
-- `server/database/`: pool PostgreSQL, repositorio e migrations SQL
+- `domain/freebets/`: agrupamento de freebets ativas e histórico das convertidas
+- `domain/shared/`: constantes e funções utilitárias
+- `server/database/`: pool PostgreSQL, repositório e migrações SQL
 
-## Exemplo de dominio
+## Exemplo de domínio
 
 ```js
 import { buildProcedureData, calculateSurebet } from "@/core";
@@ -50,7 +50,7 @@ export default async function Page() {
 }
 ```
 
-## Dependencia de banco
+## Dependência de banco
 
 Para usar o adaptador pronto com PostgreSQL, instale:
 
@@ -61,7 +61,7 @@ npm install pg
 As tabelas ficam versionadas em `core/server/database/migrations/`.
 Para `Vercel + Supabase`, use:
 
-- `DATABASE_URL`: URL de runtime da aplicacao, preferencialmente a pooler de transaction mode
-- `DATABASE_MIGRATION_URL`: URL direta usada para migrations
+- `DATABASE_URL`: URL de runtime da aplicação, preferencialmente a URL do Connection Pooler em modo Transaction
+- `DATABASE_MIGRATION_URL`: URL direta usada para migrações
 
-No deploy, rode `npm run db:migrate` antes de subir a aplicacao, com `DATABASE_MIGRATION_URL` definida.
+No deploy, rode `npm run db:migrate` antes de subir a aplicação, com `DATABASE_MIGRATION_URL` definida.
