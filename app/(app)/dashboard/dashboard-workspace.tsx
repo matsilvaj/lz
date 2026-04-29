@@ -288,6 +288,10 @@ export function DashboardWorkspace({ data }: { data: DashboardData }) {
                   ? data.freebets.collectedDaily
                   : data.freebets.convertedProfitDaily
               }
+
+              formatValue={
+                activeFreebetView === "profit" ? formatCurrency : formatNumber
+              }
             />
           </div>
         </SectionCard>
