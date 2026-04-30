@@ -184,6 +184,7 @@ export function calculateSurebet(
   const resultLines = [];
 
   calculations.forEach((calculation, index) => {
+    const rawStake = index === safeBaseIndex ? baseStake : stakes[index];
     const finalStake =
       index === safeBaseIndex
         ? baseStake
@@ -193,12 +194,14 @@ export function calculateSurebet(
 
     const responsibility =
       calculation.tipo === "L"
-        ? roundTo(finalStake * calculation.odd_efetiva - finalStake)
+        ? roundTo(rawStake * calculation.k)
         : 0;
 
-    const cost = finalStake * calculation.k;
-    const cashback = finalStake * calculation.b;
-    const grossReturn = finalStake * calculation.M;
+    const cost = calculation.tipo === "L" ? responsibility : finalStake * calculation.k;
+    const cashback =
+      (calculation.tipo === "L" ? rawStake : finalStake) * calculation.b;
+    const grossReturn =
+      calculation.tipo === "L" ? rawStake * calculation.M : finalStake * calculation.M;
 
     totalCost += cost;
     totalCashback += cashback;

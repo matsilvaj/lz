@@ -20,6 +20,7 @@ type CalculatorLine = {
   stakeEdited: boolean;
   tipo: "B" | "L";
   responsabilidade: string;
+  responsabilidadeEdited: boolean;
   aumento_percentual: string;
   comissao_percentual: string;
   cashback_percentual: string;
@@ -41,6 +42,7 @@ function createInitialLine(): CalculatorLine {
     stakeEdited: false,
     tipo: "B",
     responsabilidade: "0",
+    responsabilidadeEdited: false,
     aumento_percentual: "0",
     comissao_percentual: "0",
     cashback_percentual: "0",
@@ -66,8 +68,17 @@ function formatPercent(value: number) {
 }
 
 function toNumber(value: string) {
-  const parsed = Number(value);
+  const parsed = Number(String(value).trim().replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCalculatedValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : "0.00";
+}
+
+function roundCurrencyValue(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 const calculatorConfigFieldClass =
@@ -343,13 +354,55 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
           setConfigExpanded(true);
         }
 
-        return { ...line, tipo: nextType };
+        return {
+          ...line,
+          tipo: nextType,
+          responsabilidade: nextType === "B" ? "0" : line.responsabilidade,
+          responsabilidadeEdited: false,
+        };
       }),
     );
   }
 
   function handleStakeChange(index: number, value: string) {
-    updateLine(index, { stake: value, stakeEdited: index !== workspaceIndex });
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index
+          ? {
+              ...line,
+              stake: value,
+              stakeEdited: lineIndex !== workspaceIndex,
+              responsabilidadeEdited:
+                line.tipo === "L" ? false : line.responsabilidadeEdited,
+            }
+          : line,
+      ),
+    );
+  }
+
+  function handleResponsabilidadeChange(index: number, value: string) {
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== index) {
+          return line;
+        }
+
+        const odd = toNumber(line.odd);
+        const responsibility = toNumber(value);
+        const syncedStake =
+          odd > 1 && value !== ""
+            ? formatCalculatedValue(responsibility / (odd - 1))
+            : line.stake;
+
+        return {
+          ...line,
+          responsabilidade: value,
+          responsabilidadeEdited: true,
+          stake: syncedStake,
+          stakeEdited: lineIndex !== workspaceIndex,
+        };
+      }),
+    );
   }
 
   function fixStake(index: number, stake: string) {
@@ -358,6 +411,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         ...line,
         stake: lineIndex === index ? stake : line.stake,
         stakeEdited: false,
+        responsabilidadeEdited: false,
       })),
     );
     setWorkspaceIndex(index);
@@ -432,9 +486,13 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         {lines.map((line, index) => {
           const lineResult = calculation?.linhas?.[index];
           const lineProfit = Number(lineResult?.lucro_liquido ?? 0);
+          const lineInvestment =
+            Number(lineResult?.custo ?? 0) - Number(lineResult?.cashback ?? 0);
+          const roundedLineProfit = roundCurrencyValue(lineProfit);
+          const roundedLineInvestment = roundCurrencyValue(lineInvestment);
           const lineRoi =
-            calculation && calculation.investimento_efetivo > 0
-              ? (lineProfit / calculation.investimento_efetivo) * 100
+            lineResult && roundedLineInvestment > 0
+              ? (roundedLineProfit / roundedLineInvestment) * 100
               : 0;
           const hasCustomConfig =
             line.freebet ||
@@ -447,8 +505,12 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               : line.stakeEdited
                 ? line.stake
               : lineResult
-                ? Number(lineResult.stake).toFixed(2)
+                ? formatCalculatedValue(lineResult.stake)
                 : line.stake;
+          const displayedResponsabilidade =
+            line.responsabilidadeEdited || !lineResult
+              ? line.responsabilidade
+              : formatCalculatedValue(lineResult.responsabilidade);
 
           return (
             <div
@@ -487,11 +549,11 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       <input
                         className="lz-input w-full rounded-2xl px-3 py-3 text-white"
                         onChange={(event) =>
-                          updateLine(index, { responsabilidade: event.target.value })
+                          handleResponsabilidadeChange(index, event.target.value)
                         }
                         step="0.01"
                         type="number"
-                        value={line.responsabilidade}
+                        value={displayedResponsabilidade}
                       />
                     </label>
                   ) : null}
