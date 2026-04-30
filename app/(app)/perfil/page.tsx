@@ -1,5 +1,7 @@
 import { logout } from "@/app/auth/actions";
+import { ClearMessageSearchParams } from "@/app/_components/clear-message-search-params";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { PasswordInput } from "@/app/_components/password-input";
 import { requireUser } from "@/lib/auth/session";
 
 import { SectionCard } from "../_components/ui";
@@ -51,6 +53,8 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
   return (
     <div className="space-y-5">
+      {errorMessage || successMessage ? <ClearMessageSearchParams /> : null}
+
       {errorMessage ? (
         <p className="rounded-[24px] border border-[rgba(255,107,133,0.24)] bg-[rgba(41,13,21,0.94)] px-4 py-3 text-sm text-[var(--negative)]">
           {errorMessage}
@@ -105,17 +109,17 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           </form>
         </SectionCard>
 
-        <SectionCard title="Email">
+        <SectionCard title="E-mail">
           <div className="space-y-4">
             <div className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3">
-              <p className="text-sm text-[var(--text-dim)]">Email atual</p>
+              <p className="text-sm text-[var(--text-dim)]">E-mail atual</p>
               <p className="mt-1 text-base font-semibold text-white">{user.email}</p>
             </div>
 
             <form action={updateEmailAction} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-white" htmlFor="email">
-                  Novo email
+                  Novo e-mail
                 </label>
                 <input
                   className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
@@ -130,14 +134,13 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 <label className="text-sm font-medium text-white" htmlFor="emailCurrentPassword">
                   Senha atual
                 </label>
-                <input
+                <PasswordInput
                   className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                   id="emailCurrentPassword"
                   minLength={8}
                   name="currentPassword"
                   placeholder="Confirme sua senha"
                   required
-                  type="password"
                 />
               </div>
 
@@ -145,7 +148,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
                 className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
                 pendingLabel="Salvando..."
               >
-                Salvar email
+                Salvar e-mail
               </FormSubmitButton>
             </form>
           </div>
@@ -157,14 +160,13 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               <label className="text-sm font-medium text-white" htmlFor="currentPassword">
                 Senha atual
               </label>
-              <input
+              <PasswordInput
                 className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                 id="currentPassword"
                 minLength={8}
                 name="currentPassword"
                 placeholder="Sua senha atual"
                 required
-                type="password"
               />
             </div>
 
@@ -172,14 +174,13 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               <label className="text-sm font-medium text-white" htmlFor="password">
                 Nova senha
               </label>
-              <input
+              <PasswordInput
                 className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                 id="password"
                 minLength={8}
                 name="password"
                 placeholder="Mínimo de 8 caracteres"
                 required
-                type="password"
               />
             </div>
 
@@ -187,14 +188,13 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
               <label className="text-sm font-medium text-white" htmlFor="confirmPassword">
                 Confirmar nova senha
               </label>
-              <input
+              <PasswordInput
                 className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
                 id="confirmPassword"
                 minLength={8}
                 name="confirmPassword"
                 placeholder="Repita a nova senha"
                 required
-                type="password"
               />
             </div>
 
@@ -239,7 +239,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       </div>
 
       <div className="rounded-[24px] border border-white/10 bg-white/4 px-4 py-3 text-sm text-[var(--text-muted)]">
-        Algumas alterações podem exigir confirmação por email antes de serem aplicadas.
+        Algumas alterações podem exigir confirmação por e-mail antes de serem aplicadas.
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ export function createAdminClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!serviceRoleKey) {
-    throw new Error("A exclusão automática da conta não esta configurada neste ambiente.");
+    throw new Error("A exclusão automática da conta não está configurada neste ambiente.");
   }
 
   return createClient(url, serviceRoleKey, {

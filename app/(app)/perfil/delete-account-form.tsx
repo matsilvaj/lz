@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { PasswordInput } from "@/app/_components/password-input";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { deleteAccountAction } from "./actions";
@@ -27,13 +28,12 @@ export function DeleteAccountForm() {
         title="Deletar conta?"
       >
         <form action={deleteAccountAction} className="space-y-4">
-          <input
+          <PasswordInput
             className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
             minLength={8}
             name="currentPassword"
             placeholder="Senha atual"
             required
-            type="password"
           />
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

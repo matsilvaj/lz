@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { PasswordInput } from "@/app/_components/password-input";
 
 import { login } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
@@ -29,7 +30,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <AuthPageShell
       title="Login"
-      description="Entre com seu email e senha."
+      description="Entre com seu e-mail e senha."
       errorMessage={errorMessage}
       successMessage={successMessage}
       footer={
@@ -47,7 +48,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <form className="space-y-4">
         <div className="space-y-2">
           <label className="text-sm font-medium text-white" htmlFor="email">
-            Email
+            E-mail
           </label>
           <input
             className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
@@ -64,11 +65,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <label className="text-sm font-medium text-white" htmlFor="password">
             Senha
           </label>
-          <input
+          <PasswordInput
             className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
             id="password"
             name="password"
-            type="password"
             autoComplete="current-password"
             placeholder="Mínimo de 8 caracteres"
             required

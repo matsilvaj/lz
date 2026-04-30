@@ -6,22 +6,44 @@ import { redirect } from "next/navigation";
 import { getAppUrl } from "@/lib/auth/urls";
 import { normalizeEmail, normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+const ACCOUNT_ALREADY_EXISTS_MESSAGE = "Já existe uma conta com este e-mail. Entre para acessar.";
 
 function buildAuthRedirect(path: string, key: "error" | "message", message: string) {
   return `${path}?${key}=${encodeURIComponent(message)}`;
 }
 
-function getSignupErrorMessage(error: { message?: string }) {
+function isAlreadyRegisteredError(error: { code?: string; message?: string }) {
+  const message = String(error.message ?? "").trim();
+  const code = String(error.code ?? "").trim().toLowerCase();
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    code === "email_exists" ||
+    code === "user_already_exists" ||
+    normalizedMessage.includes("already registered") ||
+    normalizedMessage.includes("already exists") ||
+    normalizedMessage.includes("user already") ||
+    normalizedMessage.includes("email exists")
+  );
+}
+
+function getSignupErrorMessage(error: { code?: string; message?: string }) {
   const message = String(error.message ?? "").trim();
   const normalizedMessage = message.toLowerCase();
+
+  if (isAlreadyRegisteredError(error)) {
+    return ACCOUNT_ALREADY_EXISTS_MESSAGE;
+  }
 
   if (
     normalizedMessage.includes("smtp") ||
     normalizedMessage.includes("send") ||
     normalizedMessage.includes("email")
   ) {
-    return "Não foi possível enviar o email de confirmação. Verifique as configurações de SMTP no Supabase.";
+    return "Não foi possível enviar o e-mail de confirmação. Verifique as configurações de SMTP no Supabase.";
   }
 
   if (process.env.NODE_ENV !== "production" && message) {
@@ -29,6 +51,63 @@ function getSignupErrorMessage(error: { message?: string }) {
   }
 
   return "Não foi possível criar a conta.";
+}
+
+function isExistingAccountSignup(data: {
+  user: { identities?: unknown[] | null } | null;
+  session: unknown | null;
+}) {
+  return Boolean(
+    data.user &&
+      !data.session &&
+      Array.isArray(data.user.identities) &&
+      data.user.identities.length === 0,
+  );
+}
+
+async function authEmailAlreadyExists(email: string) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return false;
+  }
+
+  try {
+    const admin = createAdminClient();
+    const perPage = 1000;
+    let page = 1;
+
+    while (page > 0) {
+      const { data, error } = await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+
+      if (error) {
+        console.error("Supabase user lookup error", {
+          message: error.message,
+          name: error.name,
+          status: error.status,
+        });
+
+        return false;
+      }
+
+      if (
+        data.users.some((user) => normalizeEmail(user.email ?? "") === email)
+      ) {
+        return true;
+      }
+
+      if (!data.nextPage || data.users.length < perPage) {
+        return false;
+      }
+
+      page = data.nextPage;
+    }
+  } catch (error) {
+    console.error("Supabase user lookup failed", error);
+  }
+
+  return false;
 }
 
 function normalizeName(value: FormDataEntryValue | null) {
@@ -40,7 +119,7 @@ function getCredentials(formData: FormData, errorPath: string) {
   const password = String(formData.get("password") ?? "").slice(0, 512);
 
   if (!email || !password) {
-    redirect(buildAuthRedirect(errorPath, "error", "Informe email e senha."));
+    redirect(buildAuthRedirect(errorPath, "error", "Informe e-mail e senha."));
   }
 
   if (password.length < 8) {
@@ -93,7 +172,7 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    redirect(buildAuthRedirect("/login", "error", "Email ou senha inválidos."));
+    redirect(buildAuthRedirect("/login", "error", "E-mail ou senha inválidos."));
   }
 
   revalidatePath("/", "layout");
@@ -121,6 +200,10 @@ export async function signup(formData: FormData) {
     redirect(buildAuthRedirect("/cadastro", "error", "Muitas tentativas. Aguarde um pouco."));
   }
 
+  if (await authEmailAlreadyExists(credentials.email)) {
+    redirect(buildAuthRedirect("/cadastro", "error", ACCOUNT_ALREADY_EXISTS_MESSAGE));
+  }
+
   const { data, error } = await supabase.auth.signUp({
     ...credentials,
     options: {
@@ -142,6 +225,10 @@ export async function signup(formData: FormData) {
     redirect(buildAuthRedirect("/cadastro", "error", getSignupErrorMessage(error)));
   }
 
+  if (isExistingAccountSignup(data)) {
+    redirect(buildAuthRedirect("/cadastro", "error", ACCOUNT_ALREADY_EXISTS_MESSAGE));
+  }
+
   revalidatePath("/", "layout");
 
   if (data.session) {
@@ -152,7 +239,7 @@ export async function signup(formData: FormData) {
     buildAuthRedirect(
       "/cadastro",
       "message",
-      "Conta criada. Verifique seu email para confirmar o acesso.",
+      "Conta criada. Verifique seu e-mail para confirmar o acesso.",
     ),
   );
 }

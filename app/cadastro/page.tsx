@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { PasswordInput } from "@/app/_components/password-input";
 
 import { signup } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
@@ -29,7 +30,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   return (
     <AuthPageShell
       title="Cadastro"
-      description="Crie sua conta com email e senha."
+      description="Crie sua conta com e-mail e senha."
       errorMessage={errorMessage}
       successMessage={successMessage}
       footer={
@@ -76,7 +77,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-white" htmlFor="email">
-            Email
+            E-mail
           </label>
           <input
             className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
@@ -93,11 +94,10 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
           <label className="text-sm font-medium text-white" htmlFor="password">
             Senha
           </label>
-          <input
+          <PasswordInput
             className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
             id="password"
             name="password"
-            type="password"
             autoComplete="new-password"
             placeholder="Mínimo de 8 caracteres"
             minLength={8}

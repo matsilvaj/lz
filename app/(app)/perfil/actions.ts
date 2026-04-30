@@ -38,7 +38,7 @@ async function verifyCurrentPassword(
   });
 
   if (error) {
-    redirect(buildProfileRedirect("error", "Senha atual invalida."));
+    redirect(buildProfileRedirect("error", "Senha atual inválida."));
   }
 }
 
@@ -102,7 +102,7 @@ export async function updateEmailAction(formData: FormData) {
   }
 
   if (!email) {
-    redirect(buildProfileRedirect("error", "Informe o novo email."));
+    redirect(buildProfileRedirect("error", "Informe o novo e-mail."));
   }
 
   await verifyCurrentPassword(supabase, user.email, formData);
@@ -117,7 +117,7 @@ export async function updateEmailAction(formData: FormData) {
   redirect(
     buildProfileRedirect(
       "message",
-      "Solicitação enviada. Verifique seu email para confirmar a alteração.",
+      "Solicitação enviada. Verifique seu e-mail para confirmar a alteração.",
     ),
   );
 }
@@ -199,5 +199,5 @@ export async function deleteAccountAction(formData: FormData) {
 
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
-  redirect("/login?message=Conta+excluida+com+sucesso.");
+  redirect("/login?message=Conta+exclu%C3%ADda+com+sucesso.");
 }

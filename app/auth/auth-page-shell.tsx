@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 
+import { ClearMessageSearchParams } from "@/app/_components/clear-message-search-params";
+
 type AuthPageShellProps = {
   title: string;
   description: string;
@@ -52,6 +54,8 @@ export function AuthPageShell({
 
       <section className="relative z-10 flex flex-1 items-center justify-center py-8">
         <div className="lz-panel mx-auto w-full max-w-md rounded-[28px] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.45)] sm:p-6">
+          {errorMessage || successMessage ? <ClearMessageSearchParams /> : null}
+
           {errorMessage ? (
             <p className="mb-5 rounded-2xl border border-[rgba(255,107,133,0.24)] bg-[rgba(41,13,21,0.94)] px-4 py-3 text-sm text-[var(--negative)]">
               {errorMessage}
