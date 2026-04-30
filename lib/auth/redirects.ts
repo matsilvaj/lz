@@ -13,6 +13,7 @@ const ALLOWED_APP_PATH_PREFIXES = [
   "/odds",
   "/perfil",
   "/procedimentos",
+  "/redefinir-senha",
   "/workspaces",
 ];
 

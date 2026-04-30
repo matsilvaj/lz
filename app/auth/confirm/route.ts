@@ -1,8 +1,28 @@
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { type NextRequest, NextResponse } from "next/server";
 
+import {
+  PASSWORD_RECOVERY_COOKIE,
+  PASSWORD_RECOVERY_COOKIE_MAX_AGE,
+} from "@/lib/auth/password-recovery";
 import { getSafeAppPath } from "@/lib/auth/redirects";
 import { createClient } from "@/lib/supabase/server";
+
+function redirectAfterConfirmation(nextPath: string, requestUrl: string) {
+  const response = NextResponse.redirect(new URL(nextPath, requestUrl));
+
+  if (nextPath === "/redefinir-senha") {
+    response.cookies.set(PASSWORD_RECOVERY_COOKIE, "1", {
+      httpOnly: true,
+      maxAge: PASSWORD_RECOVERY_COOKIE_MAX_AGE,
+      path: "/redefinir-senha",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+  }
+
+  return response;
+}
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
@@ -16,7 +36,7 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(new URL(nextPath, request.url));
+      return redirectAfterConfirmation(nextPath, request.url);
     }
   }
 
@@ -27,7 +47,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!error) {
-      return NextResponse.redirect(new URL(nextPath, request.url));
+      return redirectAfterConfirmation(nextPath, request.url);
     }
   }
 

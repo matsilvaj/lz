@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getCurrentUser } from "@/lib/auth/session";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
-import { PasswordInput } from "@/app/_components/password-input";
+import { getCurrentUser } from "@/lib/auth/session";
 
-import { login } from "../auth/actions";
+import { requestPasswordReset } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
 
-type LoginPageProps = {
+type ForgotPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -16,7 +15,9 @@ function readParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
+export default async function ForgotPasswordPage({
+  searchParams,
+}: ForgotPasswordPageProps) {
   const user = await getCurrentUser();
 
   if (user) {
@@ -29,18 +30,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <AuthPageShell
-      title="Login"
-      description="Entre com seu e-mail e senha."
+      title="Esqueceu a senha?"
+      description="Informe seu e-mail para receber as instruções de redefinição."
       errorMessage={errorMessage}
       successMessage={successMessage}
       footer={
         <p>
-          Ainda não tem conta?{" "}
-          <Link
-            className="text-white underline-offset-4 hover:underline"
-            href="/cadastro"
-          >
-            Cadastrar
+          Lembrou a senha?{" "}
+          <Link className="text-white underline-offset-4 hover:underline" href="/login">
+            Entrar
           </Link>
         </p>
       }
@@ -61,35 +59,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           />
         </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-sm font-medium text-white" htmlFor="password">
-              Senha
-            </label>
-            <Link
-              className="text-xs font-medium text-[var(--text-secondary)] underline-offset-4 hover:text-white hover:underline"
-              href="/esqueci-a-senha"
-            >
-              Esqueceu a senha?
-            </Link>
-          </div>
-          <PasswordInput
-            className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
-            id="password"
-            name="password"
-            autoComplete="current-password"
-            placeholder="Mínimo de 8 caracteres"
-            required
-            minLength={8}
-          />
-        </div>
-
         <FormSubmitButton
           className="lz-button-primary w-full rounded-2xl px-4 py-3 text-sm font-semibold"
-          formAction={login}
-          pendingLabel="Entrando..."
+          formAction={requestPasswordReset}
+          pendingLabel="Enviando..."
         >
-          Entrar
+          Enviar instruções
         </FormSubmitButton>
       </form>
     </AuthPageShell>

@@ -14,6 +14,8 @@ type AuthPageShellProps = {
 };
 
 export function AuthPageShell({
+  title,
+  description,
   errorMessage,
   successMessage,
   children,
@@ -54,6 +56,13 @@ export function AuthPageShell({
 
       <section className="relative z-10 flex flex-1 items-center justify-center py-8">
         <div className="lz-panel mx-auto w-full max-w-md rounded-[28px] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.45)] sm:p-6">
+          <div className="mb-6 space-y-2">
+            <h1 className="text-2xl font-semibold text-white">{title}</h1>
+            <p className="text-sm leading-6 text-[var(--text-muted)]">
+              {description}
+            </p>
+          </div>
+
           {errorMessage || successMessage ? <ClearMessageSearchParams /> : null}
 
           {errorMessage ? (
