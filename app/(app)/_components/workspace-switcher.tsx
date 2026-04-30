@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { selectWorkspaceAction } from "../workspaces/actions";
 import { setWorkspacePageLoading } from "./workspace-loading-boundary";
@@ -20,6 +20,32 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [menuStyle, setMenuStyle] = useState({ left: 0, top: 0, width: 288 });
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+
+    if (!trigger) {
+      return;
+    }
+
+    const padding = 16;
+    const spacing = 12;
+    const menuWidth = Math.min(288, window.innerWidth - padding * 2);
+    const rect = trigger.getBoundingClientRect();
+    const preferredLeft = rect.left + rect.width / 2 - menuWidth / 2;
+    const left = Math.min(
+      Math.max(preferredLeft, padding),
+      window.innerWidth - menuWidth - padding,
+    );
+
+    setMenuStyle({
+      left,
+      top: rect.bottom + spacing,
+      width: menuWidth,
+    });
+  }, []);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -43,6 +69,21 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
     };
   }, []);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, updateMenuPosition]);
+
   function selectWorkspace(workspaceId: number) {
     setOpen(false);
     setWorkspacePageLoading(true);
@@ -62,7 +103,11 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
         aria-expanded={open}
         aria-haspopup="menu"
         className="inline-flex h-11 max-w-[180px] items-center justify-between gap-2 rounded-full border border-white/10 bg-white/4 px-4 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8 sm:max-w-[220px]"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          updateMenuPosition();
+          setOpen((current) => !current);
+        }}
+        ref={triggerRef}
         type="button"
       >
         <span className="truncate">{activeWorkspace.nome}</span>
@@ -84,8 +129,13 @@ export function WorkspaceSwitcher({ activeWorkspace, workspaces }: WorkspaceSwit
 
       {open ? (
         <div
-          className="absolute right-0 top-full z-20 mt-3 w-72 max-w-[calc(100vw-2rem)] rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+          className="fixed z-50 rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
           role="menu"
+          style={{
+            left: `${menuStyle.left}px`,
+            top: `${menuStyle.top}px`,
+            width: `${menuStyle.width}px`,
+          }}
         >
           <div className="px-3 pb-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-dim)]">
             Workspaces
