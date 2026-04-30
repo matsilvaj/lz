@@ -87,6 +87,8 @@ const calculatorConfigFieldClass =
 const calculatorConfigInputClass =
   "lz-input min-w-0 w-full rounded-xl px-2 py-1 text-right text-xs sm:py-1.5 sm:text-sm";
 
+const maxCalculatorColumnsPerRow = 5;
+
 function BookmakerAutocompleteInput({
   index,
   bookmakers,
@@ -456,6 +458,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         freebetHouse: conversionPreset?.house ?? "",
       })
     : null;
+  const columnsPerRow = Math.min(lineCount, maxCalculatorColumnsPerRow);
 
   return (
     <div className="space-y-5">
@@ -470,6 +473,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             { value: "4", label: "4 casas" },
             { value: "5", label: "5 casas" },
             { value: "6", label: "6 casas" },
+            { value: "7", label: "7 casas" },
+            { value: "8", label: "8 casas" },
+            { value: "9", label: "9 casas" },
+            { value: "10", label: "10 casas" },
           ]}
           value={String(lineCount)}
         />
@@ -479,8 +486,8 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         <div
           className="grid items-stretch gap-4"
           style={{
-            gridTemplateColumns: `repeat(${lineCount}, minmax(220px, 1fr))`,
-            minWidth: `${lineCount * 220 + (lineCount - 1) * 16}px`,
+            gridTemplateColumns: `repeat(${columnsPerRow}, minmax(220px, 1fr))`,
+            minWidth: `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
           }}
         >
         {lines.map((line, index) => {
