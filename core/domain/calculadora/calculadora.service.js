@@ -82,7 +82,7 @@ export function calculateSurebet(
   const baseStake = parseNumber(normalizedLines[safeBaseIndex].stake);
 
   if (baseStake <= 0) {
-    throw new Error("Informe um stake base valido para calcular a surebet.");
+    throw new Error("Informe um stake base válido para calcular a surebet.");
   }
 
   const calculations = normalizedLines.map((line) => {
@@ -186,11 +186,7 @@ export function calculateSurebet(
   calculations.forEach((calculation, index) => {
     const rawStake = index === safeBaseIndex ? baseStake : stakes[index];
     const finalStake =
-      index === safeBaseIndex
-        ? baseStake
-        : calculation.tipo === "L"
-          ? roundTo(stakes[index])
-          : Number.parseInt(Math.round(stakes[index]), 10) || 0;
+      index === safeBaseIndex ? baseStake : roundTo(stakes[index]);
 
     const responsibility =
       calculation.tipo === "L"

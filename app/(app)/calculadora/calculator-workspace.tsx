@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useToast } from "@/app/_components/toast-provider";
+
 import { LzSelect } from "../_components/lz-select";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { formatCurrency } from "../_components/ui";
@@ -25,6 +27,16 @@ type CalculatorLine = {
   comissao_percentual: string;
   cashback_percentual: string;
   freebet: boolean;
+};
+
+type SharedCalculatorLine = Partial<Record<keyof CalculatorLine, unknown>>;
+
+type SharedCalculatorPayload = {
+  version?: number;
+  lineCount?: number;
+  workspaceIndex?: number;
+  configExpanded?: boolean;
+  lines?: SharedCalculatorLine[];
 };
 
 type BookmakerAutocompleteInputProps = {
@@ -57,6 +69,138 @@ function createConversionLine(house: string, freebetValue: number): CalculatorLi
     stake: String(freebetValue || 0),
     freebet: true,
   };
+}
+
+function clampInteger(value: unknown, min: number, max: number) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return min;
+  }
+
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+}
+
+function toSharedString(value: unknown, fallback: string) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return fallback;
+}
+
+function normalizeSharedCalculatorLine(line: SharedCalculatorLine): CalculatorLine {
+  const initialLine = createInitialLine();
+
+  return {
+    house: toSharedString(line.house, initialLine.house),
+    odd: toSharedString(line.odd, initialLine.odd),
+    stake: toSharedString(line.stake, initialLine.stake),
+    stakeEdited: Boolean(line.stakeEdited),
+    tipo:
+      toSharedString(line.tipo, initialLine.tipo).toUpperCase().startsWith("L")
+        ? "L"
+        : "B",
+    responsabilidade: toSharedString(
+      line.responsabilidade,
+      initialLine.responsabilidade,
+    ),
+    responsabilidadeEdited: Boolean(line.responsabilidadeEdited),
+    aumento_percentual: toSharedString(
+      line.aumento_percentual,
+      initialLine.aumento_percentual,
+    ),
+    comissao_percentual: toSharedString(
+      line.comissao_percentual,
+      initialLine.comissao_percentual,
+    ),
+    cashback_percentual: toSharedString(
+      line.cashback_percentual,
+      initialLine.cashback_percentual,
+    ),
+    freebet: Boolean(line.freebet),
+  };
+}
+
+function encodeCalculatorPayload(payload: SharedCalculatorPayload) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = "";
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeCalculatorPayload(value: string): SharedCalculatorPayload | null {
+  try {
+    const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedBase64 = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "=",
+    );
+    const binary = atob(paddedBase64);
+    const bytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0),
+    );
+    const decoded = JSON.parse(new TextDecoder().decode(bytes));
+
+    return decoded && typeof decoded === "object"
+      ? (decoded as SharedCalculatorPayload)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function copyTextFallback(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+function CopyIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M8 8.5A2.5 2.5 0 0 1 10.5 6h7A2.5 2.5 0 0 1 20 8.5v9A2.5 2.5 0 0 1 17.5 20h-7A2.5 2.5 0 0 1 8 17.5v-9Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M5 15.5V6.5A2.5 2.5 0 0 1 7.5 4h7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
 }
 
 function getProfitClass(value: number) {
@@ -250,6 +394,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { showToast } = useToast();
   const conversionPreset = useMemo(() => {
     if (searchParams.get("mode") !== "convert-freebet") {
       return null;
@@ -277,17 +422,76 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       originIds,
     };
   }, [searchParams]);
+  const sharedPreset = useMemo(() => {
+    const sharedValue = searchParams.get("calc");
+
+    if (!sharedValue) {
+      return null;
+    }
+
+    const payload = decodeCalculatorPayload(sharedValue);
+
+    if (!payload || !Array.isArray(payload.lines)) {
+      return null;
+    }
+
+    const sharedLines = payload.lines
+      .slice(0, 10)
+      .map((line) => normalizeSharedCalculatorLine(line));
+
+    if (sharedLines.length === 0) {
+      return null;
+    }
+
+    const nextLineCount = clampInteger(
+      payload.lineCount ?? sharedLines.length,
+      2,
+      10,
+    );
+    const linesWithMinimum = [...sharedLines];
+
+    while (linesWithMinimum.length < nextLineCount) {
+      linesWithMinimum.push(createInitialLine());
+    }
+
+    return {
+      key: `shared:${sharedValue}`,
+      lineCount: nextLineCount,
+      workspaceIndex: clampInteger(payload.workspaceIndex, 0, nextLineCount - 1),
+      configExpanded: Boolean(payload.configExpanded),
+      lines: linesWithMinimum.slice(0, nextLineCount),
+    };
+  }, [searchParams]);
   const appliedPresetRef = useRef<string | null>(null);
-  const [lineCount, setLineCount] = useState(2);
-  const [workspaceIndex, setWorkspaceIndex] = useState(0);
-  const [configExpanded, setConfigExpanded] = useState(false);
+  const [lineCount, setLineCount] = useState(() => sharedPreset?.lineCount ?? 2);
+  const [workspaceIndex, setWorkspaceIndex] = useState(
+    () => sharedPreset?.workspaceIndex ?? 0,
+  );
+  const [configExpanded, setConfigExpanded] = useState(
+    () => sharedPreset?.configExpanded ?? false,
+  );
   const [lines, setLines] = useState<CalculatorLine[]>(() =>
-    conversionPreset
+    sharedPreset
+      ? sharedPreset.lines
+      : conversionPreset
       ? [createConversionLine(conversionPreset.house, conversionPreset.freebetValue), createInitialLine()]
       : [createInitialLine(), createInitialLine()],
   );
 
   useEffect(() => {
+    if (sharedPreset) {
+      if (appliedPresetRef.current === sharedPreset.key) {
+        return;
+      }
+
+      setLineCount(sharedPreset.lineCount);
+      setWorkspaceIndex(sharedPreset.workspaceIndex);
+      setConfigExpanded(sharedPreset.configExpanded);
+      setLines(sharedPreset.lines);
+      appliedPresetRef.current = sharedPreset.key;
+      return;
+    }
+
     if (!conversionPreset) {
       appliedPresetRef.current = null;
       return;
@@ -305,7 +509,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       createInitialLine(),
     ]);
     appliedPresetRef.current = conversionPreset.key;
-  }, [conversionPreset]);
+  }, [sharedPreset, conversionPreset]);
 
   function updateLine(index: number, patch: Partial<CalculatorLine>) {
     setLines((current) =>
@@ -316,7 +520,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   }
 
   function resetCalculator() {
-    if (conversionPreset) {
+    if (conversionPreset || sharedPreset) {
       appliedPresetRef.current = null;
       router.replace(pathname);
     }
@@ -417,6 +621,66 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       })),
     );
     setWorkspaceIndex(index);
+  }
+
+  async function copyCalculationLink() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const payload: SharedCalculatorPayload = {
+      version: 1,
+      lineCount,
+      workspaceIndex,
+      configExpanded,
+      lines: lines.slice(0, lineCount).map((line) => ({
+        house: line.house,
+        odd: line.odd,
+        stake: line.stake,
+        stakeEdited: line.stakeEdited,
+        tipo: line.tipo,
+        responsabilidade: line.responsabilidade,
+        responsabilidadeEdited: line.responsabilidadeEdited,
+        aumento_percentual: line.aumento_percentual,
+        comissao_percentual: line.comissao_percentual,
+        cashback_percentual: line.cashback_percentual,
+        freebet: line.freebet,
+      })),
+    };
+    const params = new URLSearchParams();
+    params.set("calc", encodeCalculatorPayload(payload));
+    const shareUrl = `${window.location.origin}${pathname}?${params.toString()}`;
+
+    try {
+      let copied = false;
+
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          copied = true;
+        } catch {
+          copied = false;
+        }
+      }
+
+      if (!copied) {
+        copied = copyTextFallback(shareUrl);
+      }
+
+      if (!copied) {
+        throw new Error("Clipboard unavailable");
+      }
+
+      showToast({
+        title: "Link do cálculo copiado.",
+        tone: "success",
+      });
+    } catch {
+      showToast({
+        title: "Não foi possível copiar o link.",
+        tone: "error",
+      });
+    }
   }
 
   let calculationError = "";
@@ -706,7 +970,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
 
       {calculationError ? (
         <div className="rounded-[28px] border border-[rgba(255,107,133,0.24)] bg-[rgba(41,13,21,0.94)] px-5 py-4">
-          <p className="text-sm font-medium text-[var(--negative)]">Calculo indisponível</p>
+          <p className="text-sm font-medium text-[var(--negative)]">Cálculo indisponível</p>
           <p className="mt-2 text-sm leading-7 text-[#f7a1b5]">{calculationError}</p>
         </div>
       ) : calculation ? (
@@ -718,6 +982,16 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               type="button"
             >
               Limpar
+            </button>
+
+            <button
+              aria-label="Copiar cálculo"
+              className="lz-button-secondary inline-flex h-11 w-11 items-center justify-center rounded-full p-0 text-[var(--text-secondary)] transition"
+              onClick={copyCalculationLink}
+              title="Copiar cálculo"
+              type="button"
+            >
+              <CopyIcon />
             </button>
 
             <ProcedureModal
