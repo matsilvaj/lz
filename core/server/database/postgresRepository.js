@@ -232,6 +232,7 @@ export class ProceduresPostgresRepository {
         VALUES ($1, $2, $3)
         ON CONFLICT (base_id)
         DO UPDATE SET texto = EXCLUDED.texto
+        WHERE usuarios_observacoes_bancas.user_id = EXCLUDED.user_id
       `,
       [normalizedUserId, normalizedWorkspaceId, parseText(notes)],
     );
