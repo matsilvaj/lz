@@ -1,11 +1,7 @@
-import { ComingSoonPage } from "../_components/coming-soon-page";
+import { OddsEventSearch } from "./odds-event-search";
+
+export const dynamic = "force-dynamic";
 
 export default function OddsPage() {
-  return (
-    <ComingSoonPage
-      message="Estamos preparando uma experiência completa para liberar o painel de Odds em breve."
-      title="Odds"
-      variant="odds"
-    />
-  );
+  return <OddsEventSearch />;
 }
