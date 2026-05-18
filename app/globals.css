@@ -22,6 +22,28 @@
   --shadow-soft: 0 28px 80px rgba(0, 0, 0, 0.34);
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fff8fb;
+  --bg-secondary: #fff1f6;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --surface-soft: rgba(87, 41, 58, 0.05);
+  --border: rgba(64, 27, 43, 0.12);
+  --border-strong: rgba(64, 27, 43, 0.18);
+  --text-primary: #1d1017;
+  --text-secondary: #5f3144;
+  --text-muted: #7f5263;
+  --text-dim: #9b6c7e;
+  --accent: #d81f59;
+  --accent-soft: #c01850;
+  --accent-gold: #7d4a2b;
+  --positive: #087c61;
+  --negative: #c41e46;
+  --warning: #a7651f;
+  --shadow-soft: 0 24px 70px rgba(88, 36, 58, 0.14);
+}
+
 html {
   background:
     radial-gradient(circle at top, rgba(216, 31, 89, 0.18), transparent 30%),
@@ -37,6 +59,14 @@ body {
   font-family: var(--font-geist-sans), sans-serif;
 }
 
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background:
+    radial-gradient(circle at top, rgba(216, 31, 89, 0.1), transparent 28%),
+    radial-gradient(circle at 80% 8%, rgba(255, 119, 163, 0.12), transparent 22%),
+    linear-gradient(180deg, #fff8fb 0%, #fff3f7 42%, #fffafd 100%);
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -48,6 +78,13 @@ body::before {
   background-size: 96px 96px;
   mask-image: radial-gradient(circle at center, black, transparent 80%);
   opacity: 0.35;
+}
+
+html[data-theme="light"] body::before {
+  background-image:
+    linear-gradient(rgba(78, 30, 49, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(78, 30, 49, 0.04) 1px, transparent 1px);
+  opacity: 0.5;
 }
 
 ::selection {
@@ -97,6 +134,10 @@ textarea:disabled {
   pointer-events: none;
 }
 
+html[data-theme="light"] .lz-shell::after {
+  background: radial-gradient(circle, rgba(216, 31, 89, 0.1), transparent 68%);
+}
+
 .lz-panel {
   position: relative;
   overflow: hidden;
@@ -104,6 +145,10 @@ textarea:disabled {
   background: linear-gradient(180deg, rgba(28, 11, 20, 0.92), rgba(16, 7, 13, 0.92));
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(20px);
+}
+
+html[data-theme="light"] .lz-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 251, 0.9));
 }
 
 .lz-panel::before {
@@ -116,10 +161,20 @@ textarea:disabled {
     radial-gradient(circle at bottom left, rgba(216, 31, 89, 0.12), transparent 24%);
 }
 
+html[data-theme="light"] .lz-panel::before {
+  background:
+    radial-gradient(circle at top right, rgba(216, 31, 89, 0.08), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(249, 215, 190, 0.18), transparent 26%);
+}
+
 .lz-panel-subtle {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(16px);
+}
+
+html[data-theme="light"] .lz-panel-subtle {
+  background: rgba(255, 255, 255, 0.64);
 }
 
 .lz-page-enter {
@@ -156,9 +211,18 @@ textarea:disabled {
   backdrop-filter: blur(14px);
 }
 
+html[data-theme="light"] .lz-button-secondary {
+  background: rgba(255, 255, 255, 0.62);
+}
+
 .lz-button-secondary:hover {
   border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="light"] .lz-button-secondary:hover {
+  border-color: rgba(64, 27, 43, 0.22);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .lz-button-ghost {
@@ -178,6 +242,12 @@ textarea:disabled {
   color: var(--text-primary);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   backdrop-filter: blur(12px);
+}
+
+html[data-theme="light"] .lz-input,
+html[data-theme="light"] .lz-select,
+html[data-theme="light"] .lz-textarea {
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .lz-input::placeholder,
@@ -203,6 +273,92 @@ textarea:disabled {
 
 .lz-divider {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+}
+
+.lz-home-menu-panel {
+  overflow: hidden;
+  isolation: isolate;
+  background: #070207;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.lz-home-menu-panel::before {
+  content: none;
+}
+
+html[data-theme="light"] .lz-divider {
+  background: linear-gradient(90deg, transparent, rgba(64, 27, 43, 0.16), transparent);
+}
+
+html[data-theme="light"] .lz-home-menu-panel {
+  background: #fff8fb;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-theme="light"] .lz-home-menu-panel::before {
+  content: none;
+}
+
+html[data-theme="light"] .text-white {
+  color: var(--text-primary);
+}
+
+html[data-theme="light"] .hover\:text-white:hover {
+  color: var(--text-primary);
+}
+
+html[data-theme="light"] .border-white\/8,
+html[data-theme="light"] .border-white\/10,
+html[data-theme="light"] .border-white\/12,
+html[data-theme="light"] .border-white\/15,
+html[data-theme="light"] .border-white\/20 {
+  border-color: rgba(64, 27, 43, 0.12);
+}
+
+html[data-theme="light"] .hover\:border-white\/10:hover,
+html[data-theme="light"] .hover\:border-white\/20:hover {
+  border-color: rgba(64, 27, 43, 0.2);
+}
+
+html[data-theme="light"] .bg-white\/4,
+html[data-theme="light"] .bg-white\/5,
+html[data-theme="light"] .bg-white\/6,
+html[data-theme="light"] .bg-white\/8,
+html[data-theme="light"] .bg-white\/10,
+html[data-theme="light"] .bg-white\/\[0\.025\],
+html[data-theme="light"] .bg-white\/\[0\.035\] {
+  background-color: rgba(255, 255, 255, 0.58);
+}
+
+html[data-theme="light"] .hover\:bg-white\/4:hover,
+html[data-theme="light"] .hover\:bg-white\/5:hover,
+html[data-theme="light"] .hover\:bg-white\/6:hover,
+html[data-theme="light"] .hover\:bg-white\/8:hover,
+html[data-theme="light"] .hover\:bg-white\/10:hover,
+html[data-theme="light"] .hover\:bg-white\/15:hover,
+html[data-theme="light"] .hover\:bg-white\/\[0\.04\]:hover,
+html[data-theme="light"] .hover\:bg-white\/\[0\.07\]:hover {
+  background-color: rgba(255, 255, 255, 0.82);
+}
+
+html[data-theme="light"] header.bg-\[rgba\(6\,2\,7\,0\.78\)\] {
+  background-color: rgba(255, 248, 251, 0.82);
+}
+
+html[data-theme="light"] .bg-\[rgba\(17\,8\,14\,0\.96\)\],
+html[data-theme="light"] .bg-\[rgba\(17\,8\,14\,0\.98\)\],
+html[data-theme="light"] .bg-\[rgba\(23\,9\,16\,0\.98\)\],
+html[data-theme="light"] .bg-\[rgba\(20\,10\,16\,0\.98\)\] {
+  background-color: rgba(255, 255, 255, 0.96);
+}
+
+html[data-theme="light"] .shadow-\[0_24px_60px_rgba\(0\,0\,0\,0\.4\)\],
+html[data-theme="light"] .shadow-\[0_24px_70px_rgba\(0\,0\,0\,0\.45\)\],
+html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.46\)\],
+html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.5\)\] {
+  box-shadow: 0 24px 60px rgba(88, 36, 58, 0.16);
 }
 
 .lz-scrollbar-hidden {

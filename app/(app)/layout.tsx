@@ -5,6 +5,7 @@ import { type ReactNode } from "react";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 
 import { AppNavigation } from "./_components/app-navigation";
+import { ThemeToggle } from "./_components/theme-toggle";
 import { WorkspaceSwitcher } from "./_components/workspace-switcher";
 import { WorkspaceLoadingBoundary } from "./_components/workspace-loading-boundary";
 import { UserMenu } from "./_components/user-menu";
@@ -38,11 +39,14 @@ export default async function ProtectedAppLayout({
 
             <AppNavigation />
 
-            <div className="grid grid-cols-[1fr_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
+            <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
               <div className="col-start-2 justify-self-center lg:col-auto lg:justify-self-auto">
                 <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} />
               </div>
               <div className="col-start-3 justify-self-start lg:col-auto lg:justify-self-auto">
+                <ThemeToggle />
+              </div>
+              <div className="col-start-4 justify-self-start lg:col-auto lg:justify-self-auto">
                 <UserMenu />
               </div>
             </div>

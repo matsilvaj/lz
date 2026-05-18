@@ -69,6 +69,7 @@ export type MonitorOddsEvent = {
   bookmaker_count: number;
   odd_count: number;
   latest_odd_updated_at: string | null;
+  odds: MonitorOddsFeedItem[];
 };
 
 export type MonitorOddsFeedStatus = {
@@ -207,10 +208,12 @@ function updateEventFromOdd(
       bookmaker_count: 0,
       odd_count: 0,
       latest_odd_updated_at: null,
+      odds: [],
       bookmakerSlugs: new Set<string>(),
     } satisfies MonitorOddsEvent & { bookmakerSlugs: Set<string> });
 
   current.odd_count += 1;
+  current.odds.push(odd);
   current.bookmakerSlugs.add(odd.bookmaker_slug);
   current.bookmaker_count = current.bookmakerSlugs.size;
 
@@ -244,6 +247,18 @@ function stripInternalEventState(
     bookmaker_count: event.bookmaker_count,
     odd_count: event.odd_count,
     latest_odd_updated_at: event.latest_odd_updated_at,
+    odds: event.odds.sort((left, right) => {
+      const marketOrder = left.market_code.localeCompare(right.market_code);
+      if (marketOrder !== 0) return marketOrder;
+
+      const categoryOrder = left.pa_category.localeCompare(right.pa_category);
+      if (categoryOrder !== 0) return categoryOrder;
+
+      const bookmakerOrder = left.bookmaker_name.localeCompare(right.bookmaker_name);
+      if (bookmakerOrder !== 0) return bookmakerOrder;
+
+      return left.selection.localeCompare(right.selection);
+    }),
   };
 }
 

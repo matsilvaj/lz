@@ -859,7 +859,8 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                 }`}
               >
                 <button
-                  className="flex w-full items-center"
+                  aria-expanded={configExpanded}
+                  className="flex w-full items-center justify-between gap-3"
                   onClick={() => setConfigExpanded((current) => !current)}
                   type="button"
                 >
@@ -871,6 +872,22 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                       <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
                     ) : null}
                   </div>
+                  <svg
+                    aria-hidden="true"
+                    className={`h-4 w-4 shrink-0 text-[var(--text-dim)] transition ${
+                      configExpanded ? "rotate-180" : ""
+                    }`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M6.75 9.75 12 15l5.25-5.25"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                  </svg>
                 </button>
 
                 {configExpanded ? (
