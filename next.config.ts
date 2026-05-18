@@ -40,11 +40,12 @@ const connectSources = [
 ]
   .filter(Boolean)
   .join(" ");
+const imageSources = ["'self'", "blob:", "data:", "https://media.api-sports.io"].join(" ");
 const cspHeader = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' blob: data:",
+  `img-src ${imageSources}`,
   "font-src 'self'",
   `connect-src ${connectSources}`,
   "object-src 'none'",
@@ -97,6 +98,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        hostname: "media.api-sports.io",
+        protocol: "https",
+      },
+    ],
+  },
   poweredByHeader: false,
   serverExternalPackages: ["pg"],
   experimental: {

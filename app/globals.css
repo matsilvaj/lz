@@ -225,6 +225,63 @@ html[data-theme="light"] .lz-button-secondary:hover {
   background: rgba(255, 255, 255, 0.86);
 }
 
+.lz-league-logo-outline {
+  --lz-league-logo-outline-size: 1px;
+}
+
+.lz-league-logo-outline-copy {
+  filter: brightness(0) invert(1);
+  opacity: 0.98;
+}
+
+.lz-league-logo-outline-copy[data-outline-position="top"] {
+  transform: translateY(calc(-1 * var(--lz-league-logo-outline-size)));
+}
+
+.lz-league-logo-outline-copy[data-outline-position="right"] {
+  transform: translateX(var(--lz-league-logo-outline-size));
+}
+
+.lz-league-logo-outline-copy[data-outline-position="bottom"] {
+  transform: translateY(var(--lz-league-logo-outline-size));
+}
+
+.lz-league-logo-outline-copy[data-outline-position="left"] {
+  transform: translateX(calc(-1 * var(--lz-league-logo-outline-size)));
+}
+
+.lz-league-logo-outline-copy[data-outline-position="top-right"] {
+  transform: translate(
+    var(--lz-league-logo-outline-size),
+    calc(-1 * var(--lz-league-logo-outline-size))
+  );
+}
+
+.lz-league-logo-outline-copy[data-outline-position="bottom-right"] {
+  transform: translate(
+    var(--lz-league-logo-outline-size),
+    var(--lz-league-logo-outline-size)
+  );
+}
+
+.lz-league-logo-outline-copy[data-outline-position="bottom-left"] {
+  transform: translate(
+    calc(-1 * var(--lz-league-logo-outline-size)),
+    var(--lz-league-logo-outline-size)
+  );
+}
+
+.lz-league-logo-outline-copy[data-outline-position="top-left"] {
+  transform: translate(
+    calc(-1 * var(--lz-league-logo-outline-size)),
+    calc(-1 * var(--lz-league-logo-outline-size))
+  );
+}
+
+html[data-theme="light"] .lz-league-logo-outline-copy {
+  display: none;
+}
+
 .lz-button-ghost {
   color: var(--text-secondary);
 }

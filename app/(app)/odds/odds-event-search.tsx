@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type OddsFeedItem = {
@@ -15,6 +16,8 @@ type OddsFeedItem = {
   league_name: string;
   league_slug: string;
   league_country: string | null;
+  league_logo_url: string | null;
+  league_country_flag_url: string | null;
   bookmaker_slug: string;
   bookmaker_name: string;
   market_code: string;
@@ -38,6 +41,8 @@ type OddsEvent = {
   league_name: string;
   league_slug: string;
   league_country: string | null;
+  league_logo_url: string | null;
+  league_country_flag_url: string | null;
   bookmaker_count: number;
   odd_count: number;
   latest_odd_updated_at: string | null;
@@ -59,6 +64,18 @@ type StatusResponse = {
   latest_odd_updated_at?: string | null;
 };
 
+type DatePreset = "today" | "tomorrow";
+type EventsRequest =
+  | {
+      kind: "search";
+      search: string;
+    }
+  | {
+      from: string;
+      kind: "date";
+      preset: DatePreset;
+      to: string;
+    };
 type PaCategory = "SEM_PA" | "COM_PA";
 type Selection = "HOME" | "DRAW" | "AWAY";
 type SortDirection = "asc" | "desc";
@@ -71,8 +88,31 @@ type OddsTableRow = {
   key: string;
   odds: Partial<Record<Selection, OddsFeedItem>>;
 };
+type LeagueGroup = {
+  events: OddsEvent[];
+  key: string;
+  leagueCountry: string | null;
+  leagueCountryFlagUrl: string | null;
+  leagueLogoUrl: string | null;
+  leagueName: string;
+};
 
 const selections: Selection[] = ["HOME", "DRAW", "AWAY"];
+const datePresets: DatePreset[] = ["today", "tomorrow"];
+const datePresetLabels: Record<DatePreset, string> = {
+  today: "Hoje",
+  tomorrow: "Amanhã",
+};
+const leagueLogoOutlinePositions = [
+  "top",
+  "top-right",
+  "right",
+  "bottom-right",
+  "bottom",
+  "bottom-left",
+  "left",
+  "top-left",
+] as const;
 const oddsTableGridClass =
   "grid grid-cols-[minmax(120px,1fr)_repeat(3,minmax(62px,90px))] items-center gap-2";
 const oddsBoxClass =
@@ -175,6 +215,103 @@ const leagueCountryNames: Record<string, string> = {
   world: "Mundo",
 };
 
+const leagueCountryIsoCodes: Record<string, string> = {
+  albania: "AL",
+  algeria: "DZ",
+  andorra: "AD",
+  angola: "AO",
+  argentina: "AR",
+  armenia: "AM",
+  aruba: "AW",
+  australia: "AU",
+  austria: "AT",
+  azerbaijan: "AZ",
+  bahrain: "BH",
+  belarus: "BY",
+  belgium: "BE",
+  bolivia: "BO",
+  "bosnia-herzegovina": "BA",
+  bosnia: "BA",
+  brazil: "BR",
+  bulgaria: "BG",
+  canada: "CA",
+  chile: "CL",
+  china: "CN",
+  colombia: "CO",
+  "costa-rica": "CR",
+  croatia: "HR",
+  cyprus: "CY",
+  "czech-republic": "CZ",
+  czechia: "CZ",
+  denmark: "DK",
+  ecuador: "EC",
+  egypt: "EG",
+  england: "GB",
+  estonia: "EE",
+  "faroe-islands": "FO",
+  finland: "FI",
+  france: "FR",
+  georgia: "GE",
+  germany: "DE",
+  gibraltar: "GI",
+  greece: "GR",
+  hungary: "HU",
+  iceland: "IS",
+  india: "IN",
+  indonesia: "ID",
+  iran: "IR",
+  ireland: "IE",
+  israel: "IL",
+  italy: "IT",
+  japan: "JP",
+  kazakhstan: "KZ",
+  kosovo: "XK",
+  latvia: "LV",
+  lithuania: "LT",
+  luxembourg: "LU",
+  malaysia: "MY",
+  malta: "MT",
+  mexico: "MX",
+  moldova: "MD",
+  montenegro: "ME",
+  morocco: "MA",
+  netherlands: "NL",
+  "new-zealand": "NZ",
+  nigeria: "NG",
+  "north-macedonia": "MK",
+  "northern-ireland": "GB",
+  norway: "NO",
+  paraguay: "PY",
+  peru: "PE",
+  poland: "PL",
+  portugal: "PT",
+  qatar: "QA",
+  romania: "RO",
+  russia: "RU",
+  "san-marino": "SM",
+  "saudi-arabia": "SA",
+  scotland: "GB",
+  serbia: "RS",
+  singapore: "SG",
+  slovakia: "SK",
+  slovenia: "SI",
+  "south-africa": "ZA",
+  "south-korea": "KR",
+  spain: "ES",
+  sweden: "SE",
+  switzerland: "CH",
+  thailand: "TH",
+  tunisia: "TN",
+  turkey: "TR",
+  ukraine: "UA",
+  uruguay: "UY",
+  usa: "US",
+  "united-states": "US",
+  venezuela: "VE",
+  vietnam: "VN",
+  wales: "GB",
+};
+
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
 });
@@ -193,10 +330,10 @@ function formatDate(value: string | null) {
 }
 
 function formatTime(value: string | null) {
-  if (!value) return "Sem horario";
+  if (!value) return "Sem horário";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Sem horario";
+  if (Number.isNaN(date.getTime())) return "Sem horário";
 
   return timeFormatter.format(date);
 }
@@ -233,9 +370,144 @@ function formatLeagueCountry(value: string | null) {
   return leagueCountryNames[normalizeLabelKey(value)] ?? value;
 }
 
+function formatLeagueName(value: string, country?: string | null) {
+  const normalizedCountry = normalizeLabelKey(country ?? "");
+  let formatted = value.trim().replace(/\bbrasileirao\b/gi, "Brasileirão");
+  const isBrazilianLeague =
+    normalizedCountry === "brazil" || normalizeLabelKey(formatted).includes("brasileirao");
+
+  if (isBrazilianLeague) {
+    formatted = formatted.replace(/\bserie\b/gi, "Série");
+  }
+
+  return formatted;
+}
+
+function formatCountryFlag(value: string | null) {
+  if (!value) return "";
+
+  const countryCode = leagueCountryIsoCodes[normalizeLabelKey(value)] ?? "";
+
+  if (countryCode.length !== 2) {
+    return "";
+  }
+
+  return countryCode
+    .toUpperCase()
+    .split("")
+    .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
+    .join("");
+}
+
+function getSafeImageUrl(value: string | null) {
+  if (!value) return "";
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
 function formatLeagueLine(event: OddsEvent) {
   const country = formatLeagueCountry(event.league_country);
-  return country ? `${event.league_name} - ${country}` : event.league_name;
+  const leagueName = formatLeagueName(event.league_name, event.league_country);
+  return country ? `${leagueName} - ${country}` : leagueName;
+}
+
+function getDatePresetRange(preset: DatePreset) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  if (preset === "tomorrow") {
+    start.setDate(start.getDate() + 1);
+  }
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    from: start.toISOString(),
+    to: end.toISOString(),
+  };
+}
+
+function getEventsRequestParams(request: EventsRequest) {
+  const params = new URLSearchParams();
+
+  if (request.kind === "search") {
+    params.set("q", request.search);
+    return params;
+  }
+
+  params.set("from", request.from);
+  params.set("to", request.to);
+  return params;
+}
+
+function isSameEventsRequest(
+  left: EventsRequest | null,
+  right: EventsRequest | null,
+) {
+  if (!left || !right || left.kind !== right.kind) {
+    return false;
+  }
+
+  if (left.kind === "search" && right.kind === "search") {
+    return left.search === right.search;
+  }
+
+  if (left.kind === "date" && right.kind === "date") {
+    return left.preset === right.preset && left.from === right.from && left.to === right.to;
+  }
+
+  return false;
+}
+
+function groupEventsByLeague(events: OddsEvent[]) {
+  const groups = new Map<string, LeagueGroup>();
+
+  for (const event of events) {
+    const key = `${event.league_slug}:${normalizeLabelKey(event.league_country ?? "")}`;
+    const current =
+      groups.get(key) ??
+      ({
+        events: [],
+        key,
+        leagueCountry: event.league_country,
+        leagueCountryFlagUrl: event.league_country_flag_url,
+        leagueLogoUrl: event.league_logo_url,
+        leagueName: event.league_name,
+      } satisfies LeagueGroup);
+
+    current.events.push(event);
+    current.leagueCountryFlagUrl =
+      current.leagueCountryFlagUrl ?? event.league_country_flag_url;
+    current.leagueLogoUrl = current.leagueLogoUrl ?? event.league_logo_url;
+    groups.set(key, current);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      events: [...group.events].sort((left, right) => {
+        const startOrder =
+          new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime();
+
+        if (startOrder !== 0) return startOrder;
+        return left.fixture_name.localeCompare(right.fixture_name, "pt-BR");
+      }),
+    }))
+    .sort((left, right) => {
+      const countryOrder = formatLeagueCountry(left.leagueCountry).localeCompare(
+        formatLeagueCountry(right.leagueCountry),
+        "pt-BR",
+      );
+
+      if (countryOrder !== 0) return countryOrder;
+      return left.leagueName.localeCompare(right.leagueName, "pt-BR");
+    });
 }
 
 function selectionLabel(value: string) {
@@ -388,9 +660,11 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
 function EventCard({
   event,
   onOpen,
+  showLeague = true,
 }: {
   event: OddsEvent;
   onOpen: (event: OddsEvent) => void;
+  showLeague?: boolean;
 }) {
   return (
     <button
@@ -404,9 +678,11 @@ function EventCard({
             <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
               {formatDate(event.starts_at)}
             </span>
-            <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              {formatLeagueLine(event)}
-            </span>
+            {showLeague ? (
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                {formatLeagueLine(event)}
+              </span>
+            ) : null}
           </div>
 
           <h2 className="mt-4 text-lg font-semibold tracking-tight text-white md:text-xl">
@@ -422,6 +698,252 @@ function EventCard({
         </div>
       </div>
     </button>
+  );
+}
+
+function DatePresetButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`inline-flex h-13 items-center justify-center rounded-2xl border px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+        active
+          ? "border-[rgba(255,139,187,0.42)] bg-[rgba(255,139,187,0.16)] text-white shadow-[0_0_22px_rgba(255,139,187,0.08)]"
+          : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function GlobalLeagueIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M3.5 12h17M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5s-1.1 6.2-3.3 8.5M12 3.5C9.8 5.8 8.7 8.6 8.7 12s1.1 6.2 3.3 8.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="8.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+    </svg>
+  );
+}
+
+function LeagueIcon({
+  country,
+  flagUrl,
+  leagueName,
+  logoUrl,
+}: {
+  country: string;
+  flagUrl: string | null;
+  leagueName: string;
+  logoUrl: string | null;
+}) {
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
+  const safeLogoUrl = getSafeImageUrl(logoUrl);
+  const safeFlagUrl = getSafeImageUrl(flagUrl);
+  const countryFlag = formatCountryFlag(country);
+  const imageUrl = safeLogoUrl && !failedUrls.has(safeLogoUrl)
+    ? safeLogoUrl
+    : safeFlagUrl && !failedUrls.has(safeFlagUrl)
+      ? safeFlagUrl
+      : "";
+  const isLogoImage = Boolean(imageUrl && imageUrl === safeLogoUrl);
+  const imageAlt = imageUrl === safeLogoUrl ? `Logo ${leagueName}` : `Bandeira ${country}`;
+
+  return (
+    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-base text-[var(--text-secondary)]">
+      {imageUrl && isLogoImage ? (
+        <span className="lz-league-logo-outline relative inline-flex h-7 w-7 items-center justify-center">
+          {leagueLogoOutlinePositions.map((position) => (
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="lz-league-logo-outline-copy pointer-events-none absolute inset-0 h-full w-full object-contain"
+              data-outline-position={position}
+              height={28}
+              key={position}
+              loading="lazy"
+              onError={() => {
+                setFailedUrls((current) => new Set(current).add(imageUrl));
+              }}
+              referrerPolicy="no-referrer"
+              src={imageUrl}
+              unoptimized
+              width={28}
+            />
+          ))}
+          <Image
+            alt={imageAlt}
+            className="relative z-10 h-full w-full object-contain"
+            height={28}
+            loading="lazy"
+            onError={() => {
+              setFailedUrls((current) => new Set(current).add(imageUrl));
+            }}
+            referrerPolicy="no-referrer"
+            src={imageUrl}
+            unoptimized
+            width={28}
+          />
+        </span>
+      ) : imageUrl ? (
+        <Image
+          alt={imageAlt}
+          className="h-6 w-6 object-contain"
+          height={24}
+          loading="lazy"
+          onError={() => {
+            setFailedUrls((current) => new Set(current).add(imageUrl));
+          }}
+          referrerPolicy="no-referrer"
+          src={imageUrl}
+          unoptimized
+          width={24}
+        />
+      ) : countryFlag ? (
+        <span aria-label={`Bandeira ${country}`} role="img">
+          {countryFlag}
+        </span>
+      ) : (
+        <GlobalLeagueIcon />
+      )}
+    </span>
+  );
+}
+
+function LeagueEventsSection({
+  group,
+  onOpen,
+}: {
+  group: LeagueGroup;
+  onOpen: (event: OddsEvent) => void;
+}) {
+  const country = formatLeagueCountry(group.leagueCountry);
+  const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <LeagueIcon
+            country={country || group.leagueCountry || "Internacional"}
+            flagUrl={group.leagueCountryFlagUrl}
+            leagueName={leagueName}
+            logoUrl={group.leagueLogoUrl}
+          />
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-white">
+              {leagueName}
+            </h2>
+            {country ? (
+              <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
+                {country}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+          {group.events.length} {group.events.length === 1 ? "jogo" : "jogos"}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {group.events.map((event) => (
+          <EventCard
+            event={event}
+            key={event.fixture_id}
+            onOpen={onOpen}
+            showLeague={false}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EventCardSkeleton() {
+  return (
+    <div className="w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 md:p-5">
+      <div className="flex animate-pulse flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
+        <div className="min-w-0">
+          <div className="flex gap-2">
+            <span className="h-6 w-20 rounded-full bg-white/8" />
+            <span className="h-6 w-44 rounded-full bg-white/8" />
+          </div>
+          <span className="mt-4 block h-6 w-3/5 rounded-full bg-white/10" />
+          <span className="mt-3 block h-4 w-20 rounded-full bg-white/8" />
+        </div>
+
+        <div className="grid w-full max-w-[360px] grid-cols-3 gap-2 justify-self-end rounded-[18px] border border-white/8 bg-white/[0.025] p-3">
+          {selections.map((selection) => (
+            <span
+              className="h-[66px] rounded-[14px] bg-white/[0.055]"
+              key={`skeleton-odd-${selection}`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SearchResultsSkeleton() {
+  return (
+    <section className="space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <EventCardSkeleton key={`search-skeleton-${index}`} />
+      ))}
+    </section>
+  );
+}
+
+function LeagueEventsSkeleton() {
+  return (
+    <section className="space-y-6">
+      {Array.from({ length: 3 }).map((_, groupIndex) => (
+        <div className="space-y-3" key={`league-skeleton-${groupIndex}`}>
+          <div className="flex animate-pulse items-center justify-between gap-3 border-b border-white/10 pb-3">
+            <div className="flex items-center gap-3">
+              <span className="h-10 w-12 rounded-2xl bg-white/8" />
+              <div>
+                <span className="block h-4 w-40 rounded-full bg-white/10" />
+                <span className="mt-2 block h-3 w-24 rounded-full bg-white/8" />
+              </div>
+            </div>
+            <span className="h-6 w-16 rounded-full bg-white/8" />
+          </div>
+
+          <EventCardSkeleton />
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -649,26 +1171,29 @@ function EventOddsPanel({
 
 export function OddsEventSearch() {
   const [query, setQuery] = useState("");
+  const [activeDatePreset, setActiveDatePreset] = useState<DatePreset | null>("today");
   const [state, setState] = useState<SearchState>({
     events: [],
-    loading: false,
+    loading: true,
     error: null,
   });
   const [selectedEvent, setSelectedEvent] = useState<OddsEvent | null>(null);
   const latestOddUpdatedAtRef = useRef<string | null>(null);
-  const queryRef = useRef("");
+  const activeRequestRef = useRef<EventsRequest | null>(null);
 
   const loadEvents = useCallback(
     async (
-      search: string,
+      request: EventsRequest,
       options: { signal?: AbortSignal; showLoading?: boolean } = {},
     ) => {
+      activeRequestRef.current = request;
+
       if (options.showLoading !== false) {
         setState({ events: [], loading: true, error: null });
       }
 
       try {
-        const params = new URLSearchParams({ q: search });
+        const params = getEventsRequestParams(request);
         const response = await fetch(`/api/monitor-odds/events?${params.toString()}`, {
           cache: "no-store",
           signal: options.signal,
@@ -679,10 +1204,18 @@ export function OddsEventSearch() {
         }
 
         if (!response.ok) {
-          throw new Error("Nao foi possivel buscar os eventos.");
+          throw new Error("Não foi possível buscar os eventos.");
         }
 
         const payload = (await response.json()) as EventsResponse;
+
+        if (
+          options.signal?.aborted ||
+          !isSameEventsRequest(activeRequestRef.current, request)
+        ) {
+          return;
+        }
+
         latestOddUpdatedAtRef.current = payload.latest_odd_updated_at ?? null;
         setState({
           events: payload.events ?? [],
@@ -690,7 +1223,10 @@ export function OddsEventSearch() {
           error: null,
         });
       } catch (error) {
-        if (options.signal?.aborted) {
+        if (
+          options.signal?.aborted ||
+          !isSameEventsRequest(activeRequestRef.current, request)
+        ) {
           return;
         }
 
@@ -704,32 +1240,102 @@ export function OddsEventSearch() {
     [],
   );
 
-  useEffect(() => {
-    const trimmedQuery = query.trim();
-    queryRef.current = trimmedQuery;
+  const loadDatePreset = useCallback(
+    (
+      preset: DatePreset,
+      options: { signal?: AbortSignal; showLoading?: boolean } = {},
+    ) => {
+      const range = getDatePresetRange(preset);
+      const request: EventsRequest = {
+        from: range.from,
+        kind: "date",
+        preset,
+        to: range.to,
+      };
 
-    if (trimmedQuery.length < 2) {
+      return loadEvents(request, options);
+    },
+    [loadEvents],
+  );
+
+  const handleDatePresetClick = useCallback(
+    (preset: DatePreset) => {
+      setQuery("");
+      setActiveDatePreset(preset);
+      void loadDatePreset(preset);
+    },
+    [loadDatePreset],
+  );
+
+  function handleQueryChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextQuery = event.target.value;
+    const trimmedQuery = nextQuery.trim();
+
+    setQuery(nextQuery);
+
+    if (trimmedQuery.length === 0) {
+      setActiveDatePreset("today");
+      void loadDatePreset("today");
       return;
     }
 
+    if (activeDatePreset) {
+      setActiveDatePreset(null);
+    }
+
+    if (trimmedQuery.length < 2) {
+      activeRequestRef.current = null;
+    }
+  }
+
+  useEffect(() => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
-      void loadEvents(trimmedQuery, { signal: controller.signal });
+      void loadDatePreset("today", {
+        showLoading: false,
+        signal: controller.signal,
+      });
+    }, 0);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadDatePreset]);
+
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+
+    if (trimmedQuery.length < 2) {
+      if (!activeDatePreset) {
+        activeRequestRef.current = null;
+      }
+
+      return;
+    }
+
+    const request: EventsRequest = {
+      kind: "search",
+      search: trimmedQuery,
+    };
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void loadEvents(request, { signal: controller.signal });
     }, 260);
 
     return () => {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [loadEvents, query]);
+  }, [activeDatePreset, loadEvents, query]);
 
   useEffect(() => {
     let active = true;
 
     async function checkFeedStatus() {
-      const activeQuery = queryRef.current;
+      const activeRequest = activeRequestRef.current;
 
-      if (activeQuery.length < 2) {
+      if (!activeRequest) {
         return;
       }
 
@@ -755,7 +1361,7 @@ export function OddsEventSearch() {
           nextLatestOddUpdatedAt !== previousLatestOddUpdatedAt
         ) {
           latestOddUpdatedAtRef.current = nextLatestOddUpdatedAt;
-          await loadEvents(activeQuery, { showLoading: false });
+          await loadEvents(activeRequest, { showLoading: false });
           return;
         }
 
@@ -776,38 +1382,59 @@ export function OddsEventSearch() {
   }, [loadEvents]);
 
   const hasQuery = query.trim().length >= 2;
-  const events = hasQuery ? state.events : [];
-  const showEmpty = hasQuery && !state.loading && !state.error && events.length === 0;
+  const hasDatePreset = activeDatePreset !== null;
+  const hasActiveList = hasQuery || hasDatePreset;
+  const events = hasActiveList ? state.events : [];
+  const leagueGroups = hasDatePreset ? groupEventsByLeague(events) : [];
+  const showEmpty =
+    hasActiveList && !state.loading && !state.error && events.length === 0;
+  const activeDateLabel = activeDatePreset
+    ? datePresetLabels[activeDatePreset].toLocaleLowerCase("pt-BR")
+    : "";
+  const emptyMessage = hasDatePreset
+    ? `Nenhum jogo encontrado para ${activeDateLabel}.`
+    : "Nenhum evento encontrado.";
 
   return (
     <div className="space-y-5">
       <section className="lz-panel rounded-[28px] p-5 md:p-6">
-        <div className="mx-auto max-w-3xl">
-          <label
-            className="block text-sm font-semibold text-white"
-            htmlFor="odds-event-search"
-          >
-            Buscar eventos
-          </label>
-          <input
-            autoComplete="off"
-            className="lz-input mt-3 h-13 w-full rounded-2xl px-4 text-base"
-            id="odds-event-search"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Digite um time, evento ou liga"
-            type="search"
-            value={query}
-          />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="min-w-0 flex-1 lg:max-w-3xl">
+            <label
+              className="block text-sm font-semibold text-white"
+              htmlFor="odds-event-search"
+            >
+              Buscar eventos
+            </label>
+            <input
+              autoComplete="off"
+              className="lz-input mt-3 h-13 w-full rounded-2xl px-4 text-base"
+              id="odds-event-search"
+              onChange={handleQueryChange}
+              placeholder="Digite um time, evento ou liga"
+              type="search"
+              value={query}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2 lg:pb-0">
+            {datePresets.map((preset) => (
+              <DatePresetButton
+                active={activeDatePreset === preset}
+                key={preset}
+                label={datePresetLabels[preset]}
+                onClick={() => handleDatePresetClick(preset)}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
-      {hasQuery && state.loading ? (
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.025] p-5 text-sm text-[var(--text-muted)]">
-          Buscando eventos...
-        </div>
+      {hasActiveList && state.loading ? (
+        hasDatePreset ? <LeagueEventsSkeleton /> : <SearchResultsSkeleton />
       ) : null}
 
-      {hasQuery && state.error ? (
+      {hasActiveList && state.error ? (
         <div className="rounded-[24px] border border-[rgba(255,107,133,0.2)] bg-[rgba(255,107,133,0.08)] p-5 text-sm text-[var(--negative)]">
           {state.error}
         </div>
@@ -815,11 +1442,23 @@ export function OddsEventSearch() {
 
       {showEmpty ? (
         <div className="rounded-[24px] border border-white/10 bg-white/[0.025] p-5 text-sm text-[var(--text-muted)]">
-          Nenhum evento encontrado.
+          {emptyMessage}
         </div>
       ) : null}
 
-      {events.length ? (
+      {events.length && hasDatePreset && !state.loading ? (
+        <section className="space-y-4">
+          {leagueGroups.map((group) => (
+            <LeagueEventsSection
+              group={group}
+              key={group.key}
+              onOpen={setSelectedEvent}
+            />
+          ))}
+        </section>
+      ) : null}
+
+      {events.length && !hasDatePreset && !state.loading ? (
         <section className="space-y-3">
           {events.map((event) => (
             <EventCard

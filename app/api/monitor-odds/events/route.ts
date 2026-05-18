@@ -1,6 +1,10 @@
 import { type NextRequest } from "next/server";
 
-import { getOddsFeedStatus, searchOddsEvents } from "@/lib/monitor-odds/odds-data";
+import {
+  getOddsFeedStatus,
+  listOddsEventsByDateRange,
+  searchOddsEvents,
+} from "@/lib/monitor-odds/odds-data";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
@@ -28,8 +32,12 @@ export async function GET(request: NextRequest) {
   }
 
   const query = request.nextUrl.searchParams.get("q") ?? "";
+  const from = request.nextUrl.searchParams.get("from");
+  const to = request.nextUrl.searchParams.get("to");
+  const eventsPromise =
+    from && to ? listOddsEventsByDateRange(from, to) : searchOddsEvents(query);
   const [events, status] = await Promise.all([
-    searchOddsEvents(query),
+    eventsPromise,
     getOddsFeedStatus(),
   ]);
 

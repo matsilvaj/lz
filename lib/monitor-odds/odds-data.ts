@@ -16,6 +16,8 @@ const ODDS_FEED_COLUMNS = [
   "league_name",
   "league_slug",
   "league_country",
+  "league_logo_url",
+  "league_country_flag_url",
   "bookmaker_slug",
   "bookmaker_name",
   "market_code",
@@ -30,6 +32,10 @@ const ODDS_FEED_COLUMNS = [
 const SEARCH_PAGE_SIZE = 500;
 const MAX_SEARCH_PAGES = 3;
 const DEFAULT_EVENT_LIMIT = 20;
+const DATE_RANGE_PAGE_SIZE = 1000;
+const MAX_DATE_RANGE_PAGES = 8;
+const DEFAULT_DATE_RANGE_EVENT_LIMIT = 150;
+const MAX_DATE_RANGE_DAYS = 3;
 
 export type MonitorOddsFeedItem = {
   fixture_id: string;
@@ -43,6 +49,8 @@ export type MonitorOddsFeedItem = {
   league_name: string;
   league_slug: string;
   league_country: string | null;
+  league_logo_url: string | null;
+  league_country_flag_url: string | null;
   bookmaker_slug: string;
   bookmaker_name: string;
   market_code: string;
@@ -66,6 +74,8 @@ export type MonitorOddsEvent = {
   league_name: string;
   league_slug: string;
   league_country: string | null;
+  league_logo_url: string | null;
+  league_country_flag_url: string | null;
   bookmaker_count: number;
   odd_count: number;
   latest_odd_updated_at: string | null;
@@ -148,6 +158,8 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
     league_name: leagueName,
     league_slug: leagueSlug,
     league_country: cleanOptionalString(row.league_country),
+    league_logo_url: cleanOptionalString(row.league_logo_url),
+    league_country_flag_url: cleanOptionalString(row.league_country_flag_url),
     bookmaker_slug: bookmakerSlug,
     bookmaker_name: bookmakerName,
     market_code: marketCode,
@@ -182,6 +194,36 @@ function normalizeLimit(value: number) {
   return Math.min(Math.trunc(value), 50);
 }
 
+function normalizeDateRangeLimit(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_DATE_RANGE_EVENT_LIMIT;
+  return Math.min(Math.trunc(value), DEFAULT_DATE_RANGE_EVENT_LIMIT);
+}
+
+function parseDateRangeBound(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeDateRange(from: string, to: string) {
+  const fromDate = parseDateRangeBound(from);
+  const toDate = parseDateRangeBound(to);
+
+  if (!fromDate || !toDate || toDate.getTime() <= fromDate.getTime()) {
+    return null;
+  }
+
+  const durationMs = toDate.getTime() - fromDate.getTime();
+
+  if (durationMs > MAX_DATE_RANGE_DAYS * 24 * 60 * 60 * 1000) {
+    return null;
+  }
+
+  return {
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+  };
+}
+
 function updateEventFromOdd(
   events: Map<
     string,
@@ -205,6 +247,8 @@ function updateEventFromOdd(
       league_name: odd.league_name,
       league_slug: odd.league_slug,
       league_country: odd.league_country,
+      league_logo_url: odd.league_logo_url,
+      league_country_flag_url: odd.league_country_flag_url,
       bookmaker_count: 0,
       odd_count: 0,
       latest_odd_updated_at: null,
@@ -226,6 +270,10 @@ function updateEventFromOdd(
     current.latest_odd_updated_at = odd.odd_updated_at;
   }
 
+  current.league_logo_url = current.league_logo_url ?? odd.league_logo_url;
+  current.league_country_flag_url =
+    current.league_country_flag_url ?? odd.league_country_flag_url;
+
   events.set(odd.fixture_id, current);
 }
 
@@ -244,6 +292,8 @@ function stripInternalEventState(
     league_name: event.league_name,
     league_slug: event.league_slug,
     league_country: event.league_country,
+    league_logo_url: event.league_logo_url,
+    league_country_flag_url: event.league_country_flag_url,
     bookmaker_count: event.bookmaker_count,
     odd_count: event.odd_count,
     latest_odd_updated_at: event.latest_odd_updated_at,
@@ -309,6 +359,53 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
   return Array.from(events.values()).map(stripInternalEventState).slice(0, eventLimit);
 }
 
+async function listOddsEventsByDateRangeUncached(
+  from: string,
+  to: string,
+  limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+) {
+  const dateRange = normalizeDateRange(from, to);
+  const eventLimit = normalizeDateRangeLimit(limit);
+
+  if (!dateRange) {
+    return [];
+  }
+
+  const supabase = getMonitorSupabaseClient();
+  const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
+
+  for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
+    const offset = page * DATE_RANGE_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("public_odds_feed")
+      .select(ODDS_FEED_COLUMNS)
+      .gte("starts_at", dateRange.from)
+      .lt("starts_at", dateRange.to)
+      .order("league_name", { ascending: true })
+      .order("starts_at", { ascending: true })
+      .order("fixture_name", { ascending: true })
+      .order("bookmaker_name", { ascending: true })
+      .range(offset, offset + DATE_RANGE_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of (data ?? []) as RawOddsFeedItem[]) {
+      const odd = cleanOddsFeedItem(row);
+      if (odd) {
+        updateEventFromOdd(events, odd);
+      }
+    }
+
+    if (!data || data.length < DATE_RANGE_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return Array.from(events.values()).map(stripInternalEventState).slice(0, eventLimit);
+}
+
 async function getOddsFeedStatusUncached() {
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
@@ -341,8 +438,25 @@ const getCachedOddsFeedStatus = unstable_cache(
   },
 );
 
+const getCachedOddsEventsByDateRange = unstable_cache(
+  listOddsEventsByDateRangeUncached,
+  ["monitor-odds-events-by-date-range"],
+  {
+    tags: ["monitor-odds-events-by-date-range"],
+    revalidate: 20,
+  },
+);
+
 export async function searchOddsEvents(search: string, limit = DEFAULT_EVENT_LIMIT) {
   return getCachedOddsEventSearch(search, limit);
+}
+
+export async function listOddsEventsByDateRange(
+  from: string,
+  to: string,
+  limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+) {
+  return getCachedOddsEventsByDateRange(from, to, limit);
 }
 
 export async function getOddsFeedStatus() {

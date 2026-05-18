@@ -55,3 +55,11 @@ test("monitor odds search has bounded pagination", () => {
   assert.match(oddsRepository, /const MAX_SEARCH_PAGES = \d+;/);
   assert.match(oddsRepository, /page < MAX_SEARCH_PAGES/);
 });
+
+test("monitor odds date range listing is bounded and filtered by start time", () => {
+  assert.match(oddsRepository, /const MAX_DATE_RANGE_PAGES = \d+;/);
+  assert.match(oddsRepository, /page < MAX_DATE_RANGE_PAGES/);
+  assert.match(oddsRepository, /\.gte\("starts_at", dateRange\.from\)/);
+  assert.match(oddsRepository, /\.lt\("starts_at", dateRange\.to\)/);
+  assert.match(eventsRoute, /listOddsEventsByDateRange\(from, to\)/);
+});
