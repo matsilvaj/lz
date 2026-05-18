@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 type OddsFeedItem = {
@@ -20,6 +27,7 @@ type OddsFeedItem = {
   league_country_flag_url: string | null;
   bookmaker_slug: string;
   bookmaker_name: string;
+  bookmaker_event_url: string | null;
   market_code: string;
   market_name: string;
   selection: string;
@@ -547,6 +555,58 @@ function summaryCategoryLabel(value: string | undefined) {
   return "";
 }
 
+function oddActionLabel(odd: OddsFeedItem, selection?: Selection) {
+  const selectionName = selection ? ` ${selectionLabel(selection)}` : "";
+  return `Abrir odd${selectionName} na ${formatBookmakerName(odd.bookmaker_name)}`;
+}
+
+function OddActionBox({
+  children,
+  className,
+  label,
+  odd,
+  onOpen,
+}: {
+  children: ReactNode;
+  className: string;
+  label: string;
+  odd: OddsFeedItem | undefined;
+  onOpen?: () => void;
+}) {
+  if (odd?.bookmaker_event_url) {
+    return (
+      <a
+        aria-label={label}
+        className={className}
+        href={odd.bookmaker_event_url}
+        onClick={(event) => event.stopPropagation()}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        {children}
+      </a>
+    );
+  }
+
+  if (odd && onOpen) {
+    return (
+      <button
+        aria-label={label}
+        className={className}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen();
+        }}
+        type="button"
+      >
+        {children}
+      </button>
+    );
+  }
+
+  return <span className={className}>{children}</span>;
+}
+
 function get1x2Rows(event: OddsEvent, category: PaCategory) {
   const rows = new Map<string, OddsTableRow>();
 
@@ -626,7 +686,13 @@ function getHighestPrices(rows: OddsTableRow[]) {
   }, {});
 }
 
-function OddsSummaryRow({ event }: { event: OddsEvent }) {
+function OddsSummaryRow({
+  event,
+  onOpen,
+}: {
+  event: OddsEvent;
+  onOpen?: () => void;
+}) {
   const bestOdds = getBest1x2Odds(event);
   const hasAnyOdd = bestOdds.some(({ odd }) => odd);
 
@@ -637,21 +703,32 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
       ) : null}
 
       <span className="grid grid-cols-3 gap-2">
-        {bestOdds.map(({ selection, odd }) => (
-          <span
-            className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] bg-white/[0.035] px-2 py-2 text-center"
-            key={`best-${selection}`}
-          >
-            <span className="text-base font-semibold text-white">
-              {formatOdd(odd?.price)}
-            </span>
-            <span className="mt-0.5 max-w-[96px] truncate text-[10px] text-[var(--text-muted)]">
-              {odd
-                ? `${formatBookmakerName(odd.bookmaker_name)} ${summaryCategoryLabel(odd.pa_category)}`
-                : "Sem odd"}
-            </span>
-          </span>
-        ))}
+        {bestOdds.map(({ selection, odd }) => {
+          const clickable = Boolean(odd?.bookmaker_event_url || (odd && onOpen));
+
+          return (
+            <OddActionBox
+              className={`flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border px-2 py-2 text-center no-underline transition ${
+                clickable
+                  ? "cursor-pointer border-white/8 bg-white/[0.04] hover:border-[rgba(255,139,187,0.36)] hover:bg-white/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  : "border-transparent bg-white/[0.035]"
+              }`}
+              key={`best-${selection}`}
+              label={odd ? oddActionLabel(odd, selection) : "Odd indisponível"}
+              odd={odd}
+              onOpen={onOpen}
+            >
+              <span className="text-base font-semibold text-white">
+                {formatOdd(odd?.price)}
+              </span>
+              <span className="mt-0.5 max-w-[96px] truncate text-[10px] text-[var(--text-muted)]">
+                {odd
+                  ? `${formatBookmakerName(odd.bookmaker_name)} ${summaryCategoryLabel(odd.pa_category)}`
+                  : "Sem odd"}
+              </span>
+            </OddActionBox>
+          );
+        })}
       </span>
     </span>
   );
@@ -667,12 +744,16 @@ function EventCard({
   showLeague?: boolean;
 }) {
   return (
-    <button
-      className="group w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] md:p-5"
-      onClick={() => onOpen(event)}
-      type="button"
+    <article
+      className="group relative w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] md:p-5"
     >
-      <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
+      <button
+        aria-label={`Abrir odds de ${event.home_team} x ${event.away_team}`}
+        className="absolute inset-0 z-0 rounded-[24px] border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        onClick={() => onOpen(event)}
+        type="button"
+      />
+      <div className="pointer-events-none relative z-10 flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
             <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
@@ -693,11 +774,11 @@ function EventCard({
           </p>
         </div>
 
-        <div className="flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow event={event} />
+        <div className="pointer-events-auto flex w-full justify-center xl:justify-end">
+          <OddsSummaryRow event={event} onOpen={() => onOpen(event)} />
         </div>
       </div>
-    </button>
+    </article>
   );
 }
 
@@ -1027,18 +1108,29 @@ function OddsTable({
               <span className="min-w-0 truncate px-2 text-xs font-medium text-white">
                 {row.bookmakerName}
               </span>
-              {selections.map((selection) => (
-                <span
-                  className={`${oddsBoxClass} text-[13px] font-semibold text-white ${
-                    row.odds[selection]?.price === highestPrices[selection]
-                      ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
-                      : "border border-transparent bg-white/[0.04]"
-                  }`}
-                  key={`${row.key}-${selection}`}
-                >
-                  {formatOdd(row.odds[selection]?.price)}
-                </span>
-              ))}
+              {selections.map((selection) => {
+                const odd = row.odds[selection];
+                const hasEventUrl = Boolean(odd?.bookmaker_event_url);
+
+                return (
+                  <OddActionBox
+                    className={`${oddsBoxClass} text-[13px] font-semibold text-white no-underline transition ${
+                      odd?.price === highestPrices[selection]
+                        ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
+                        : "border border-transparent bg-white/[0.04]"
+                    } ${
+                      hasEventUrl
+                        ? "cursor-pointer hover:border-[rgba(255,139,187,0.62)] hover:bg-[rgba(255,139,187,0.22)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                        : ""
+                    }`}
+                    key={`${row.key}-${selection}`}
+                    label={odd ? oddActionLabel(odd, selection) : "Odd indisponível"}
+                    odd={odd}
+                  >
+                    {formatOdd(odd?.price)}
+                  </OddActionBox>
+                );
+              })}
             </div>
           ))
         ) : (

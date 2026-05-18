@@ -20,6 +20,7 @@ const ODDS_FEED_COLUMNS = [
   "league_country_flag_url",
   "bookmaker_slug",
   "bookmaker_name",
+  "bookmaker_event_url",
   "market_code",
   "market_name",
   "selection",
@@ -53,6 +54,7 @@ export type MonitorOddsFeedItem = {
   league_country_flag_url: string | null;
   bookmaker_slug: string;
   bookmaker_name: string;
+  bookmaker_event_url: string | null;
   market_code: string;
   market_name: string;
   selection: string;
@@ -98,6 +100,18 @@ function cleanString(value: unknown) {
 function cleanOptionalString(value: unknown) {
   const parsed = cleanString(value);
   return parsed || null;
+}
+
+function cleanExternalUrl(value: unknown) {
+  const parsed = cleanString(value);
+  if (!parsed) return null;
+
+  try {
+    const url = new URL(parsed);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 function cleanNumber(value: unknown) {
@@ -162,6 +176,7 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
     league_country_flag_url: cleanOptionalString(row.league_country_flag_url),
     bookmaker_slug: bookmakerSlug,
     bookmaker_name: bookmakerName,
+    bookmaker_event_url: cleanExternalUrl(row.bookmaker_event_url),
     market_code: marketCode,
     market_name: marketName,
     selection,

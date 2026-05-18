@@ -56,6 +56,12 @@ test("monitor odds search has bounded pagination", () => {
   assert.match(oddsRepository, /page < MAX_SEARCH_PAGES/);
 });
 
+test("monitor odds feed exposes safe bookmaker event urls", () => {
+  assert.match(oddsRepository, /"bookmaker_event_url"/);
+  assert.match(oddsRepository, /cleanExternalUrl\(row\.bookmaker_event_url\)/);
+  assert.match(oddsRepository, /url\.protocol === "https:"/);
+});
+
 test("monitor odds date range listing is bounded and filtered by start time", () => {
   assert.match(oddsRepository, /const MAX_DATE_RANGE_PAGES = \d+;/);
   assert.match(oddsRepository, /page < MAX_DATE_RANGE_PAGES/);
