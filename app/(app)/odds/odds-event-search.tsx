@@ -555,52 +555,29 @@ function summaryCategoryLabel(value: string | undefined) {
   return "";
 }
 
-function oddActionLabel(odd: OddsFeedItem, selection?: Selection) {
-  const selectionName = selection ? ` ${selectionLabel(selection)}` : "";
-  return `Abrir odd${selectionName} na ${formatBookmakerName(odd.bookmaker_name)}`;
-}
-
-function OddActionBox({
+function BookmakerEventLink({
+  bookmakerName,
   children,
   className,
-  label,
-  odd,
-  onOpen,
+  eventUrl,
 }: {
+  bookmakerName: string;
   children: ReactNode;
   className: string;
-  label: string;
-  odd: OddsFeedItem | undefined;
-  onOpen?: () => void;
+  eventUrl: string | null | undefined;
 }) {
-  if (odd?.bookmaker_event_url) {
+  if (eventUrl) {
     return (
       <a
-        aria-label={label}
-        className={className}
-        href={odd.bookmaker_event_url}
+        aria-label={`Abrir evento na ${bookmakerName}`}
+        className={`${className} pointer-events-auto`}
+        href={eventUrl}
         onClick={(event) => event.stopPropagation()}
         rel="noopener noreferrer"
         target="_blank"
       >
         {children}
       </a>
-    );
-  }
-
-  if (odd && onOpen) {
-    return (
-      <button
-        aria-label={label}
-        className={className}
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpen();
-        }}
-        type="button"
-      >
-        {children}
-      </button>
     );
   }
 
@@ -686,13 +663,13 @@ function getHighestPrices(rows: OddsTableRow[]) {
   }, {});
 }
 
-function OddsSummaryRow({
-  event,
-  onOpen,
-}: {
-  event: OddsEvent;
-  onOpen?: () => void;
-}) {
+function getRowEventUrl(row: OddsTableRow) {
+  return selections
+    .map((selection) => row.odds[selection]?.bookmaker_event_url)
+    .find((eventUrl): eventUrl is string => Boolean(eventUrl)) ?? null;
+}
+
+function OddsSummaryRow({ event }: { event: OddsEvent }) {
   const bestOdds = getBest1x2Odds(event);
   const hasAnyOdd = bestOdds.some(({ odd }) => odd);
 
@@ -704,29 +681,34 @@ function OddsSummaryRow({
 
       <span className="grid grid-cols-3 gap-2">
         {bestOdds.map(({ selection, odd }) => {
-          const clickable = Boolean(odd?.bookmaker_event_url || (odd && onOpen));
+          const bookmakerName = odd ? formatBookmakerName(odd.bookmaker_name) : "";
+          const categoryLabel = summaryCategoryLabel(odd?.pa_category);
 
           return (
-            <OddActionBox
-              className={`flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border px-2 py-2 text-center no-underline transition ${
-                clickable
-                  ? "cursor-pointer border-white/8 bg-white/[0.04] hover:border-[rgba(255,139,187,0.36)] hover:bg-white/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                  : "border-transparent bg-white/[0.035]"
-              }`}
+            <span
+              className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border border-transparent bg-white/[0.035] px-2 py-2 text-center"
               key={`best-${selection}`}
-              label={odd ? oddActionLabel(odd, selection) : "Odd indisponível"}
-              odd={odd}
-              onOpen={onOpen}
             >
               <span className="text-base font-semibold text-white">
                 {formatOdd(odd?.price)}
               </span>
               <span className="mt-0.5 max-w-[96px] truncate text-[10px] text-[var(--text-muted)]">
-                {odd
-                  ? `${formatBookmakerName(odd.bookmaker_name)} ${summaryCategoryLabel(odd.pa_category)}`
-                  : "Sem odd"}
+                {odd ? (
+                  <>
+                    <BookmakerEventLink
+                      bookmakerName={bookmakerName}
+                      className="text-[var(--text-muted)] no-underline transition hover:text-white focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                      eventUrl={odd.bookmaker_event_url}
+                    >
+                      {bookmakerName}
+                    </BookmakerEventLink>
+                    {categoryLabel ? ` ${categoryLabel}` : ""}
+                  </>
+                ) : (
+                  "Sem odd"
+                )}
               </span>
-            </OddActionBox>
+            </span>
           );
         })}
       </span>
@@ -774,8 +756,8 @@ function EventCard({
           </p>
         </div>
 
-        <div className="pointer-events-auto flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow event={event} onOpen={() => onOpen(event)} />
+        <div className="flex w-full justify-center xl:justify-end">
+          <OddsSummaryRow event={event} />
         </div>
       </div>
     </article>
@@ -1044,7 +1026,9 @@ function SortHeaderButton({
 
   return (
     <button
-      className={`${oddsBoxClass} border border-white/8 bg-white/[0.035] text-[11px] font-semibold text-[var(--text-secondary)] transition hover:bg-white/[0.07] hover:text-white`}
+      className={`${oddsBoxClass} odds-sort-button ${
+        active ? "odds-sort-button--active" : ""
+      } text-[11px] font-semibold transition`}
       onClick={() => onClick(selection)}
       type="button"
     >
@@ -1083,7 +1067,7 @@ function OddsTable({
 
       <div className="mt-2 max-h-[56vh] space-y-2 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
         <div
-          className={`${oddsTableGridClass} sticky top-0 z-10 rounded-2xl bg-[rgba(29,12,21,0.96)] p-1.5 backdrop-blur`}
+          className={`${oddsTableGridClass} odds-table-header sticky top-0 z-10 rounded-2xl p-1.5 backdrop-blur`}
         >
           <span className="px-2 text-xs font-medium text-[var(--text-muted)]">
             Casa
@@ -1100,39 +1084,44 @@ function OddsTable({
         </div>
 
         {rows.length ? (
-          rows.map((row) => (
-            <div
-              className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
-              key={row.key}
-            >
-              <span className="min-w-0 truncate px-2 text-xs font-medium text-white">
-                {row.bookmakerName}
-              </span>
-              {selections.map((selection) => {
-                const odd = row.odds[selection];
-                const hasEventUrl = Boolean(odd?.bookmaker_event_url);
+          rows.map((row) => {
+            const eventUrl = getRowEventUrl(row);
 
-                return (
-                  <OddActionBox
-                    className={`${oddsBoxClass} text-[13px] font-semibold text-white no-underline transition ${
-                      odd?.price === highestPrices[selection]
-                        ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
-                        : "border border-transparent bg-white/[0.04]"
-                    } ${
-                      hasEventUrl
-                        ? "cursor-pointer hover:border-[rgba(255,139,187,0.62)] hover:bg-[rgba(255,139,187,0.22)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                        : ""
-                    }`}
-                    key={`${row.key}-${selection}`}
-                    label={odd ? oddActionLabel(odd, selection) : "Odd indisponível"}
-                    odd={odd}
-                  >
-                    {formatOdd(odd?.price)}
-                  </OddActionBox>
-                );
-              })}
-            </div>
-          ))
+            return (
+              <div
+                className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
+                key={row.key}
+              >
+                <BookmakerEventLink
+                  bookmakerName={row.bookmakerName}
+                  className={`min-w-0 truncate px-2 text-xs font-medium no-underline transition ${
+                    eventUrl
+                      ? "text-white hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                      : "text-white"
+                  }`}
+                  eventUrl={eventUrl}
+                >
+                  {row.bookmakerName}
+                </BookmakerEventLink>
+                {selections.map((selection) => {
+                  const odd = row.odds[selection];
+
+                  return (
+                    <span
+                      className={`${oddsBoxClass} text-[13px] font-semibold text-white ${
+                        odd?.price === highestPrices[selection]
+                          ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
+                          : "border border-transparent bg-white/[0.04]"
+                      }`}
+                      key={`${row.key}-${selection}`}
+                    >
+                      {formatOdd(odd?.price)}
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })
         ) : (
           <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-[var(--text-muted)]">
             Sem odds 1X2.
