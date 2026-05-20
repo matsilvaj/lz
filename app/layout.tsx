@@ -18,6 +18,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const speedInsightsSampleRate = 0.25;
+
 export const metadata: Metadata = {
   title: "LZ Community",
   description: "Base web organizada para evoluir funcionalidades com segurança.",
@@ -38,7 +40,7 @@ export default function RootLayout({
           <div className="lz-shell flex min-h-full flex-col">{children}</div>
         </ToastProvider>
         
-        <SpeedInsights />
+        <SpeedInsights sampleRate={speedInsightsSampleRate} />
         <Analytics />
       </body>
     </html>

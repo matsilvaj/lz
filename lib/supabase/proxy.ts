@@ -1,17 +1,35 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
+import {
+  createContentSecurityPolicy,
+  createCspNonce,
+} from "@/lib/security/csp";
+
 import { getSupabaseConfig } from "./config";
 
 export async function updateSession(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete("x-middleware-subrequest");
+  const nonce = createCspNonce();
+  const contentSecurityPolicy = createContentSecurityPolicy(nonce);
 
-  let response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+
+  function createResponse() {
+    const nextResponse = NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+
+    nextResponse.headers.set("Content-Security-Policy", contentSecurityPolicy);
+
+    return nextResponse;
+  }
+
+  let response = createResponse();
 
   const { url, publishableKey } = getSupabaseConfig();
 
@@ -25,11 +43,7 @@ export async function updateSession(request: NextRequest) {
           request.cookies.set(name, value);
         });
 
-        response = NextResponse.next({
-          request: {
-            headers: requestHeaders,
-          },
-        });
+        response = createResponse();
 
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);

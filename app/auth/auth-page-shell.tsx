@@ -34,11 +34,11 @@ export function AuthPageShell({
             <Image
               alt="LZ Community"
               className="h-auto w-16 sm:w-20"
-              height={78}
+              height={157}
               priority
               sizes="(max-width: 640px) 64px, 80px"
-              src="/LOGO_1.png"
-              width={120}
+              src="/lz-logo-240.png"
+              width={240}
             />
           </span>
           <span className="flex min-h-12 items-center text-[11px] font-semibold uppercase tracking-[0.32em] text-[var(--text-dim)]">

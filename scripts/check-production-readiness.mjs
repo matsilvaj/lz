@@ -21,12 +21,17 @@ for (const key of [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_APP_URL",
+  "MONITOR_SUPABASE_URL",
+  "MONITOR_SUPABASE_PUBLISHABLE_KEY",
 ]) {
   requireEnv(key);
 }
 
 checkAppUrl();
+checkSupabaseUrl("NEXT_PUBLIC_SUPABASE_URL");
+checkSupabaseUrl("MONITOR_SUPABASE_URL");
 checkDatabaseUrl();
+checkDatabaseMigrationUrl();
 checkUpstash();
 checkSupabaseAdminKey();
 
@@ -113,8 +118,62 @@ function checkDatabaseUrl() {
   }
 }
 
+function checkDatabaseMigrationUrl() {
+  const value = process.env.DATABASE_MIGRATION_URL?.trim();
+
+  if (!value) {
+    return;
+  }
+
+  let url;
+
+  try {
+    url = new URL(value);
+  } catch {
+    errors.push("DATABASE_MIGRATION_URL must be a valid Postgres URL.");
+    return;
+  }
+
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+    errors.push("DATABASE_MIGRATION_URL must use the postgres/postgresql protocol.");
+  }
+
+  if (isSupabaseDatabaseHost(url.hostname) && url.port === "6543") {
+    errors.push(
+      "DATABASE_MIGRATION_URL must not use the Supabase transaction pooler on port 6543. Keep that URL for DATABASE_URL only.",
+    );
+  }
+
+  if (value === process.env.DATABASE_URL?.trim()) {
+    errors.push(
+      "DATABASE_MIGRATION_URL must be separate from DATABASE_URL so migrations do not run through the serverless runtime pooler.",
+    );
+  }
+}
+
 function isSupabaseDatabaseHost(hostname) {
   return /\.supabase\.(co|com)$/iu.test(hostname) || hostname.includes("pooler.supabase.com");
+}
+
+function checkSupabaseUrl(key) {
+  const value = process.env[key]?.trim();
+
+  if (!value) {
+    return;
+  }
+
+  let url;
+
+  try {
+    url = new URL(value);
+  } catch {
+    errors.push(`${key} must be a valid URL.`);
+    return;
+  }
+
+  if (url.protocol !== "https:") {
+    errors.push(`${key} must use https.`);
+  }
 }
 
 function checkUpstash() {

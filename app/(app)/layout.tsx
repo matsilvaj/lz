@@ -26,11 +26,11 @@ export default async function ProtectedAppLayout({
               <Image
                 alt="LZ Community"
                 className="h-auto w-14 md:w-16"
-                height={78}
+                height={157}
                 priority
                 sizes="(max-width: 768px) 56px, 64px"
-                src="/LOGO_1.png"
-                width={120}
+                src="/lz-logo-240.png"
+                width={240}
               />
               <span className="hidden text-xs font-semibold uppercase tracking-[0.34em] text-[var(--text-secondary)] sm:inline-flex">
                 LZ Community

@@ -122,9 +122,9 @@ const leagueLogoOutlinePositions = [
   "top-left",
 ] as const;
 const oddsTableGridClass =
-  "grid grid-cols-[minmax(120px,1fr)_repeat(3,minmax(62px,90px))] items-center gap-2";
+  "grid grid-cols-[minmax(84px,1fr)_repeat(3,minmax(54px,78px))] items-center gap-1.5 sm:grid-cols-[minmax(120px,1fr)_repeat(3,minmax(62px,90px))] sm:gap-2";
 const oddsBoxClass =
-  "flex h-9 w-full items-center justify-center rounded-xl px-2 text-center";
+  "flex h-9 w-full min-w-0 items-center justify-center rounded-xl px-2 text-center";
 const leagueCountryNames: Record<string, string> = {
   albania: "Albânia",
   algeria: "Argélia",
@@ -1058,14 +1058,14 @@ function OddsTable({
   const rows = sortRows(baseRows, sort);
 
   return (
-    <section className="min-w-0 rounded-[22px] border border-white/10 bg-white/[0.025] p-3 md:p-4">
+    <section className="flex min-h-0 min-w-0 flex-col rounded-[22px] border border-white/10 bg-white/[0.025] p-3 md:p-4">
       <div className="mb-3">
         <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
           {category === "COM_PA" ? "COM PA" : "SEM PA"}
         </h3>
       </div>
 
-      <div className="mt-2 max-h-[56vh] space-y-2 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+      <div className="mt-2 min-h-0 max-h-[34dvh] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[40dvh] lg:max-h-[56vh] [scrollbar-gutter:stable]">
         <div
           className={`${oddsTableGridClass} odds-table-header sticky top-0 z-10 rounded-2xl p-1.5 backdrop-blur`}
         >
@@ -1147,6 +1147,8 @@ function EventOddsPanel({
 
   useEffect(() => {
     if (!event) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     function handleKeyDown(keyboardEvent: KeyboardEvent) {
       if (keyboardEvent.key === "Escape") {
@@ -1157,6 +1159,7 @@ function EventOddsPanel({
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      document.body.style.overflow = previousBodyOverflow;
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [event, onClose]);
@@ -1174,7 +1177,7 @@ function EventOddsPanel({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[120] overflow-y-auto bg-black/70 p-2 backdrop-blur-sm sm:p-4"
       onMouseDown={(mouseEvent) => {
         if (!dialogRef.current?.contains(mouseEvent.target as Node)) {
           onClose();
@@ -1182,67 +1185,69 @@ function EventOddsPanel({
       }}
       role="presentation"
     >
-      <div
-        aria-modal="true"
-        className="lz-panel w-full max-w-6xl rounded-[28px] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.55)] md:p-5"
-        onMouseDown={(mouseEvent) => mouseEvent.stopPropagation()}
-        ref={dialogRef}
-        role="dialog"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                {formatDate(event.starts_at)}
-              </span>
-              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                {formatLeagueLine(event)}
-              </span>
+      <div className="flex min-h-full items-end justify-center py-2 sm:items-center sm:py-0">
+        <div
+          aria-modal="true"
+          className="lz-panel lz-odds-dialog max-h-[calc(100dvh-1rem)] w-full max-w-6xl rounded-[24px] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:p-4 md:p-5"
+          onMouseDown={(mouseEvent) => mouseEvent.stopPropagation()}
+          ref={dialogRef}
+          role="dialog"
+        >
+          <div className="lz-odds-dialog-header sticky top-0 z-20 -mx-3 -mt-3 flex items-start justify-between gap-4 rounded-t-[24px] border-b border-white/8 px-3 pb-3 pt-3 backdrop-blur-xl sm:-mx-4 sm:-mt-4 sm:rounded-t-[28px] sm:px-4 sm:pt-4 md:-mx-5 md:-mt-5 md:px-5 md:pt-5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  {formatDate(event.starts_at)}
+                </span>
+                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  {formatLeagueLine(event)}
+                </span>
+              </div>
+              <h2 className="mt-3 text-xl font-semibold tracking-tight text-white">
+                {event.home_team} x {event.away_team}
+              </h2>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                {formatTime(event.starts_at)}
+              </p>
             </div>
-            <h2 className="mt-3 text-xl font-semibold tracking-tight text-white">
-              {event.home_team} x {event.away_team}
-            </h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              {formatTime(event.starts_at)}
-            </p>
+
+            <button
+              aria-label="Fechar"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
+              onClick={onClose}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M6 6L18 18M18 6L6 18"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.8"
+                />
+              </svg>
+            </button>
           </div>
 
-          <button
-            aria-label="Fechar"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
-            onClick={onClose}
-            type="button"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M6 6L18 18M18 6L6 18"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeWidth="1.8"
-              />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-2">
-          <OddsTable
-            category="COM_PA"
-            event={event}
-            onSortChange={handleSortChange}
-            sort={sorts.COM_PA}
-          />
-          <OddsTable
-            category="SEM_PA"
-            event={event}
-            onSortChange={handleSortChange}
-            sort={sorts.SEM_PA}
-          />
+          <div className="mt-5 grid gap-3 lg:grid-cols-2">
+            <OddsTable
+              category="COM_PA"
+              event={event}
+              onSortChange={handleSortChange}
+              sort={sorts.COM_PA}
+            />
+            <OddsTable
+              category="SEM_PA"
+              event={event}
+              onSortChange={handleSortChange}
+              sort={sorts.SEM_PA}
+            />
+          </div>
         </div>
       </div>
     </div>,

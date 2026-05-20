@@ -167,6 +167,22 @@ html[data-theme="light"] .lz-panel::before {
     radial-gradient(circle at bottom left, rgba(249, 215, 190, 0.18), transparent 26%);
 }
 
+.lz-odds-dialog {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lz-odds-dialog-header {
+  background: linear-gradient(180deg, rgba(23, 9, 16, 0.98), rgba(23, 9, 16, 0.9));
+  box-shadow: 0 12px 28px rgba(4, 2, 6, 0.24);
+}
+
+html[data-theme="light"] .lz-odds-dialog-header {
+  background: linear-gradient(180deg, rgba(255, 248, 251, 0.98), rgba(255, 248, 251, 0.9));
+  box-shadow: 0 12px 28px rgba(88, 36, 58, 0.08);
+}
+
 .lz-panel-subtle {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
