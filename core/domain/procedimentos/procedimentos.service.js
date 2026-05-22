@@ -1,6 +1,9 @@
 import {
   FREEBET_STATUS_NA,
   FREEBET_STATUS_PENDING,
+  PROCEDURE_STATUS_DONE,
+  PROCEDURE_STATUS_PENDING,
+  PROCEDURE_STATUSES,
 } from "../shared/constants.js";
 import {
   formatOperationDate,
@@ -15,6 +18,14 @@ export function calculateRealProfit(baseProfit, hitDouble = false, doubleValue =
   const base = parseNumber(baseProfit);
   const doubleProfit = parseNumber(doubleValue);
   return base + (parseBoolean(hitDouble) ? doubleProfit : 0);
+}
+
+export function normalizeProcedureStatus(
+  value,
+  fallback = PROCEDURE_STATUS_PENDING,
+) {
+  const status = parseText(value).trim();
+  return PROCEDURE_STATUSES.includes(status) ? status : fallback;
 }
 
 export function resolveProcedureDoubleValue(procedure) {
@@ -92,6 +103,7 @@ function buildReferenceMonthFromOperationDate(operationDate) {
  *   freebetStatus?: string | null;
  *   freebetResult?: string;
  *   freebetOriginId?: number | null;
+ *   procedureStatus?: string;
  * }} params
  */
 export function buildProcedureData({
@@ -112,6 +124,7 @@ export function buildProcedureData({
   freebetStatus = null,
   freebetResult = "",
   freebetOriginId = null,
+  procedureStatus = PROCEDURE_STATUS_PENDING,
 }) {
   const baseProfit = calculateProcedureBaseProfit(
     procedureType,
@@ -153,6 +166,10 @@ export function buildProcedureData({
     status_freebet:
       freebetStatus ??
       (procedureType === "Coletar Freebet" ? FREEBET_STATUS_PENDING : FREEBET_STATUS_NA),
+    status_procedimento: normalizeProcedureStatus(
+      procedureStatus,
+      PROCEDURE_STATUS_PENDING,
+    ),
     id_freebet_origem: freebetOriginId,
     valor_da_freebet: parseNumber(freebetValue),
     ganhou_freebet: parseText(freebetResult),
@@ -187,6 +204,8 @@ export function suggestProcedureFromCalculator({
 export function enrichProcedure(row) {
   const procedure = { ...toProcedureObject(row) };
   procedure.bateu_duplo = parseBoolean(procedure.bateu_duplo);
+  procedure.status_procedimento =
+    normalizeProcedureStatus(procedure.status_procedimento, PROCEDURE_STATUS_DONE);
   procedure.lucro_real = calculateRealProfit(
     procedure.lucro_final,
     procedure.bateu_duplo,

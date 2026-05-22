@@ -56,3 +56,31 @@ test("bookmaker notes upsert never updates a row owned by a different user", asy
     /ON\s+CONFLICT\s*\(\s*base_id\s*\)\s*DO\s+UPDATE\s+SET\s+texto\s*=\s*EXCLUDED\.texto\s+WHERE\s+usuarios_observacoes_bancas\.user_id\s*=\s*EXCLUDED\.user_id/iu,
   );
 });
+
+test("procedure status migration is additive and queryable", async () => {
+  const migration = await readFile(
+    projectFile(
+      "core",
+      "server",
+      "database",
+      "migrations",
+      "010_procedure_status_filter.sql",
+    ),
+    "utf8",
+  );
+  const repositorySource = await readFile(
+    projectFile("core", "server", "database", "postgresRepository.js"),
+    "utf8",
+  );
+
+  assert.match(
+    migration,
+    /ALTER\s+TABLE\s+procedimentos_historico\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+status_procedimento\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+'Concluído'/iu,
+  );
+  assert.match(
+    migration,
+    /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+procedimentos_historico_user_base_status_procedimento_idx/iu,
+  );
+  assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/iu.test(migration), false);
+  assert.match(repositorySource, /status_procedimento\s*=\s*ANY\(/u);
+});

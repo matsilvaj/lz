@@ -8,6 +8,7 @@ import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { ProcedureModal } from "../_components/procedure-modal";
+import { CloseIcon } from "../_components/ui";
 import { deleteProcedureAction } from "../procedure-actions";
 
 const PROCEDURE_EDIT_EVENT = "lz:procedure-edit";
@@ -28,6 +29,7 @@ type ProcedureRowActionsProps = {
     valor_da_freebet: number;
     condicao_freebet: string;
     bateu_duplo: boolean;
+    status_procedimento: string;
   };
 };
 
@@ -274,6 +276,8 @@ export function ProcedureRowActions({
           freebetHouse: procedure.casa_destino_freebet,
           freebetValue: procedure.valor_da_freebet,
           freebetCondition: procedure.condicao_freebet,
+          procedureStatus:
+            procedure.status_procedimento === "Concluído" ? "Concluído" : "Pendente",
         }}
         hideTrigger
         mode="edit"
@@ -359,11 +363,12 @@ export function ProcedureRowActions({
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-lg font-semibold text-white">Observação</h3>
               <button
-                className="lz-button-secondary rounded-full px-4 py-2 text-sm"
+                aria-label="Fechar"
+                className="lz-button-secondary inline-flex h-9 w-9 items-center justify-center rounded-full p-0"
                 onClick={() => setNoteOpen(false)}
                 type="button"
               >
-                Fechar
+                <CloseIcon />
               </button>
             </div>
 

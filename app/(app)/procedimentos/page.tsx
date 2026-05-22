@@ -1,3 +1,4 @@
+import { PROCEDURE_STATUSES } from "@/core";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { getProceduresPageData } from "@/lib/server/app-data";
 
@@ -17,6 +18,15 @@ function getSearchParamValues(value: string | string[] | undefined) {
     .filter(Boolean);
 }
 
+function getAllowedSearchParamValues(
+  value: string | string[] | undefined,
+  allowedValues: readonly string[],
+) {
+  return getSearchParamValues(value).filter((item) =>
+    allowedValues.includes(item),
+  );
+}
+
 export default async function ProceduresPage({
   searchParams,
 }: ProceduresPageProps) {
@@ -26,6 +36,7 @@ export default async function ProceduresPage({
     searchText: getSearchParamValue(params.q),
     types: getSearchParamValues(params.type),
     houses: getSearchParamValues(params.house),
+    statuses: getAllowedSearchParamValues(params.status, PROCEDURE_STATUSES),
     dateFrom: getSearchParamValue(params.from),
     dateTo: getSearchParamValue(params.to),
     page: Number(getSearchParamValue(params.page)),
@@ -40,6 +51,7 @@ export default async function ProceduresPage({
         searchText: filters.searchText,
         types: filters.types,
         houses: filters.houses,
+        statuses: filters.statuses,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       }}

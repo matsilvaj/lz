@@ -1,9 +1,23 @@
 export const PROCEDURE_TYPES = Object.freeze([
   "SureBet",
   "Tentativa de Duplo",
+  "Super Odd's",
+  "Aumentadas",
+  "Apostas Normais",
   "Coletar Freebet",
   "Converter Freebet",
+  "Giros Grátis",
+  "Missões",
+  "Métodos",
   "Cassino",
+  "Gastos",
+]);
+
+export const PROCEDURE_STATUS_PENDING = "Pendente";
+export const PROCEDURE_STATUS_DONE = "Concluído";
+export const PROCEDURE_STATUSES = Object.freeze([
+  PROCEDURE_STATUS_PENDING,
+  PROCEDURE_STATUS_DONE,
 ]);
 
 export const FREEBET_CONDITIONS = Object.freeze([

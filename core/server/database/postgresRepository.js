@@ -6,6 +6,8 @@ import {
   FREEBET_STATUS_NA,
   FREEBET_STATUS_PENDING,
   FREEBET_STATUS_USED,
+  PROCEDURE_STATUS_DONE,
+  PROCEDURE_STATUSES,
 } from "../../domain/shared/constants.js";
 import {
   formatOperationDate,
@@ -76,11 +78,20 @@ function normalizeDatabaseData(data = {}) {
     mes_referencia: formatReferenceMonth(data.mes_referencia),
     casa_destino_freebet: parseText(data.casa_destino_freebet),
     status_freebet: parseText(data.status_freebet, FREEBET_STATUS_NA),
+    status_procedimento: normalizeProcedureStatus(
+      data.status_procedimento,
+      PROCEDURE_STATUS_DONE,
+    ),
     id_freebet_origem:
       data.id_freebet_origem === undefined ? null : data.id_freebet_origem,
     valor_da_freebet: parseNumber(data.valor_da_freebet),
     ganhou_freebet: parseText(data.ganhou_freebet),
   };
+}
+
+function normalizeProcedureStatus(value, fallback = PROCEDURE_STATUS_DONE) {
+  const status = parseText(value).trim();
+  return PROCEDURE_STATUSES.includes(status) ? status : fallback;
 }
 
 function normalizeUserId(userId) {
@@ -435,11 +446,12 @@ export class ProceduresPostgresRepository {
           mes_referencia,
           casa_destino_freebet,
           status_freebet,
+          status_procedimento,
           id_freebet_origem,
           valor_da_freebet,
           ganhou_freebet
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
         )
         RETURNING id
       `,
@@ -458,6 +470,7 @@ export class ProceduresPostgresRepository {
         normalized.mes_referencia,
         normalized.casa_destino_freebet,
         normalized.status_freebet,
+        normalized.status_procedimento,
         normalized.id_freebet_origem,
         normalized.valor_da_freebet,
         normalized.ganhou_freebet,
@@ -550,6 +563,9 @@ export class ProceduresPostgresRepository {
     const searchText = parseText(filters.searchText).trim();
     const types = normalizeTextArray(filters.types);
     const houses = normalizeTextArray(filters.houses);
+    const statuses = normalizeTextArray(filters.statuses).filter((status) =>
+      PROCEDURE_STATUSES.includes(status),
+    );
     const dateFrom = normalizeIsoDate(filters.dateFrom);
     const dateTo = normalizeIsoDate(filters.dateTo);
     const pageSize = clamp(normalizePositiveInteger(filters.pageSize, 30), 20, 50);
@@ -580,6 +596,10 @@ export class ProceduresPostgresRepository {
       conditions.push(
         `casas_envolvidas ILIKE ANY(${addParam(houses.map((house) => `%${house}%`))}::text[])`,
       );
+    }
+
+    if (statuses.length > 0) {
+      conditions.push(`status_procedimento = ANY(${addParam(statuses)}::text[])`);
     }
 
     if (dateFrom) {
@@ -652,12 +672,13 @@ export class ProceduresPostgresRepository {
           mes_referencia = $10,
           casa_destino_freebet = $11,
           status_freebet = $12,
-          id_freebet_origem = $13,
-          valor_da_freebet = $14,
-          ganhou_freebet = $15
-        WHERE id = $16
-          AND user_id = $17
-          AND base_id = $18
+          status_procedimento = $13,
+          id_freebet_origem = $14,
+          valor_da_freebet = $15,
+          ganhou_freebet = $16
+        WHERE id = $17
+          AND user_id = $18
+          AND base_id = $19
       `,
       [
         normalized.data_operacao,
@@ -672,6 +693,7 @@ export class ProceduresPostgresRepository {
         normalized.mes_referencia,
         normalized.casa_destino_freebet,
         normalized.status_freebet,
+        normalized.status_procedimento,
         normalized.id_freebet_origem,
         normalized.valor_da_freebet,
         normalized.ganhou_freebet,

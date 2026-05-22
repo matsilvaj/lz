@@ -35,6 +35,11 @@ function parseBoolean(value: FormDataEntryValue | null) {
   );
 }
 
+function parseProcedureType(value: FormDataEntryValue | null, fallback = "SureBet") {
+  const procedureType = parseText(value) || fallback;
+  return procedureType === "Freebet" ? "Coletar Freebet" : procedureType;
+}
+
 function formatOperationDateInput(value: string) {
   if (!value) {
     return null;
@@ -132,7 +137,7 @@ export async function saveProcedureAction(formData: FormData) {
     redirect(appendToastParams(returnTo, "error", "Muitas tentativas. Aguarde um pouco."));
   }
 
-  const procedureType = parseText(formData.get("procedureType")) || "SureBet";
+  const procedureType = parseProcedureType(formData.get("procedureType"));
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
   const originIds = parseOriginIds(formData);
@@ -151,6 +156,7 @@ export async function saveProcedureAction(formData: FormData) {
     freebetCondition: parseText(formData.get("freebetCondition")),
     note: normalizeLongText(formData.get("note"), 2_000),
     freebetHouse,
+    procedureStatus: parseText(formData.get("procedureStatus")),
     hitDouble: parseBoolean(formData.get("hitDouble")),
     equalProfit: parseBoolean(formData.get("equalProfit")),
     protections: parseProtections(formData) as number[],
@@ -192,7 +198,10 @@ export async function updateProcedureAction(formData: FormData) {
     redirect(returnTo);
   }
 
-  const procedureType = parseText(formData.get("procedureType")) || parseText(current.tipo_procedimento);
+  const procedureType = parseProcedureType(
+    formData.get("procedureType"),
+    parseText(current.tipo_procedimento),
+  );
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
   const { houses, freebetHouse } = await normalizeBookmakerSelection(
@@ -210,6 +219,7 @@ export async function updateProcedureAction(formData: FormData) {
     freebetCondition: parseText(formData.get("freebetCondition")),
     note: normalizeLongText(formData.get("note"), 2_000),
     freebetHouse,
+    procedureStatus: parseText(formData.get("procedureStatus")),
     hitDouble: parseBoolean(current.bateu_duplo),
     equalProfit: parseBoolean(formData.get("equalProfit")),
     protections: parseProtections(formData) as number[],

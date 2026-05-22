@@ -11,6 +11,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { CloseIcon } from "../_components/ui";
+
 type OddsFeedItem = {
   fixture_id: string;
   api_football_fixture_id: number | null;
@@ -1217,20 +1219,7 @@ function EventOddsPanel({
               onClick={onClose}
               type="button"
             >
-              <svg
-                aria-hidden="true"
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M6 6L18 18M18 6L6 18"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
+              <CloseIcon />
             </button>
           </div>
 

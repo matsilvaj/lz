@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { DatePickerField } from "../_components/date-picker-field";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { CloseIcon } from "../_components/ui";
 import { saveProcedureAction } from "../procedure-actions";
 
 type AddFreebetModalProps = {
@@ -67,11 +68,12 @@ function HousePickerDialog({
           <h3 className="text-base font-semibold text-white">Escolher casa</h3>
 
           <button
-            className="lz-button-secondary rounded-full px-3 py-1.5 text-sm"
+            aria-label="Fechar"
+            className="lz-button-secondary inline-flex h-9 w-9 items-center justify-center rounded-full p-0"
             onClick={handleClose}
             type="button"
           >
-            Fechar
+            <CloseIcon />
           </button>
         </div>
 
@@ -166,11 +168,12 @@ export function AddFreebetModal({ bookmakers }: AddFreebetModalProps) {
                     <h2 className="text-lg font-semibold text-white">Adicionar freebet</h2>
 
                     <button
-                      className="lz-button-secondary rounded-full p-2"
+                      aria-label="Fechar"
+                      className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
                       onClick={() => setOpen(false)}
                       type="button"
                     >
-                      Fechar
+                      <CloseIcon />
                     </button>
                   </div>
 

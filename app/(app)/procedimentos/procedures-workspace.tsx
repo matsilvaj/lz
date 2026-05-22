@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  calculateRealProfit,
+  PROCEDURE_STATUS_DONE,
+  PROCEDURE_STATUSES,
   PROCEDURE_TYPES,
-  resolveProcedureDoubleValue,
 } from "@/core";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -20,7 +20,6 @@ import { createPortal } from "react-dom";
 import { DatePickerField } from "../_components/date-picker-field";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
-import { ProcedureDoubleToggle } from "./procedure-double-toggle";
 import {
   ProcedureRowActions,
   requestProcedureEdit,
@@ -41,6 +40,7 @@ type ProcedureRow = {
   casa_destino_freebet: string;
   valor_da_freebet: number;
   condicao_freebet: string;
+  status_procedimento: string;
 };
 
 type ProceduresWorkspaceProps = {
@@ -49,6 +49,7 @@ type ProceduresWorkspaceProps = {
     searchText: string;
     types: string[];
     houses: string[];
+    statuses: string[];
     dateFrom: string;
     dateTo: string;
   };
@@ -61,14 +62,54 @@ type ProceduresWorkspaceProps = {
   procedures: ProcedureRow[];
 };
 
-function supportsDouble(procedureType: string) {
-  return ["Tentativa de Duplo", "Coletar Freebet", "Converter Freebet"].includes(
-    procedureType,
-  );
-}
+const PROCEDURE_TYPE_LABELS: Record<string, string> = {
+  "Tentativa de Duplo": "Tentativa de DG",
+  "Coletar Freebet": "Freebet",
+  "Converter Freebet": "Freebet",
+};
+const FREEBET_FILTER_TYPES = ["Coletar Freebet", "Converter Freebet"];
+const PROCEDURE_TYPE_FILTER_OPTIONS = PROCEDURE_TYPES.reduce<
+  Array<{ key: string; label: string; values: string[] }>
+>((options, type) => {
+  if (FREEBET_FILTER_TYPES.includes(type)) {
+    if (!options.some((option) => option.key === "freebet")) {
+      options.push({
+        key: "freebet",
+        label: "Freebet",
+        values: FREEBET_FILTER_TYPES,
+      });
+    }
+
+    return options;
+  }
+
+  options.push({
+    key: type,
+    label: PROCEDURE_TYPE_LABELS[type] ?? type,
+    values: [type],
+  });
+
+  return options;
+}, []);
 
 function getProfitClass(value: number) {
   return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
+}
+
+function getProcedureStatusTone(status: string) {
+  return status === PROCEDURE_STATUS_DONE ? "positive" : "warning";
+}
+
+function getProcedureStatusLabel(status: string | null | undefined) {
+  return status?.trim() || PROCEDURE_STATUS_DONE;
+}
+
+function getProcedureTypeLabel(type: string) {
+  return PROCEDURE_TYPE_LABELS[type] ?? type;
+}
+
+function normalizeMoney(value: number) {
+  return Object.is(value, -0) || Math.abs(value) < 0.005 ? 0 : value;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -119,9 +160,6 @@ export function ProceduresWorkspace({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const [optimisticDoubleById, setOptimisticDoubleById] = useState<
-    Record<number, boolean>
-  >({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [housesOpen, setHousesOpen] = useState(false);
   const [houseSearch, setHouseSearch] = useState("");
@@ -137,32 +175,13 @@ export function ProceduresWorkspace({
   const normalizedHouseSearch = deferredHouseSearch.trim().toLowerCase();
   const selectedTypes = filters.types;
   const selectedHouses = filters.houses;
+  const selectedStatuses = filters.statuses;
   const dateFrom = filters.dateFrom;
   const dateTo = filters.dateTo;
   const visibleBookmakers = bookmakers.filter((bookmaker) =>
     bookmaker.toLowerCase().includes(normalizedHouseSearch),
   );
-  const procedureRows = procedures.map((procedure) => {
-    const optimisticDouble = optimisticDoubleById[procedure.id];
-
-    if (optimisticDouble === undefined) {
-      return procedure;
-    }
-
-    const updatedProcedure = {
-      ...procedure,
-      bateu_duplo: optimisticDouble,
-    };
-
-    return {
-      ...updatedProcedure,
-      lucro_real: calculateRealProfit(
-        updatedProcedure.lucro_final,
-        updatedProcedure.bateu_duplo,
-        resolveProcedureDoubleValue(updatedProcedure),
-      ),
-    };
-  });
+  const procedureRows = procedures;
 
   const replaceWithParams = useCallback(
     (params: URLSearchParams) => {
@@ -252,6 +271,7 @@ export function ProceduresWorkspace({
   const activeFiltersCount =
     selectedTypes.length +
     selectedHouses.length +
+    selectedStatuses.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
   const hasAnyFilter = hasSearchFilter || activeFiltersCount > 0;
@@ -305,7 +325,7 @@ export function ProceduresWorkspace({
     }
 
     updateParams((params) => {
-      for (const key of ["q", "type", "house", "from", "to", "page"]) {
+      for (const key of ["q", "type", "house", "status", "from", "to", "page"]) {
         params.delete(key);
       }
     });
@@ -319,13 +339,6 @@ export function ProceduresWorkspace({
         params.set("page", String(page));
       }
     });
-  }
-
-  function handleDoubleStatusChange(procedureId: number, hitDouble: boolean) {
-    setOptimisticDoubleById((current) => ({
-      ...current,
-      [procedureId]: hitDouble,
-    }));
   }
 
   function handleProcedureClick(
@@ -367,8 +380,29 @@ export function ProceduresWorkspace({
             onClick={() => setFiltersOpen((current) => !current)}
             type="button"
           >
-            {activeFiltersCount > 0 ? `Filtros (${activeFiltersCount})` : "Filtros"}
+            Filtros
           </button>
+
+          <div className="flex flex-wrap gap-2">
+            {PROCEDURE_STATUSES.map((status) => {
+              const active = selectedStatuses.includes(status);
+
+              return (
+                <button
+                  className={`rounded-full px-4 py-3 text-sm font-medium transition ${
+                    active ? "lz-button-primary" : "lz-button-secondary"
+                  }`}
+                  key={`quick-status-${status}`}
+                  onClick={() =>
+                    toggleFilterValue("status", status, selectedStatuses)
+                  }
+                  type="button"
+                >
+                  {status}
+                </button>
+              );
+            })}
+          </div>
 
           {hasAnyFilter ? (
             <button
@@ -398,8 +432,8 @@ export function ProceduresWorkspace({
       </div>
 
       {filtersOpen ? (
-        <div className="lz-panel overflow-visible grid gap-4 rounded-[28px] p-4 lg:grid-cols-[1.3fr,1fr,1fr]">
-          <div className="space-y-3">
+        <div className="lz-panel grid gap-4 overflow-visible rounded-[28px] p-4 lg:grid-cols-[minmax(260px,420px)_auto_1fr]">
+          <div className="min-w-0 space-y-3 lg:order-1 lg:col-span-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Tipos</p>
               {selectedTypes.length > 0 ? (
@@ -414,26 +448,81 @@ export function ProceduresWorkspace({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {PROCEDURE_TYPES.map((type) => {
-                const active = selectedTypes.includes(type);
+              {PROCEDURE_TYPE_FILTER_OPTIONS.map((option) => {
+                const active = option.values.some((value) =>
+                  selectedTypes.includes(value),
+                );
 
                 return (
                   <button
                     className={`rounded-full px-3 py-2 text-sm transition ${
                       active ? "lz-button-primary" : "lz-button-secondary"
                     }`}
-                    key={type}
-                    onClick={() => toggleFilterValue("type", type, selectedTypes)}
+                    key={option.key}
+                    onClick={() => {
+                      if (active) {
+                        updateRepeatedFilter(
+                          "type",
+                          selectedTypes.filter(
+                            (type) => !option.values.includes(type),
+                          ),
+                        );
+                        return;
+                      }
+
+                      updateRepeatedFilter("type", [
+                        ...selectedTypes,
+                        ...option.values.filter(
+                          (value) => !selectedTypes.includes(value),
+                        ),
+                      ]);
+                    }}
                     type="button"
                   >
-                    {type}
+                    {option.label}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3 lg:order-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-white">Status</p>
+              {selectedStatuses.length > 0 ? (
+                <button
+                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  onClick={() => updateRepeatedFilter("status", [])}
+                  type="button"
+                >
+                  Limpar
+                </button>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {PROCEDURE_STATUSES.map((status) => {
+                const active = selectedStatuses.includes(status);
+
+                return (
+                  <button
+                    className={`rounded-full px-3 py-2 text-sm transition ${
+                      active ? "lz-button-primary" : "lz-button-secondary"
+                    }`}
+                    key={status}
+                    onClick={() =>
+                      toggleFilterValue("status", status, selectedStatuses)
+                    }
+                    type="button"
+                  >
+                    {status}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="min-w-0 space-y-3 lg:order-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Casas</p>
               {selectedHouses.length > 0 ? (
@@ -527,7 +616,7 @@ export function ProceduresWorkspace({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3 lg:order-4 lg:col-span-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Período</p>
               {dateFrom || dateTo ? (
@@ -596,7 +685,13 @@ export function ProceduresWorkspace({
         ) : (
           <>
             <div className="grid gap-4 md:hidden">
-              {procedureRows.map((procedure) => (
+              {procedureRows.map((procedure) => {
+                const resultValue = normalizeMoney(procedure.lucro_real);
+                const statusLabel = getProcedureStatusLabel(
+                  procedure.status_procedimento,
+                );
+
+                return (
                 <article
                   className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
                   key={procedure.id}
@@ -611,7 +706,9 @@ export function ProceduresWorkspace({
                         {procedure.data_operacao}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <StatusTag>{procedure.tipo_procedimento}</StatusTag>
+                        <StatusTag>
+                          {getProcedureTypeLabel(procedure.tipo_procedimento)}
+                        </StatusTag>
                         {procedure.observacao?.trim() ? (
                           <StatusTag tone="warning">Com observação</StatusTag>
                         ) : null}
@@ -635,42 +732,27 @@ export function ProceduresWorkspace({
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
                       <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                        Lucro da entrada
+                        Status
                       </p>
-                      <p className={`mt-2 text-lg font-semibold ${getProfitClass(procedure.lucro_final)}`}>
-                        {formatCurrency(procedure.lucro_final)}
-                      </p>
+                      <div className="mt-2">
+                        <StatusTag tone={getProcedureStatusTone(statusLabel)}>
+                          {statusLabel}
+                        </StatusTag>
+                      </div>
                     </div>
                     <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
                       <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                        Lucro final
+                        Resultado R$
                       </p>
-                      <p className={`mt-2 text-lg font-semibold ${getProfitClass(procedure.lucro_real)}`}>
-                        {formatCurrency(procedure.lucro_real)}
+                      <p className={`mt-2 text-lg font-semibold ${getProfitClass(resultValue)}`}>
+                        {formatCurrency(resultValue)}
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between">
-                    <div className="text-sm">
-                      <p className="text-[var(--text-dim)]">Duplo</p>
-                      <div className="mt-2">
-                        {supportsDouble(procedure.tipo_procedimento) ? (
-                          <ProcedureDoubleToggle
-                            checked={procedure.bateu_duplo}
-                            onCheckedChange={(checked) =>
-                              handleDoubleStatusChange(procedure.id, checked)
-                            }
-                            procedureId={procedure.id}
-                          />
-                        ) : (
-                          <span className="text-[var(--text-secondary)]">Não se aplica</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
 
             <div className="hidden overflow-x-auto md:block">
@@ -681,16 +763,21 @@ export function ProceduresWorkspace({
                     <th className="px-3 py-3 text-center font-medium">Tipo</th>
                     <th className="px-3 py-3 text-center font-medium">Jogo</th>
                     <th className="px-3 py-3 text-center font-medium">Casas</th>
-                    <th className="px-3 py-3 text-center font-medium">Lucro da entrada</th>
-                    <th className="px-3 py-3 text-center font-medium">Duplo?</th>
-                    <th className="px-3 py-3 text-center font-medium">Lucro final</th>
+                    <th className="px-3 py-3 text-center font-medium">Status</th>
+                    <th className="px-3 py-3 text-center font-medium">Resultado R$</th>
                     <th className="px-3 py-3 text-center font-medium">
                       <span className="sr-only">Acoes</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {procedureRows.map((procedure) => (
+                  {procedureRows.map((procedure) => {
+                    const resultValue = normalizeMoney(procedure.lucro_real);
+                    const statusLabel = getProcedureStatusLabel(
+                      procedure.status_procedimento,
+                    );
+
+                    return (
                     <tr
                       className="cursor-pointer border-b border-white/8 align-middle transition hover:bg-white/4"
                       key={procedure.id}
@@ -704,7 +791,9 @@ export function ProceduresWorkspace({
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex flex-wrap items-center justify-center gap-2">
-                          <StatusTag>{procedure.tipo_procedimento}</StatusTag>
+                            <StatusTag>
+                              {getProcedureTypeLabel(procedure.tipo_procedimento)}
+                            </StatusTag>
                           {procedure.observacao?.trim() ? (
                             <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
                           ) : null}
@@ -716,30 +805,15 @@ export function ProceduresWorkspace({
                       <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
                         {procedure.casas_envolvidas || "-"}
                       </td>
-                      <td
-                        className={`px-3 py-4 text-center font-medium ${getProfitClass(procedure.lucro_final)}`}
-                      >
-                        {formatCurrency(procedure.lucro_final)}
-                      </td>
-                      <td className="px-3 py-4">
-                        <div className="flex justify-center">
-                          {supportsDouble(procedure.tipo_procedimento) ? (
-                            <ProcedureDoubleToggle
-                              checked={procedure.bateu_duplo}
-                              onCheckedChange={(checked) =>
-                                handleDoubleStatusChange(procedure.id, checked)
-                              }
-                              procedureId={procedure.id}
-                            />
-                          ) : (
-                            <span className="text-[var(--text-dim)]">-</span>
-                          )}
-                        </div>
+                      <td className="px-3 py-4 text-center">
+                        <StatusTag tone={getProcedureStatusTone(statusLabel)}>
+                          {statusLabel}
+                        </StatusTag>
                       </td>
                       <td
-                        className={`px-3 py-4 text-center font-semibold ${getProfitClass(procedure.lucro_real)}`}
+                        className={`px-3 py-4 text-center font-semibold ${getProfitClass(resultValue)}`}
                       >
-                        {formatCurrency(procedure.lucro_real)}
+                        {formatCurrency(resultValue)}
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex justify-center">
@@ -750,7 +824,8 @@ export function ProceduresWorkspace({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
