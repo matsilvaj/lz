@@ -421,6 +421,38 @@ async function listOddsEventsByDateRangeUncached(
   return Array.from(events.values()).map(stripInternalEventState).slice(0, eventLimit);
 }
 
+async function getOddsEventByFixtureIdUncached(fixtureId: string) {
+  const safeFixtureId = cleanString(fixtureId).slice(0, 160);
+
+  if (!safeFixtureId) {
+    return null;
+  }
+
+  const supabase = getMonitorSupabaseClient();
+  const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
+  const { data, error } = await supabase
+    .from("public_odds_feed")
+    .select(ODDS_FEED_COLUMNS)
+    .eq("fixture_id", safeFixtureId)
+    .order("market_code", { ascending: true })
+    .order("pa_category", { ascending: true })
+    .order("bookmaker_name", { ascending: true })
+    .order("selection", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  for (const row of (data ?? []) as RawOddsFeedItem[]) {
+    const odd = cleanOddsFeedItem(row);
+    if (odd) {
+      updateEventFromOdd(events, odd);
+    }
+  }
+
+  return Array.from(events.values()).map(stripInternalEventState)[0] ?? null;
+}
+
 async function getOddsFeedStatusUncached() {
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
@@ -462,6 +494,15 @@ const getCachedOddsEventsByDateRange = unstable_cache(
   },
 );
 
+const getCachedOddsEventByFixtureId = unstable_cache(
+  getOddsEventByFixtureIdUncached,
+  ["monitor-odds-event-by-fixture-id"],
+  {
+    tags: ["monitor-odds-event-by-fixture-id"],
+    revalidate: 20,
+  },
+);
+
 export async function searchOddsEvents(search: string, limit = DEFAULT_EVENT_LIMIT) {
   return getCachedOddsEventSearch(search, limit);
 }
@@ -472,6 +513,10 @@ export async function listOddsEventsByDateRange(
   limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
 ) {
   return getCachedOddsEventsByDateRange(from, to, limit);
+}
+
+export async function getOddsEventByFixtureId(fixtureId: string) {
+  return getCachedOddsEventByFixtureId(fixtureId);
 }
 
 export async function getOddsFeedStatus() {

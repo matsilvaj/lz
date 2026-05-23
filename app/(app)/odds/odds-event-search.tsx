@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   type ChangeEvent,
   type ReactNode,
@@ -9,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -424,6 +424,10 @@ function formatLeagueLine(event: OddsEvent) {
   return country ? `${leagueName} - ${country}` : leagueName;
 }
 
+function getEventHref(event: OddsEvent) {
+  return `/odds/${encodeURIComponent(event.fixture_id)}`;
+}
+
 function getDatePresetRange(preset: DatePreset) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -718,22 +722,19 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
 
 function EventCard({
   event,
-  onOpen,
   showLeague = true,
 }: {
   event: OddsEvent;
-  onOpen: (event: OddsEvent) => void;
   showLeague?: boolean;
 }) {
   return (
     <article
       className="group relative w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] md:p-5"
     >
-      <button
+      <Link
         aria-label={`Abrir odds de ${event.home_team} x ${event.away_team}`}
         className="absolute inset-0 z-0 rounded-[24px] border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        onClick={() => onOpen(event)}
-        type="button"
+        href={getEventHref(event)}
       />
       <div className="pointer-events-none relative z-10 flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
         <div className="min-w-0">
@@ -902,10 +903,8 @@ function LeagueIcon({
 
 function LeagueEventsSection({
   group,
-  onOpen,
 }: {
   group: LeagueGroup;
-  onOpen: (event: OddsEvent) => void;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -942,7 +941,6 @@ function LeagueEventsSection({
           <EventCard
             event={event}
             key={event.fixture_id}
-            onOpen={onOpen}
             showLeague={false}
           />
         ))}
@@ -1132,41 +1130,11 @@ function OddsTable({
   );
 }
 
-function EventOddsPanel({
-  event,
-  onClose,
-}: {
-  event: OddsEvent | null;
-  onClose: () => void;
-}) {
+export function OddsEventDetails({ event }: { event: OddsEvent }) {
   const [sorts, setSorts] = useState<Record<PaCategory, OddsSortState | null>>({
     COM_PA: null,
     SEM_PA: null,
   });
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!event) return;
-    const previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function handleKeyDown(keyboardEvent: KeyboardEvent) {
-      if (keyboardEvent.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [event, onClose]);
-
-  if (!event || typeof document === "undefined") {
-    return null;
-  }
 
   function handleSortChange(category: PaCategory, selection: Selection) {
     setSorts((current) => ({
@@ -1175,83 +1143,52 @@ function EventOddsPanel({
     }));
   }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] overflow-y-auto bg-black/70 p-2 backdrop-blur-sm sm:p-4"
-      onMouseDown={(mouseEvent) => {
-        if (!dialogRef.current?.contains(mouseEvent.target as Node)) {
-          onClose();
-        }
-      }}
-      role="presentation"
-    >
-      <div className="flex min-h-full items-end justify-center py-2 sm:items-center sm:py-0">
-        <div
-          aria-modal="true"
-          className="lz-panel lz-odds-dialog max-h-[calc(100dvh-1rem)] w-full max-w-6xl rounded-[24px] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:p-4 md:p-5"
-          onMouseDown={(mouseEvent) => mouseEvent.stopPropagation()}
-          ref={dialogRef}
-          role="dialog"
-        >
-          <div className="lz-odds-dialog-header sticky top-0 z-20 -mx-3 -mt-3 flex items-start justify-between gap-4 rounded-t-[24px] border-b border-white/8 px-3 pb-3 pt-3 backdrop-blur-xl sm:-mx-4 sm:-mt-4 sm:rounded-t-[28px] sm:px-4 sm:pt-4 md:-mx-5 md:-mt-5 md:px-5 md:pt-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                  {formatDate(event.starts_at)}
-                </span>
-                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                  {formatLeagueLine(event)}
-                </span>
-              </div>
-              <h2 className="mt-3 text-xl font-semibold tracking-tight text-white">
-                {event.home_team} x {event.away_team}
-              </h2>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                {formatTime(event.starts_at)}
-              </p>
+  return (
+    <div className="space-y-5">
+      <section className="lz-panel rounded-[28px] p-4 md:p-6">
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                {formatDate(event.starts_at)}
+              </span>
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                {formatLeagueLine(event)}
+              </span>
             </div>
 
-            <button
-              aria-label="Fechar"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
-              onClick={onClose}
-              type="button"
-            >
-              <svg
-                aria-hidden="true"
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M6 6L18 18M18 6L6 18"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </button>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">
+              {event.home_team} x {event.away_team}
+            </h1>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              {formatTime(event.starts_at)}
+            </p>
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            <OddsTable
-              category="COM_PA"
-              event={event}
-              onSortChange={handleSortChange}
-              sort={sorts.COM_PA}
-            />
-            <OddsTable
-              category="SEM_PA"
-              event={event}
-              onSortChange={handleSortChange}
-              sort={sorts.SEM_PA}
-            />
-          </div>
+          <Link
+            className="lz-button-secondary inline-flex h-11 w-full items-center justify-center rounded-full px-4 text-sm font-semibold transition sm:w-auto"
+            href="/odds"
+          >
+            Voltar
+          </Link>
         </div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <OddsTable
+          category="COM_PA"
+          event={event}
+          onSortChange={handleSortChange}
+          sort={sorts.COM_PA}
+        />
+        <OddsTable
+          category="SEM_PA"
+          event={event}
+          onSortChange={handleSortChange}
+          sort={sorts.SEM_PA}
+        />
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 
@@ -1263,7 +1200,6 @@ export function OddsEventSearch() {
     loading: true,
     error: null,
   });
-  const [selectedEvent, setSelectedEvent] = useState<OddsEvent | null>(null);
   const latestOddUpdatedAtRef = useRef<string | null>(null);
   const activeRequestRef = useRef<EventsRequest | null>(null);
 
@@ -1538,7 +1474,6 @@ export function OddsEventSearch() {
             <LeagueEventsSection
               group={group}
               key={group.key}
-              onOpen={setSelectedEvent}
             />
           ))}
         </section>
@@ -1550,17 +1485,10 @@ export function OddsEventSearch() {
             <EventCard
               event={event}
               key={event.fixture_id}
-              onOpen={setSelectedEvent}
             />
           ))}
         </section>
       ) : null}
-
-      <EventOddsPanel
-        event={selectedEvent}
-        key={selectedEvent?.fixture_id ?? "closed"}
-        onClose={() => setSelectedEvent(null)}
-      />
     </div>
   );
 }
