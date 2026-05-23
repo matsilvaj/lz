@@ -236,6 +236,27 @@ function calculateEffectiveOdd(line: CalculatorLine) {
   return 1 + (odd - 1) * (1 + toNumber(line.aumento_percentual) / 100);
 }
 
+function calculateRealOdd(line: CalculatorLine) {
+  const effectiveOdd = calculateEffectiveOdd(line);
+  const commissionMultiplier = 1 - toNumber(line.comissao_percentual) / 100;
+  const cashbackRate = toNumber(line.cashback_percentual) / 100;
+
+  if (line.tipo === "L") {
+    return (
+      effectiveOdd -
+      1 +
+      commissionMultiplier -
+      (effectiveOdd - 1) * cashbackRate
+    );
+  }
+
+  if (line.freebet) {
+    return (effectiveOdd - 1) * commissionMultiplier;
+  }
+
+  return 1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate;
+}
+
 function roundCurrencyValue(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -785,7 +806,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             toNumber(line.aumento_percentual) !== 0 ||
             toNumber(line.comissao_percentual) !== 0 ||
             toNumber(line.cashback_percentual) !== 0;
-          const realOddValue = lineResult?.odd_efetiva ?? calculateEffectiveOdd(line);
+          const realOddValue = lineResult?.math?.M ?? calculateRealOdd(line);
           const displayedStake =
             index === workspaceIndex
               ? line.stake
