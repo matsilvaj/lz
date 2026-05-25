@@ -4,7 +4,7 @@ import { unstable_cache } from "next/cache";
 
 import { getMonitorSupabaseClient } from "./client";
 
-const COMPACT_ODDS_FEED_COLUMNS = [
+const ODDS_FEED_COLUMNS = [
   "fixture_id",
   "api_football_fixture_id",
   "fixture_name",
@@ -82,7 +82,7 @@ export type MonitorOddsFeedStatus = {
 };
 
 type RawOddsFeedItem = Partial<Record<keyof MonitorOddsFeedItem, unknown>>;
-type RawCompactOddsFeedItem = Partial<
+type RawOddsFeedRow = Partial<
   Record<
     | "fixture_id"
     | "api_football_fixture_id"
@@ -197,7 +197,7 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
   };
 }
 
-function expandCompactOddsFeedItem(row: RawCompactOddsFeedItem): MonitorOddsFeedItem[] {
+function expandOddsFeedRow(row: RawOddsFeedRow): MonitorOddsFeedItem[] {
   if (!Array.isArray(row.odds)) {
     return [];
   }
@@ -398,8 +398,8 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
   for (let page = 0; page < MAX_SEARCH_PAGES; page += 1) {
     const offset = page * SEARCH_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_feed_compact")
-      .select(COMPACT_ODDS_FEED_COLUMNS)
+      .from("public_odds_feed")
+      .select(ODDS_FEED_COLUMNS)
       .or(filter)
       .order("starts_at", { ascending: true })
       .order("fixture_name", { ascending: true })
@@ -409,8 +409,8 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
       throw error;
     }
 
-    for (const row of (data ?? []) as RawCompactOddsFeedItem[]) {
-      for (const odd of expandCompactOddsFeedItem(row)) {
+    for (const row of (data ?? []) as RawOddsFeedRow[]) {
+      for (const odd of expandOddsFeedRow(row)) {
         updateEventFromOdd(events, odd);
       }
 
@@ -445,8 +445,8 @@ async function listOddsEventsByDateRangeUncached(
   for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
     const offset = page * DATE_RANGE_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_feed_compact")
-      .select(COMPACT_ODDS_FEED_COLUMNS)
+      .from("public_odds_feed")
+      .select(ODDS_FEED_COLUMNS)
       .gte("starts_at", dateRange.from)
       .lt("starts_at", dateRange.to)
       .order("league_name", { ascending: true })
@@ -458,8 +458,8 @@ async function listOddsEventsByDateRangeUncached(
       throw error;
     }
 
-    for (const row of (data ?? []) as RawCompactOddsFeedItem[]) {
-      for (const odd of expandCompactOddsFeedItem(row)) {
+    for (const row of (data ?? []) as RawOddsFeedRow[]) {
+      for (const odd of expandOddsFeedRow(row)) {
         updateEventFromOdd(events, odd);
       }
 
@@ -486,8 +486,8 @@ async function getOddsEventByFixtureIdUncached(fixtureId: string) {
   const supabase = getMonitorSupabaseClient();
   const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
   const { data, error } = await supabase
-    .from("public_odds_feed_compact")
-    .select(COMPACT_ODDS_FEED_COLUMNS)
+    .from("public_odds_feed")
+    .select(ODDS_FEED_COLUMNS)
     .eq("fixture_id", safeFixtureId)
     .maybeSingle();
 
@@ -495,10 +495,10 @@ async function getOddsEventByFixtureIdUncached(fixtureId: string) {
     throw error;
   }
 
-  const row = data as RawCompactOddsFeedItem | null;
+  const row = data as RawOddsFeedRow | null;
 
   if (row) {
-    for (const odd of expandCompactOddsFeedItem(row)) {
+    for (const odd of expandOddsFeedRow(row)) {
       updateEventFromOdd(events, odd);
     }
   }

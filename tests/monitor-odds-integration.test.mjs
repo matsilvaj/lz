@@ -29,8 +29,8 @@ test("monitor odds repository reads only public monitor views", () => {
     "bookmaker_league_links",
   ];
 
-  assert.match(oddsRepository, /\.from\("public_odds_feed_compact"\)/);
-  assert.doesNotMatch(oddsRepository, /\.from\("public_odds_feed"\)/);
+  assert.match(oddsRepository, /\.from\("public_odds_feed"\)/);
+  assert.doesNotMatch(oddsRepository, /public_odds_feed_compact/);
   assert.match(oddsRepository, /\.from\("public_odds_feed_status"\)/);
 
   for (const table of forbiddenTables) {
@@ -58,10 +58,10 @@ test("monitor odds search has bounded pagination", () => {
   assert.match(oddsRepository, /events\.size >= eventLimit/);
 });
 
-test("monitor odds repository expands compact feed odds safely", () => {
-  assert.match(oddsRepository, /COMPACT_ODDS_FEED_COLUMNS/);
+test("monitor odds repository expands grouped feed odds safely", () => {
+  assert.match(oddsRepository, /ODDS_FEED_COLUMNS/);
   assert.match(oddsRepository, /Array\.isArray\(row\.odds\)/);
-  assert.match(oddsRepository, /expandCompactOddsFeedItem/);
+  assert.match(oddsRepository, /expandOddsFeedRow/);
 });
 
 test("monitor odds feed exposes safe bookmaker event urls", () => {
