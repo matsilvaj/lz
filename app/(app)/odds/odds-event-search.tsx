@@ -1065,15 +1065,27 @@ function OddPricePulse({
   children,
   className,
   price,
+  pulseId,
 }: {
   children: ReactNode;
   className: string;
   price: number | undefined;
+  pulseId: string;
 }) {
   const elementRef = useRef<HTMLSpanElement | null>(null);
   const previousPriceRef = useRef(price);
+  const previousPulseIdRef = useRef(pulseId);
 
   useEffect(() => {
+    const element = elementRef.current;
+
+    if (previousPulseIdRef.current !== pulseId) {
+      previousPulseIdRef.current = pulseId;
+      previousPriceRef.current = price;
+      element?.classList.remove("odds-price-move-up", "odds-price-move-down");
+      return;
+    }
+
     const previousPrice = previousPriceRef.current;
     previousPriceRef.current = price;
 
@@ -1084,8 +1096,6 @@ function OddPricePulse({
     ) {
       return;
     }
-
-    const element = elementRef.current;
 
     if (!element) {
       return;
@@ -1105,7 +1115,7 @@ function OddPricePulse({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [price]);
+  }, [price, pulseId]);
 
   return (
     <span className={className} ref={elementRef}>
@@ -1143,6 +1153,7 @@ function OddsSummaryRow({
               className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border border-transparent bg-white/[0.035] px-2 py-2 text-center"
               key={`best-${selection}`}
               price={odd?.price}
+              pulseId={`summary:${event.fixture_id}:${selection}`}
             >
               <span className="text-base font-semibold text-white">
                 {formatOdd(odd?.price)}
@@ -1593,6 +1604,7 @@ function OddsTable({
                       }`}
                       key={`${row.key}-${selection}`}
                       price={odd?.price}
+                      pulseId={`table:${row.key}:${selection}`}
                     >
                       {formatOdd(odd?.price)}
                     </OddPricePulse>

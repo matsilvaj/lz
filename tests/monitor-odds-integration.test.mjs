@@ -196,6 +196,8 @@ test("monitor odds detail shows the event odds update timestamp", () => {
 test("monitor odds UI highlights actual odd price movement", () => {
   assert.match(oddsUi, /OddPricePulse/);
   assert.match(oddsUi, /price > previousPrice/);
+  assert.match(oddsUi, /previousPulseIdRef/);
+  assert.match(oddsUi, /pulseId={`table:\$\{row\.key\}:\$\{selection\}`}/);
   assert.match(globalsCss, /odds-price-move-up/);
   assert.match(globalsCss, /odds-price-move-down/);
 });
