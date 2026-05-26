@@ -197,6 +197,9 @@ test("monitor odds UI highlights actual odd price movement", () => {
   assert.match(oddsUi, /OddPricePulse/);
   assert.match(oddsUi, /price > previousPrice/);
   assert.match(oddsUi, /previousPulseIdRef/);
+  assert.match(oddsUi, /previousPulseVersionRef/);
+  assert.match(oddsUi, /pulseVersion === previousPulseVersion/);
+  assert.match(oddsUi, /oddsPulseVersion: current\.oddsPulseVersion \+ 1/);
   assert.match(oddsUi, /pulseId={`table:\$\{row\.key\}:\$\{selection\}`}/);
   assert.match(globalsCss, /odds-price-move-up/);
   assert.match(globalsCss, /odds-price-move-down/);

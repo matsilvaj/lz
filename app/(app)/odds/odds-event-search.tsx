@@ -80,6 +80,7 @@ type OddsEvent = {
 type SearchState = {
   events: OddsEvent[];
   loading: boolean;
+  oddsPulseVersion: number;
   refreshingOdds: boolean;
   error: string | null;
 };
@@ -1066,15 +1067,18 @@ function OddPricePulse({
   className,
   price,
   pulseId,
+  pulseVersion,
 }: {
   children: ReactNode;
   className: string;
   price: number | undefined;
   pulseId: string;
+  pulseVersion: number;
 }) {
   const elementRef = useRef<HTMLSpanElement | null>(null);
   const previousPriceRef = useRef(price);
   const previousPulseIdRef = useRef(pulseId);
+  const previousPulseVersionRef = useRef(pulseVersion);
 
   useEffect(() => {
     const element = elementRef.current;
@@ -1082,14 +1086,18 @@ function OddPricePulse({
     if (previousPulseIdRef.current !== pulseId) {
       previousPulseIdRef.current = pulseId;
       previousPriceRef.current = price;
+      previousPulseVersionRef.current = pulseVersion;
       element?.classList.remove("odds-price-move-up", "odds-price-move-down");
       return;
     }
 
     const previousPrice = previousPriceRef.current;
+    const previousPulseVersion = previousPulseVersionRef.current;
     previousPriceRef.current = price;
+    previousPulseVersionRef.current = pulseVersion;
 
     if (
+      pulseVersion === previousPulseVersion ||
       price === undefined ||
       previousPrice === undefined ||
       price === previousPrice
@@ -1115,7 +1123,7 @@ function OddPricePulse({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [price, pulseId]);
+  }, [price, pulseId, pulseVersion]);
 
   return (
     <span className={className} ref={elementRef}>
@@ -1127,9 +1135,11 @@ function OddPricePulse({
 function OddsSummaryRow({
   event,
   oddsLoading = false,
+  pulseVersion,
 }: {
   event: OddsEvent;
   oddsLoading?: boolean;
+  pulseVersion: number;
 }) {
   const bestOdds = getBest1x2Odds(event);
   const hasAnyOdd = bestOdds.some(({ odd }) => odd);
@@ -1154,6 +1164,7 @@ function OddsSummaryRow({
               key={`best-${selection}`}
               price={odd?.price}
               pulseId={`summary:${event.fixture_id}:${selection}`}
+              pulseVersion={pulseVersion}
             >
               <span className="text-base font-semibold text-white">
                 {formatOdd(odd?.price)}
@@ -1185,10 +1196,12 @@ function OddsSummaryRow({
 function EventCard({
   event,
   oddsLoading = false,
+  pulseVersion,
   showLeague = true,
 }: {
   event: OddsEvent;
   oddsLoading?: boolean;
+  pulseVersion: number;
   showLeague?: boolean;
 }) {
   return (
@@ -1222,7 +1235,11 @@ function EventCard({
         </div>
 
         <div className="flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow event={event} oddsLoading={oddsLoading} />
+          <OddsSummaryRow
+            event={event}
+            oddsLoading={oddsLoading}
+            pulseVersion={pulseVersion}
+          />
         </div>
       </div>
     </article>
@@ -1368,9 +1385,11 @@ function LeagueIcon({
 function LeagueEventsSection({
   group,
   oddsLoading = false,
+  pulseVersion,
 }: {
   group: LeagueGroup;
   oddsLoading?: boolean;
+  pulseVersion: number;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -1408,6 +1427,7 @@ function LeagueEventsSection({
             event={event}
             key={event.fixture_id}
             oddsLoading={oddsLoading}
+            pulseVersion={pulseVersion}
             showLeague={false}
           />
         ))}
@@ -1533,12 +1553,14 @@ function OddsTable({
   category,
   event,
   oddsLoading = false,
+  pulseVersion,
   sort,
   onSortChange,
 }: {
   category: PaCategory;
   event: OddsEvent;
   oddsLoading?: boolean;
+  pulseVersion: number;
   sort: OddsSortState | null;
   onSortChange: (category: PaCategory, selection: Selection) => void;
 }) {
@@ -1605,6 +1627,7 @@ function OddsTable({
                       key={`${row.key}-${selection}`}
                       price={odd?.price}
                       pulseId={`table:${row.key}:${selection}`}
+                      pulseVersion={pulseVersion}
                     >
                       {formatOdd(odd?.price)}
                     </OddPricePulse>
@@ -1638,6 +1661,7 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
     COM_PA: null,
     SEM_PA: null,
   });
+  const [oddsPulseVersion, setOddsPulseVersion] = useState(0);
   const [refreshingOdds, setRefreshingOdds] = useState(false);
   const currentEventRef = useRef(event);
   const currentEventFixtureIdRef = useRef(event.fixture_id);
@@ -1720,6 +1744,7 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
         event: updatedEvent,
         fixtureId: updatedEvent.fixture_id,
       });
+      setOddsPulseVersion((current) => current + 1);
     } catch {
       // Detail odds refresh is best-effort; the current snapshot remains visible.
     } finally {
@@ -1779,6 +1804,7 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
           event={currentEvent}
           onSortChange={handleSortChange}
           oddsLoading={refreshingOdds}
+          pulseVersion={oddsPulseVersion}
           sort={sorts.COM_PA}
         />
         <OddsTable
@@ -1786,6 +1812,7 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
           event={currentEvent}
           onSortChange={handleSortChange}
           oddsLoading={refreshingOdds}
+          pulseVersion={oddsPulseVersion}
           sort={sorts.SEM_PA}
         />
       </div>
@@ -1799,6 +1826,7 @@ export function OddsEventSearch() {
   const [state, setState] = useState<SearchState>({
     events: [],
     loading: true,
+    oddsPulseVersion: 0,
     refreshingOdds: false,
     error: null,
   });
@@ -1821,6 +1849,7 @@ export function OddsEventSearch() {
         setState({
           events: [],
           loading: true,
+          oddsPulseVersion: 0,
           refreshingOdds: false,
           error: null,
         });
@@ -1871,6 +1900,7 @@ export function OddsEventSearch() {
         setState({
           events,
           loading: false,
+          oddsPulseVersion: 0,
           refreshingOdds: Boolean(events.length && nextOddsVersion),
           error: null,
         });
@@ -1903,6 +1933,7 @@ export function OddsEventSearch() {
             events: result.events,
             error: null,
             loading: false,
+            oddsPulseVersion: current.oddsPulseVersion,
             refreshingOdds: false,
           }));
         } catch {
@@ -1927,6 +1958,7 @@ export function OddsEventSearch() {
         setState({
           events: [],
           loading: false,
+          oddsPulseVersion: 0,
           refreshingOdds: false,
           error: error instanceof Error ? error.message : "Erro ao buscar eventos.",
         });
@@ -2107,6 +2139,7 @@ export function OddsEventSearch() {
         setState((current) => ({
           ...current,
           events: updatedEvents,
+          oddsPulseVersion: current.oddsPulseVersion + 1,
           refreshingOdds: false,
         }));
       } catch {
@@ -2196,6 +2229,7 @@ export function OddsEventSearch() {
               group={group}
               key={group.key}
               oddsLoading={state.refreshingOdds}
+              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>
@@ -2208,6 +2242,7 @@ export function OddsEventSearch() {
               event={event}
               key={event.fixture_id}
               oddsLoading={state.refreshingOdds}
+              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>
