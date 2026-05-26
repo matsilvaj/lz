@@ -189,7 +189,6 @@ test("monitor odds UI keeps remembered odds while a refresh is pending", () => {
 test("monitor odds detail shows the event odds update timestamp", () => {
   assert.match(oddsUi, /formatLastOddsUpdate/);
   assert.match(oddsUi, /currentEvent\.latest_odd_updated_at/);
-  assert.match(oddsUi, /date\.getTime\(\) > now/);
   assert.match(oddsUi, /Odds atualizadas às/);
   assert.doesNotMatch(oddsUi, /Odds atualizadas em/);
 });
