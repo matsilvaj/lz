@@ -666,9 +666,16 @@ async function fetchOddsForEvents(
   const payload = (await response.json()) as OddsResponse;
   const isComplete = payload.complete !== false && payload.stale !== true;
 
+  if (!isComplete) {
+    return {
+      events,
+      oddsVersion: null,
+    };
+  }
+
   return {
     events: mergeOddsSnapshots(events, payload.snapshots ?? []),
-    oddsVersion: isComplete ? payload.odds_version ?? oddsVersion : null,
+    oddsVersion: payload.odds_version ?? oddsVersion,
   };
 }
 
@@ -1582,20 +1589,7 @@ export function OddsEventSearch() {
         const nextFixturesVersion = payload.fixtures_version ?? null;
         const nextOddsVersion =
           payload.odds_version ?? payload.latest_odd_updated_at ?? null;
-        let events = payload.events ?? [];
-        let loadedOddsVersion: string | null = null;
-
-        try {
-          const result = await fetchOddsForEvents(events, nextOddsVersion, {
-            signal: options.signal,
-          });
-          events = result.events;
-          loadedOddsVersion = result.oddsVersion;
-        } catch {
-          if (options.signal?.aborted) {
-            return;
-          }
-        }
+        const events = payload.events ?? [];
 
         if (
           options.signal?.aborted ||
@@ -1606,15 +1600,8 @@ export function OddsEventSearch() {
 
         latestFixturesVersionRef.current = nextFixturesVersion;
         lastUnversionedFixturesRefreshAtRef.current = Date.now();
-
-        if (loadedOddsVersion) {
-          latestOddsVersionRef.current = loadedOddsVersion;
-          latestOddUpdatedAtRef.current =
-            payload.latest_odd_updated_at ?? loadedOddsVersion;
-        } else {
-          latestOddsVersionRef.current = null;
-          latestOddUpdatedAtRef.current = null;
-        }
+        latestOddsVersionRef.current = null;
+        latestOddUpdatedAtRef.current = null;
 
         eventsRef.current = events;
         setState({
@@ -1622,6 +1609,41 @@ export function OddsEventSearch() {
           loading: false,
           error: null,
         });
+
+        if (!events.length || !nextOddsVersion) {
+          return;
+        }
+
+        try {
+          const result = await fetchOddsForEvents(events, nextOddsVersion, {
+            signal: options.signal,
+          });
+
+          if (
+            options.signal?.aborted ||
+            !isSameEventsRequest(activeRequestRef.current, request)
+          ) {
+            return;
+          }
+
+          if (result.oddsVersion) {
+            latestOddsVersionRef.current = result.oddsVersion;
+            latestOddUpdatedAtRef.current =
+              payload.latest_odd_updated_at ?? result.oddsVersion;
+          }
+
+          eventsRef.current = result.events;
+          setState((current) => ({
+            ...current,
+            events: result.events,
+            error: null,
+            loading: false,
+          }));
+        } catch {
+          if (options.signal?.aborted) {
+            return;
+          }
+        }
       } catch (error) {
         if (
           options.signal?.aborted ||

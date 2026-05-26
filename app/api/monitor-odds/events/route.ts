@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const canSearch = await consumeRateLimit({
+    distributed: false,
     identity: user.id,
     key: "monitor-odds:events",
     limit: 60,

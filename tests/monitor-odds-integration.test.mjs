@@ -58,10 +58,13 @@ test("monitor odds client uses server-only env names", () => {
 test("monitor odds routes are rate limited", () => {
   assert.match(eventsRoute, /consumeRateLimit/);
   assert.match(eventsRoute, /monitor-odds:events/);
+  assert.match(eventsRoute, /distributed: false/);
   assert.match(statusRoute, /consumeRateLimit/);
   assert.match(statusRoute, /monitor-odds:status/);
+  assert.match(statusRoute, /distributed: false/);
   assert.match(oddsRoute, /consumeRateLimit/);
   assert.match(oddsRoute, /monitor-odds:odds/);
+  assert.match(oddsRoute, /distributed: false/);
 });
 
 test("monitor odds search has bounded pagination", () => {
@@ -104,13 +107,15 @@ test("monitor odds fixtures cache does not fall back to odds updates", () => {
   assert.match(oddsRepository, /EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS/);
 });
 
-test("monitor odds snapshots guard against cache stampedes", () => {
-  assert.match(oddsRepository, /getOddsSnapshotLockKey/);
-  assert.match(oddsRepository, /ODDS_SNAPSHOT_LOCK_RETRY_ATTEMPTS/);
-  assert.match(oddsRepository, /acquireMonitorOddsLock\(/);
-  assert.match(oddsRepository, /readCachedOddsSnapshots/);
-  assert.match(oddsRepository, /complete: false/);
-  assert.match(oddsRepository, /staleByFixtureId/);
+test("monitor odds hot path does not depend on Redis", () => {
+  assert.doesNotMatch(oddsRepository, /shared-cache/);
+  assert.doesNotMatch(oddsRepository, /getMonitorOddsRedisClient/);
+  assert.doesNotMatch(oddsRepository, /readMonitorOddsCache/);
+  assert.doesNotMatch(oddsRepository, /writeMonitorOddsCache/);
+  assert.doesNotMatch(oddsRepository, /acquireMonitorOddsLock/);
+  assert.match(oddsRepository, /getCachedOddsSnapshotsByFixtureIds/);
+  assert.match(oddsRepository, /ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3/);
+  assert.match(oddsRepository, /complete: true/);
 });
 
 test("monitor odds snapshot route supports POST bodies", () => {
@@ -131,7 +136,8 @@ test("monitor odds UI refreshes snapshots without URL-sized fixture queries", ()
 });
 
 test("monitor odds UI keeps retrying incomplete odds versions", () => {
-  assert.match(oddsUi, /oddsVersion: isComplete \? payload\.odds_version \?\? oddsVersion : null/);
+  assert.match(oddsUi, /if \(!isComplete\) \{/);
+  assert.match(oddsUi, /oddsVersion: null/);
   assert.match(oddsUi, /if \(result\.oddsVersion\) \{/);
   assert.doesNotMatch(
     oddsUi,
@@ -143,44 +149,28 @@ test("monitor odds UI keeps retrying incomplete odds versions", () => {
   );
 });
 
-test("monitor odds snapshots are versioned by fixture freshness", () => {
-  assert.match(oddsRepository, /ODDS_SNAPSHOT_HEAD_COLUMNS/);
-  assert.match(oddsRepository, /fetchOddsSnapshotHeadsByFixtureIds/);
-  assert.match(oddsRepository, /monitor-odds:odds:v3:latest/);
-  assert.doesNotMatch(
+test("monitor odds snapshots cache is scoped by odds version", () => {
+  assert.match(oddsRepository, /getCachedOddsSnapshotsByFixtureIds/);
+  assert.match(
     oddsRepository,
-    /getOddsSnapshotCacheKey\(fixtureId: string, oddsVersion: string\)/,
+    /const version = cleanCachePart\(oddsVersion \?\? "unknown"\)/,
+  );
+  assert.match(
+    oddsRepository,
+    /getCachedOddsSnapshotsByFixtureIds\(\s*safeFixtureIds,\s*version,\s*\)/,
   );
 });
 
-test("monitor odds snapshot heads use a short shared cache", () => {
-  assert.match(oddsRepository, /ODDS_SNAPSHOT_HEAD_SHARED_CACHE_TTL_SECONDS = 3/);
-  assert.match(oddsRepository, /getOddsSnapshotHeadCacheKey/);
-  assert.match(oddsRepository, /monitor-odds:odds-head:v2/);
-  assert.match(oddsRepository, /readCachedOddsSnapshotHeads/);
-  assert.match(oddsRepository, /fetchOddsSnapshotHeadsFromDatabase/);
-  assert.match(
-    oddsRepository,
-    /ODDS_SNAPSHOT_HEAD_SHARED_CACHE_TTL_SECONDS/,
+test("monitor odds UI renders events before refreshing odds", () => {
+  const renderIndex = oddsUi.indexOf(
+    "setState({\n          events,\n          loading: false,\n          error: null,\n        });",
   );
-});
+  const oddsRefreshIndex = oddsUi.indexOf(
+    "const result = await fetchOddsForEvents(events, nextOddsVersion",
+    renderIndex,
+  );
 
-test("monitor odds snapshot head cache is scoped by odds version", () => {
-  assert.match(
-    oddsRepository,
-    /getOddsSnapshotHeadCacheKey\(\s*fixtureId: string,\s*oddsVersion: string \| null \| undefined,/,
-  );
-  assert.match(
-    oddsRepository,
-    /getOddsSnapshotHeadCacheKey\(fixtureId, oddsVersion\)/,
-  );
-  assert.match(
-    oddsRepository,
-    /getOddsSnapshotHeadCacheKey\(head\.fixture_id, oddsVersion\)/,
-  );
-  assert.match(
-    oddsRepository,
-    /fetchOddsSnapshotHeadsByFixtureIds\(\s*safeFixtureIds,\s*oddsVersion,\s*\)/,
-  );
-  assert.doesNotMatch(oddsRepository, /void oddsVersion;/);
+  assert.notEqual(renderIndex, -1);
+  assert.notEqual(oddsRefreshIndex, -1);
+  assert.ok(renderIndex < oddsRefreshIndex);
 });

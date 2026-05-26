@@ -44,6 +44,7 @@ async function authorizeOddsRequest() {
   }
 
   const canPoll = await consumeRateLimit({
+    distributed: false,
     identity: user.id,
     key: "monitor-odds:odds",
     limit: 90,
