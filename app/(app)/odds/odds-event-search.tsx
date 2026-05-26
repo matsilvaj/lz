@@ -400,7 +400,10 @@ function formatLastOddsUpdate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
 
-  return lastOddsUpdateFormatter.format(date);
+  const now = Date.now();
+  const displayDate = date.getTime() > now ? new Date(now) : date;
+
+  return lastOddsUpdateFormatter.format(displayDate);
 }
 
 function normalizeLabelKey(value: string) {
