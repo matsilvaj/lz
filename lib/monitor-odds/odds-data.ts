@@ -31,6 +31,10 @@ const ODDS_SNAPSHOT_COLUMNS = [
   "latest_odd_updated_at",
   "odds",
 ].join(",");
+const ODDS_SNAPSHOT_HEAD_COLUMNS = [
+  "fixture_id",
+  "latest_odd_updated_at",
+].join(",");
 
 const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 3;
@@ -44,9 +48,15 @@ const STATUS_FRESH_MS = 3_000;
 const STATUS_LOCK_TTL_SECONDS = 5;
 const STATUS_SHARED_CACHE_TTL_SECONDS = 60;
 const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
+const EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS = 60;
 const ODDS_SHARED_CACHE_TTL_SECONDS = 2 * 60;
+const ODDS_SNAPSHOT_HEAD_SHARED_CACHE_TTL_SECONDS = 3;
+const ODDS_SNAPSHOT_LOCK_TTL_SECONDS = 5;
+const ODDS_SNAPSHOT_LOCK_RETRY_MS = 450;
+const ODDS_SNAPSHOT_LOCK_RETRY_ATTEMPTS = 10;
 const STATUS_CACHE_KEY = "monitor-odds:status:v2";
 const STATUS_LOCK_KEY = "monitor-odds:status:v2:lock";
+const UNVERSIONED_FIXTURES_VERSION = "unversioned";
 
 export type MonitorOddsSnapshotItem = {
   bookmaker_slug: string;
@@ -103,6 +113,16 @@ export type MonitorOddsSnapshot = {
   odds: MonitorOddsSnapshotItem[];
 };
 
+type MonitorOddsSnapshotHead = {
+  fixture_id: string;
+  latest_odd_updated_at: string | null;
+};
+
+export type MonitorOddsSnapshotsResult = {
+  complete: boolean;
+  snapshots: MonitorOddsSnapshot[];
+};
+
 export type MonitorOddsFeedStatus = {
   fixtures_version: string | null;
   odds_version: string | null;
@@ -132,6 +152,9 @@ type RawOddsFixtureRow = Partial<
 type RawOddsSnapshotItem = Partial<Record<keyof MonitorOddsSnapshotItem, unknown>>;
 type RawOddsSnapshotRow = Partial<
   Record<"fixture_id" | "latest_odd_updated_at" | "odds", unknown>
+>;
+type RawOddsSnapshotHeadRow = Partial<
+  Record<"fixture_id" | "latest_odd_updated_at", unknown>
 >;
 type RawOddsFeedStatus = Partial<Record<keyof MonitorOddsFeedStatus, unknown>>;
 type CachedMonitorOddsFeedStatus = MonitorOddsFeedStatus & {
@@ -290,6 +313,19 @@ function cleanOddsSnapshotRow(row: RawOddsSnapshotRow): MonitorOddsSnapshot | nu
   };
 }
 
+function cleanOddsSnapshotHeadRow(row: RawOddsSnapshotHeadRow) {
+  const fixtureId = cleanString(row.fixture_id);
+
+  if (!fixtureId) {
+    return null;
+  }
+
+  return {
+    fixture_id: fixtureId,
+    latest_odd_updated_at: cleanOptionalString(row.latest_odd_updated_at),
+  };
+}
+
 function cleanOddsFeedStatus(row: RawOddsFeedStatus | null): MonitorOddsFeedStatus {
   const oddsVersion =
     cleanOptionalString(row?.odds_version) ??
@@ -367,6 +403,22 @@ function isMonitorOddsSnapshot(value: unknown): value is MonitorOddsSnapshot {
   return typeof snapshot.fixture_id === "string" && Array.isArray(snapshot.odds);
 }
 
+function isMonitorOddsSnapshotHead(
+  value: unknown,
+): value is MonitorOddsSnapshotHead {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const head = value as Partial<MonitorOddsSnapshotHead>;
+
+  return (
+    typeof head.fixture_id === "string" &&
+    (head.latest_odd_updated_at === null ||
+      typeof head.latest_odd_updated_at === "string")
+  );
+}
+
 function isCachedMonitorOddsFeedStatus(
   value: unknown,
 ): value is CachedMonitorOddsFeedStatus {
@@ -400,10 +452,47 @@ function getSafeFixtureIds(fixtureIds: string[]) {
     .slice(0, MAX_ODDS_FIXTURE_IDS);
 }
 
-function getOddsSnapshotCacheKey(fixtureId: string, oddsVersion: string) {
-  return `monitor-odds:odds:v2:${cleanCachePart(oddsVersion)}:${cleanCachePart(
-    fixtureId,
-  )}`;
+function getOddsSnapshotCacheKey(fixtureId: string) {
+  return `monitor-odds:odds:v3:latest:${cleanCachePart(fixtureId)}`;
+}
+
+function getOddsSnapshotHeadCacheKey(
+  fixtureId: string,
+  oddsVersion: string | null | undefined,
+) {
+  return `monitor-odds:odds-head:v2:${cleanCachePart(
+    oddsVersion,
+  )}:${cleanCachePart(fixtureId)}`;
+}
+
+function getOddsSnapshotLockKey(fixtureId: string) {
+  return `${getOddsSnapshotCacheKey(fixtureId)}:lock`;
+}
+
+function getFixturesCacheVersion(fixturesVersion: string | null | undefined) {
+  const parsed = cleanString(fixturesVersion);
+
+  if (parsed) {
+    return parsed;
+  }
+
+  const bucket = Math.floor(
+    Date.now() / (EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS * 1000),
+  );
+
+  return `${UNVERSIONED_FIXTURES_VERSION}:${bucket}`;
+}
+
+function getEventsSharedCacheTtl(fixturesVersion: string | null | undefined) {
+  return cleanString(fixturesVersion)
+    ? EVENTS_SHARED_CACHE_TTL_SECONDS
+    : EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function mergeEventWithSnapshot(
@@ -464,6 +553,89 @@ async function readThroughSharedCache<T>(
   await writeMonitorOddsCache(key, value, ttlSeconds);
 
   return value;
+}
+
+async function readCachedOddsSnapshots(
+  fixtureIds: string[],
+) {
+  const redis = getMonitorOddsRedisClient();
+  const cachedByFixtureId = new Map<string, MonitorOddsSnapshot>();
+  const missingFixtureIds = new Set(fixtureIds);
+
+  if (!redis || !fixtureIds.length) {
+    return {
+      cachedByFixtureId,
+      missingFixtureIds,
+    };
+  }
+
+  const cacheKeys = fixtureIds.map((fixtureId) =>
+    getOddsSnapshotCacheKey(fixtureId),
+  );
+
+  try {
+    const cachedSnapshots =
+      await redis.mget<(MonitorOddsSnapshot | null)[]>(...cacheKeys);
+
+    cachedSnapshots.forEach((snapshot, index) => {
+      const fixtureId = fixtureIds[index];
+
+      if (fixtureId && isMonitorOddsSnapshot(snapshot)) {
+        cachedByFixtureId.set(fixtureId, snapshot);
+        missingFixtureIds.delete(fixtureId);
+      }
+    });
+  } catch (error) {
+    console.warn("Monitor odds snapshot shared cache read failed.", { error });
+  }
+
+  return {
+    cachedByFixtureId,
+    missingFixtureIds,
+  };
+}
+
+async function readCachedOddsSnapshotHeads(
+  fixtureIds: string[],
+  oddsVersion: string | null | undefined,
+) {
+  const redis = getMonitorOddsRedisClient();
+  const cachedByFixtureId = new Map<string, string | null>();
+  const missingFixtureIds = new Set(fixtureIds);
+
+  if (!redis || !fixtureIds.length) {
+    return {
+      cachedByFixtureId,
+      missingFixtureIds,
+    };
+  }
+
+  const cacheKeys = fixtureIds.map((fixtureId) =>
+    getOddsSnapshotHeadCacheKey(fixtureId, oddsVersion),
+  );
+
+  try {
+    const cachedHeads =
+      await redis.mget<(MonitorOddsSnapshotHead | null)[]>(...cacheKeys);
+
+    cachedHeads.forEach((head, index) => {
+      const fixtureId = fixtureIds[index];
+
+      if (fixtureId && isMonitorOddsSnapshotHead(head)) {
+        cachedByFixtureId.set(fixtureId, head.latest_odd_updated_at);
+        missingFixtureIds.delete(fixtureId);
+      }
+    });
+  } catch (error) {
+    console.warn("Monitor odds snapshot head shared cache read failed.", {
+      error,
+    });
+  }
+
+  return {
+    cachedByFixtureId,
+    missingFixtureIds,
+  };
 }
 
 async function searchOddsEventsUncached(
@@ -639,6 +811,71 @@ async function fetchOddsSnapshotsByFixtureIds(fixtureIds: string[]) {
     .filter((snapshot): snapshot is MonitorOddsSnapshot => Boolean(snapshot));
 }
 
+async function fetchOddsSnapshotHeadsFromDatabase(fixtureIds: string[]) {
+  if (!fixtureIds.length) {
+    return new Map<string, string | null>();
+  }
+
+  const supabase = getMonitorSupabaseClient();
+  const { data, error } = await supabase
+    .from("public_odds_snapshot")
+    .select(ODDS_SNAPSHOT_HEAD_COLUMNS)
+    .in("fixture_id", fixtureIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Map(
+    ((data ?? []) as RawOddsSnapshotHeadRow[])
+      .map(cleanOddsSnapshotHeadRow)
+      .filter((head): head is NonNullable<typeof head> => Boolean(head))
+      .map((head) => [head.fixture_id, head.latest_odd_updated_at]),
+  );
+}
+
+async function fetchOddsSnapshotHeadsByFixtureIds(
+  fixtureIds: string[],
+  oddsVersion: string | null | undefined,
+) {
+  if (!fixtureIds.length) {
+    return new Map<string, string | null>();
+  }
+
+  const { cachedByFixtureId, missingFixtureIds } =
+    await readCachedOddsSnapshotHeads(fixtureIds, oddsVersion);
+
+  if (!missingFixtureIds.size) {
+    return cachedByFixtureId;
+  }
+
+  const missing = Array.from(missingFixtureIds);
+  const loadedByFixtureId = await fetchOddsSnapshotHeadsFromDatabase(missing);
+  const headsToCache: MonitorOddsSnapshotHead[] = [];
+
+  for (const fixtureId of missing) {
+    const latestOddUpdatedAt = loadedByFixtureId.get(fixtureId) ?? null;
+
+    cachedByFixtureId.set(fixtureId, latestOddUpdatedAt);
+    headsToCache.push({
+      fixture_id: fixtureId,
+      latest_odd_updated_at: latestOddUpdatedAt,
+    });
+  }
+
+  await Promise.all(
+    headsToCache.map((head) =>
+      writeMonitorOddsCache(
+        getOddsSnapshotHeadCacheKey(head.fixture_id, oddsVersion),
+        head,
+        ODDS_SNAPSHOT_HEAD_SHARED_CACHE_TTL_SECONDS,
+      ),
+    ),
+  );
+
+  return cachedByFixtureId;
+}
+
 const getCachedOddsEventSearch = unstable_cache(
   searchOddsEventsUncached,
   ["monitor-odds-event-search-v2"],
@@ -687,12 +924,13 @@ export async function searchOddsEvents(
   }
 
   const eventLimit = normalizeLimit(limit);
-  const version = cleanCachePart(fixturesVersion ?? "unknown");
+  const version = cleanCachePart(getFixturesCacheVersion(fixturesVersion));
+  const ttlSeconds = getEventsSharedCacheTtl(fixturesVersion);
   const key = `monitor-odds:events:search:v2:${version}:${cleanCachePart(
     term,
   )}:${eventLimit}`;
 
-  return readThroughSharedCache(key, EVENTS_SHARED_CACHE_TTL_SECONDS, () =>
+  return readThroughSharedCache(key, ttlSeconds, () =>
     getCachedOddsEventSearch(term, eventLimit, version),
   );
 }
@@ -710,12 +948,13 @@ export async function listOddsEventsByDateRange(
   }
 
   const eventLimit = normalizeDateRangeLimit(limit);
-  const version = cleanCachePart(fixturesVersion ?? "unknown");
+  const version = cleanCachePart(getFixturesCacheVersion(fixturesVersion));
+  const ttlSeconds = getEventsSharedCacheTtl(fixturesVersion);
   const key = `monitor-odds:events:date:v2:${version}:${cleanCachePart(
     dateRange.from,
   )}:${cleanCachePart(dateRange.to)}:${eventLimit}`;
 
-  return readThroughSharedCache(key, EVENTS_SHARED_CACHE_TTL_SECONDS, () =>
+  return readThroughSharedCache(key, ttlSeconds, () =>
     getCachedOddsEventsByDateRange(
       dateRange.from,
       dateRange.to,
@@ -732,56 +971,174 @@ export async function getOddsSnapshotsByFixtureIds(
   const safeFixtureIds = getSafeFixtureIds(fixtureIds);
 
   if (!safeFixtureIds.length) {
-    return [];
+    return {
+      complete: true,
+      snapshots: [],
+    } satisfies MonitorOddsSnapshotsResult;
   }
 
-  const version = cleanCachePart(oddsVersion ?? "unknown");
   const redis = getMonitorOddsRedisClient();
-  const cachedByFixtureId = new Map<string, MonitorOddsSnapshot>();
-  const missingFixtureIds = new Set(safeFixtureIds);
+  const { cachedByFixtureId, missingFixtureIds } =
+    await readCachedOddsSnapshots(safeFixtureIds);
+  const loadedByFixtureId = new Map<string, MonitorOddsSnapshot>();
+  const staleByFixtureId = new Map<string, MonitorOddsSnapshot>();
+  let complete = true;
+  let snapshotHeads: Map<string, string | null>;
 
-  if (redis) {
-    const cacheKeys = safeFixtureIds.map((fixtureId) =>
-      getOddsSnapshotCacheKey(fixtureId, version),
+  try {
+    snapshotHeads = await fetchOddsSnapshotHeadsByFixtureIds(
+      safeFixtureIds,
+      oddsVersion,
     );
+  } catch (error) {
+    if (cachedByFixtureId.size === safeFixtureIds.length) {
+      return {
+        complete: false,
+        snapshots: safeFixtureIds.map(
+          (fixtureId) =>
+            cachedByFixtureId.get(fixtureId) ?? emptyOddsSnapshot(fixtureId),
+        ),
+      } satisfies MonitorOddsSnapshotsResult;
+    }
 
-    try {
-      const cachedSnapshots =
-        await redis.mget<(MonitorOddsSnapshot | null)[]>(...cacheKeys);
+    throw error;
+  }
 
-      cachedSnapshots.forEach((snapshot, index) => {
-        const fixtureId = safeFixtureIds[index];
+  const refreshFixtureIds = safeFixtureIds.filter((fixtureId) => {
+    const cached = cachedByFixtureId.get(fixtureId);
+    const hasHead = snapshotHeads.has(fixtureId);
+    const headUpdatedAt = snapshotHeads.get(fixtureId) ?? null;
 
-        if (fixtureId && isMonitorOddsSnapshot(snapshot)) {
-          cachedByFixtureId.set(fixtureId, snapshot);
-          missingFixtureIds.delete(fixtureId);
-        }
-      });
-    } catch (error) {
-      console.warn("Monitor odds snapshot shared cache read failed.", { error });
+    if (!cached) {
+      return true;
+    }
+
+    if (!hasHead) {
+      return cached.latest_odd_updated_at !== null || cached.odds.length > 0;
+    }
+
+    return cached.latest_odd_updated_at !== headUpdatedAt;
+  });
+  let missing = refreshFixtureIds;
+
+  for (const fixtureId of Array.from(missingFixtureIds)) {
+    if (!missing.includes(fixtureId)) {
+      missing.push(fixtureId);
     }
   }
 
-  const loadedByFixtureId = new Map<string, MonitorOddsSnapshot>();
-  const missing = Array.from(missingFixtureIds);
+  missing = Array.from(new Set(missing));
 
-  if (missing.length) {
-    const snapshots = await fetchOddsSnapshotsByFixtureIds(missing);
+  if (missing.length && redis) {
+    const lockResults = await Promise.all(
+      missing.map(async (fixtureId) => ({
+        fixtureId,
+        locked: await acquireMonitorOddsLock(
+          getOddsSnapshotLockKey(fixtureId),
+          ODDS_SNAPSHOT_LOCK_TTL_SECONDS,
+        ),
+      })),
+    );
+    const lockedFixtureIds = lockResults
+      .filter((result) => result.locked)
+      .map((result) => result.fixtureId);
+    let waitingFixtureIds = lockResults
+      .filter((result) => !result.locked)
+      .map((result) => result.fixtureId);
 
-    for (const snapshot of snapshots) {
-      loadedByFixtureId.set(snapshot.fixture_id, snapshot);
-    }
+    for (const fixtureId of waitingFixtureIds) {
+      const stale = cachedByFixtureId.get(fixtureId);
 
-    for (const fixtureId of missing) {
-      if (!loadedByFixtureId.has(fixtureId)) {
-        loadedByFixtureId.set(fixtureId, emptyOddsSnapshot(fixtureId));
+      if (stale) {
+        staleByFixtureId.set(fixtureId, stale);
+        complete = false;
       }
     }
 
+    waitingFixtureIds = waitingFixtureIds.filter(
+      (fixtureId) => !staleByFixtureId.has(fixtureId),
+    );
+
+    if (lockedFixtureIds.length) {
+      const snapshots = await fetchOddsSnapshotsByFixtureIds(lockedFixtureIds);
+      const refreshedFixtureIds = new Set(snapshots.map((snapshot) => snapshot.fixture_id));
+
+      for (const snapshot of snapshots) {
+        loadedByFixtureId.set(snapshot.fixture_id, snapshot);
+      }
+
+      for (const fixtureId of lockedFixtureIds) {
+        if (!refreshedFixtureIds.has(fixtureId)) {
+          loadedByFixtureId.set(fixtureId, emptyOddsSnapshot(fixtureId));
+        }
+      }
+
+      await Promise.all(
+        Array.from(loadedByFixtureId.values()).map((snapshot) =>
+          writeMonitorOddsCache(
+            getOddsSnapshotCacheKey(snapshot.fixture_id),
+            snapshot,
+            ODDS_SHARED_CACHE_TTL_SECONDS,
+          ),
+        ),
+      );
+    }
+
+    for (
+      let attempt = 0;
+      waitingFixtureIds.length && attempt < ODDS_SNAPSHOT_LOCK_RETRY_ATTEMPTS;
+      attempt += 1
+    ) {
+      await sleep(ODDS_SNAPSHOT_LOCK_RETRY_MS);
+      const retryCache = await readCachedOddsSnapshots(waitingFixtureIds);
+
+      for (const [fixtureId, snapshot] of retryCache.cachedByFixtureId.entries()) {
+        cachedByFixtureId.set(fixtureId, snapshot);
+      }
+
+      waitingFixtureIds = Array.from(retryCache.missingFixtureIds);
+    }
+
+    missing = waitingFixtureIds;
+  }
+
+  if (missing.length) {
+    if (redis) {
+      complete = false;
+
+      return {
+        complete,
+        snapshots: safeFixtureIds.map(
+          (fixtureId) =>
+            cachedByFixtureId.get(fixtureId) ??
+            staleByFixtureId.get(fixtureId) ??
+            loadedByFixtureId.get(fixtureId) ??
+            emptyOddsSnapshot(fixtureId),
+        ),
+      } satisfies MonitorOddsSnapshotsResult;
+    }
+
+    const snapshots = await fetchOddsSnapshotsByFixtureIds(missing);
+    const fallbackByFixtureId = new Map<string, MonitorOddsSnapshot>();
+
+    for (const snapshot of snapshots) {
+      fallbackByFixtureId.set(snapshot.fixture_id, snapshot);
+    }
+
+    for (const fixtureId of missing) {
+      if (!fallbackByFixtureId.has(fixtureId)) {
+        fallbackByFixtureId.set(fixtureId, emptyOddsSnapshot(fixtureId));
+      }
+    }
+
+    for (const [fixtureId, snapshot] of fallbackByFixtureId.entries()) {
+      loadedByFixtureId.set(fixtureId, snapshot);
+    }
+
     await Promise.all(
-      Array.from(loadedByFixtureId.values()).map((snapshot) =>
+      Array.from(fallbackByFixtureId.values()).map((snapshot) =>
         writeMonitorOddsCache(
-          getOddsSnapshotCacheKey(snapshot.fixture_id, version),
+          getOddsSnapshotCacheKey(snapshot.fixture_id),
           snapshot,
           ODDS_SHARED_CACHE_TTL_SECONDS,
         ),
@@ -789,12 +1146,16 @@ export async function getOddsSnapshotsByFixtureIds(
     );
   }
 
-  return safeFixtureIds.map(
-    (fixtureId) =>
-      cachedByFixtureId.get(fixtureId) ??
-      loadedByFixtureId.get(fixtureId) ??
-      emptyOddsSnapshot(fixtureId),
-  );
+  return {
+    complete,
+    snapshots: safeFixtureIds.map(
+      (fixtureId) =>
+        loadedByFixtureId.get(fixtureId) ??
+        cachedByFixtureId.get(fixtureId) ??
+        staleByFixtureId.get(fixtureId) ??
+        emptyOddsSnapshot(fixtureId),
+    ),
+  } satisfies MonitorOddsSnapshotsResult;
 }
 
 export async function getOddsEventByFixtureId(fixtureId: string) {
@@ -807,19 +1168,19 @@ export async function getOddsEventByFixtureId(fixtureId: string) {
   const status = await getOddsFeedStatus();
   const fixture = await getCachedOddsFixtureByFixtureId(
     safeFixtureId,
-    status.fixtures_version ?? "unknown",
+    getFixturesCacheVersion(status.fixtures_version),
   );
 
   if (!fixture) {
     return null;
   }
 
-  const [snapshot] = await getOddsSnapshotsByFixtureIds(
+  const snapshotsResult = await getOddsSnapshotsByFixtureIds(
     [fixture.fixture_id],
     status.odds_version ?? status.latest_odd_updated_at ?? "unknown",
   );
 
-  return mergeEventWithSnapshot(fixture, snapshot);
+  return mergeEventWithSnapshot(fixture, snapshotsResult.snapshots[0]);
 }
 
 export async function getOddsFeedStatus() {

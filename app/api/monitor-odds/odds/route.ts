@@ -9,26 +9,38 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-function parseFixtureIds(value: string | null) {
+type OddsRequestBody = {
+  fixtureIds?: unknown;
+  oddsVersion?: unknown;
+};
+
+function parseFixtureIds(value: unknown) {
   if (!value) {
     return [];
   }
 
-  return value
-    .split(",")
-    .map((fixtureId) => fixtureId.trim())
+  const values = Array.isArray(value) ? value : String(value).split(",");
+
+  return values
+    .map((fixtureId) => String(fixtureId).trim())
     .filter(Boolean)
     .slice(0, 200);
 }
 
-export async function GET(request: NextRequest) {
+function parseOddsVersion(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+async function authorizeOddsRequest() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+    return {
+      response: Response.json({ error: "unauthorized" }, { status: 401 }),
+    };
   }
 
   const canPoll = await consumeRateLimit({
@@ -39,23 +51,37 @@ export async function GET(request: NextRequest) {
   });
 
   if (!canPoll) {
-    return Response.json({ error: "rate_limited" }, { status: 429 });
+    return {
+      response: Response.json({ error: "rate_limited" }, { status: 429 }),
+    };
   }
 
-  const fixtureIds = parseFixtureIds(request.nextUrl.searchParams.get("fixtureIds"));
-  const requestedOddsVersion = request.nextUrl.searchParams.get("oddsVersion");
+  return {
+    response: null,
+  };
+}
+
+async function buildOddsResponse(
+  fixtureIdsInput: unknown,
+  requestedOddsVersionInput: unknown,
+) {
+  const fixtureIds = parseFixtureIds(fixtureIdsInput);
+  const requestedOddsVersion = parseOddsVersion(requestedOddsVersionInput);
   const status = requestedOddsVersion ? null : await getOddsFeedStatus();
   const oddsVersion =
     requestedOddsVersion ??
     status?.odds_version ??
     status?.latest_odd_updated_at ??
     "unknown";
-  const snapshots = await getOddsSnapshotsByFixtureIds(fixtureIds, oddsVersion);
+  const snapshotsResult = await getOddsSnapshotsByFixtureIds(fixtureIds, oddsVersion);
 
   return Response.json(
     {
-      odds_version: oddsVersion === "unknown" ? null : oddsVersion,
-      snapshots,
+      complete: snapshotsResult.complete,
+      odds_version:
+        oddsVersion === "unknown" || !snapshotsResult.complete ? null : oddsVersion,
+      snapshots: snapshotsResult.snapshots,
+      stale: !snapshotsResult.complete,
     },
     {
       headers: {
@@ -63,4 +89,35 @@ export async function GET(request: NextRequest) {
       },
     },
   );
+}
+
+export async function GET(request: NextRequest) {
+  const authorization = await authorizeOddsRequest();
+
+  if (authorization.response) {
+    return authorization.response;
+  }
+
+  return buildOddsResponse(
+    request.nextUrl.searchParams.get("fixtureIds"),
+    request.nextUrl.searchParams.get("oddsVersion"),
+  );
+}
+
+export async function POST(request: NextRequest) {
+  const authorization = await authorizeOddsRequest();
+
+  if (authorization.response) {
+    return authorization.response;
+  }
+
+  let body: OddsRequestBody;
+
+  try {
+    body = (await request.json()) as OddsRequestBody;
+  } catch {
+    return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  return buildOddsResponse(body.fixtureIds, body.oddsVersion);
 }

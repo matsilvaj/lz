@@ -35,8 +35,7 @@ export async function GET(request: NextRequest) {
   const from = request.nextUrl.searchParams.get("from");
   const to = request.nextUrl.searchParams.get("to");
   const status = await getOddsFeedStatus();
-  const fixturesVersion =
-    status.fixtures_version ?? status.latest_odd_updated_at ?? "unknown";
+  const fixturesVersion = status.fixtures_version;
   const events =
     from && to
       ? await listOddsEventsByDateRange(from, to, undefined, fixturesVersion)
