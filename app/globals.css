@@ -273,14 +273,12 @@ html[data-theme="light"] .lz-button-secondary:hover {
 
 @keyframes lz-odds-price-up {
   0% {
-    border-color: rgba(74, 222, 128, 0.72);
     background: rgba(34, 197, 94, 0.22);
     box-shadow: 0 0 22px rgba(34, 197, 94, 0.2);
     color: #ecfdf5;
   }
 
   100% {
-    border-color: inherit;
     background: inherit;
     box-shadow: inherit;
     color: inherit;
@@ -289,14 +287,12 @@ html[data-theme="light"] .lz-button-secondary:hover {
 
 @keyframes lz-odds-price-down {
   0% {
-    border-color: rgba(251, 113, 133, 0.72);
     background: rgba(244, 63, 94, 0.22);
     box-shadow: 0 0 22px rgba(244, 63, 94, 0.18);
     color: #fff1f2;
   }
 
   100% {
-    border-color: inherit;
     background: inherit;
     box-shadow: inherit;
     color: inherit;
