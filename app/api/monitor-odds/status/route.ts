@@ -17,7 +17,7 @@ export async function GET() {
   const canPoll = await consumeRateLimit({
     identity: user.id,
     key: "monitor-odds:status",
-    limit: 12,
+    limit: 30,
     windowMs: 60_000,
   });
 

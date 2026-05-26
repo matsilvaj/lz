@@ -37,6 +37,26 @@ type OddsFeedItem = {
   odd_updated_at: string | null;
 };
 
+type OddsSnapshotItem = Pick<
+  OddsFeedItem,
+  | "bookmaker_slug"
+  | "bookmaker_name"
+  | "bookmaker_event_url"
+  | "market_code"
+  | "market_name"
+  | "selection"
+  | "price"
+  | "pa_category"
+  | "confidence_score"
+  | "odd_updated_at"
+>;
+
+type OddsSnapshot = {
+  fixture_id: string;
+  latest_odd_updated_at: string | null;
+  odds: OddsSnapshotItem[];
+};
+
 type OddsEvent = {
   fixture_id: string;
   api_football_fixture_id: number | null;
@@ -65,11 +85,20 @@ type SearchState = {
 
 type EventsResponse = {
   events?: OddsEvent[];
+  fixtures_version?: string | null;
   latest_odd_updated_at?: string | null;
+  odds_version?: string | null;
+};
+
+type OddsResponse = {
+  odds_version?: string | null;
+  snapshots?: OddsSnapshot[];
 };
 
 type StatusResponse = {
+  fixtures_version?: string | null;
   latest_odd_updated_at?: string | null;
+  odds_version?: string | null;
 };
 
 type DatePreset = "today" | "tomorrow";
@@ -125,6 +154,10 @@ const oddsTableGridClass =
   "grid grid-cols-[minmax(84px,1fr)_repeat(3,minmax(54px,78px))] items-center gap-1.5 sm:grid-cols-[minmax(120px,1fr)_repeat(3,minmax(62px,90px))] sm:gap-2";
 const oddsBoxClass =
   "flex h-9 w-full min-w-0 items-center justify-center rounded-xl px-2 text-center";
+const statusChannelName = "lz-monitor-odds-status";
+const statusLeaderKey = "lz-monitor-odds-status-leader";
+const statusLeaderTtlMs = 12_000;
+const statusPollIntervalMs = 4_000;
 const leagueCountryNames: Record<string, string> = {
   albania: "Albânia",
   algeria: "Argélia",
@@ -475,6 +508,118 @@ function isSameEventsRequest(
   }
 
   return false;
+}
+
+function getStatusLeader() {
+  try {
+    const raw = window.localStorage.getItem(statusLeaderKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { expiresAt?: unknown; id?: unknown };
+
+    if (typeof parsed.id !== "string" || typeof parsed.expiresAt !== "number") {
+      return null;
+    }
+
+    return {
+      expiresAt: parsed.expiresAt,
+      id: parsed.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function canLeadStatusPolling(tabId: string) {
+  if (document.visibilityState === "hidden") {
+    return false;
+  }
+
+  const now = Date.now();
+  const leader = getStatusLeader();
+
+  if (leader && leader.id !== tabId && leader.expiresAt > now) {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(
+      statusLeaderKey,
+      JSON.stringify({ expiresAt: now + statusLeaderTtlMs, id: tabId }),
+    );
+  } catch {
+    return true;
+  }
+
+  return true;
+}
+
+function releaseStatusLeader(tabId: string) {
+  const leader = getStatusLeader();
+
+  if (leader?.id !== tabId) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(statusLeaderKey);
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function createStatusTabId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function mergeOddsSnapshots(events: OddsEvent[], snapshots: OddsSnapshot[]) {
+  const snapshotsByFixtureId = new Map(
+    snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
+  );
+
+  return events.map((event) => {
+    const snapshot = snapshotsByFixtureId.get(event.fixture_id);
+    const odds = (snapshot?.odds ?? [])
+      .map((odd) => ({
+        fixture_id: event.fixture_id,
+        api_football_fixture_id: event.api_football_fixture_id,
+        fixture_name: event.fixture_name,
+        home_team: event.home_team,
+        away_team: event.away_team,
+        starts_at: event.starts_at,
+        status: event.status,
+        round: event.round,
+        league_name: event.league_name,
+        league_slug: event.league_slug,
+        league_country: event.league_country,
+        league_logo_url: event.league_logo_url,
+        league_country_flag_url: event.league_country_flag_url,
+        ...odd,
+      }))
+      .sort((left, right) => {
+        const marketOrder = left.market_code.localeCompare(right.market_code);
+        if (marketOrder !== 0) return marketOrder;
+
+        const categoryOrder = left.pa_category.localeCompare(right.pa_category);
+        if (categoryOrder !== 0) return categoryOrder;
+
+        const bookmakerOrder = left.bookmaker_name.localeCompare(right.bookmaker_name);
+        if (bookmakerOrder !== 0) return bookmakerOrder;
+
+        return left.selection.localeCompare(right.selection);
+      });
+
+    return {
+      ...event,
+      bookmaker_count: new Set(odds.map((odd) => odd.bookmaker_slug)).size,
+      latest_odd_updated_at: snapshot?.latest_odd_updated_at ?? null,
+      odd_count: odds.length,
+      odds,
+    };
+  });
 }
 
 function groupEventsByLeague(events: OddsEvent[]) {
@@ -1200,8 +1345,56 @@ export function OddsEventSearch() {
     loading: true,
     error: null,
   });
+  const eventsRef = useRef<OddsEvent[]>([]);
+  const latestFixturesVersionRef = useRef<string | null>(null);
   const latestOddUpdatedAtRef = useRef<string | null>(null);
+  const latestOddsVersionRef = useRef<string | null>(null);
   const activeRequestRef = useRef<EventsRequest | null>(null);
+  const statusChannelRef = useRef<BroadcastChannel | null>(null);
+  const tabIdRef = useRef<string>("");
+
+  const loadOddsForEvents = useCallback(
+    async (
+      events: OddsEvent[],
+      oddsVersion: string | null,
+      options: { signal?: AbortSignal } = {},
+    ) => {
+      if (!events.length) {
+        return events;
+      }
+
+      const params = new URLSearchParams();
+      params.set("fixtureIds", events.map((event) => event.fixture_id).join(","));
+
+      if (oddsVersion) {
+        params.set("oddsVersion", oddsVersion);
+      }
+
+      const response = await fetch(`/api/monitor-odds/odds?${params.toString()}`, {
+        cache: "no-store",
+        signal: options.signal,
+      });
+
+      if (response.status === 429) {
+        throw new Error("Muitas atualizaÃ§Ãµes em pouco tempo. Aguarde alguns segundos.");
+      }
+
+      if (!response.ok) {
+        throw new Error("NÃ£o foi possÃ­vel atualizar as odds.");
+      }
+
+      const payload = (await response.json()) as OddsResponse;
+      const nextOddsVersion = payload.odds_version ?? oddsVersion;
+
+      if (nextOddsVersion) {
+        latestOddsVersionRef.current = nextOddsVersion;
+        latestOddUpdatedAtRef.current = nextOddsVersion;
+      }
+
+      return mergeOddsSnapshots(events, payload.snapshots ?? []);
+    },
+    [],
+  );
 
   const loadEvents = useCallback(
     async (
@@ -1211,6 +1404,7 @@ export function OddsEventSearch() {
       activeRequestRef.current = request;
 
       if (options.showLoading !== false) {
+        eventsRef.current = [];
         setState({ events: [], loading: true, error: null });
       }
 
@@ -1238,9 +1432,35 @@ export function OddsEventSearch() {
           return;
         }
 
-        latestOddUpdatedAtRef.current = payload.latest_odd_updated_at ?? null;
+        latestFixturesVersionRef.current = payload.fixtures_version ?? null;
+        latestOddsVersionRef.current =
+          payload.odds_version ?? payload.latest_odd_updated_at ?? null;
+        latestOddUpdatedAtRef.current =
+          payload.latest_odd_updated_at ?? payload.odds_version ?? null;
+        let events = payload.events ?? [];
+
+        try {
+          events = await loadOddsForEvents(
+            events,
+            latestOddsVersionRef.current,
+            { signal: options.signal },
+          );
+        } catch {
+          if (options.signal?.aborted) {
+            return;
+          }
+        }
+
+        if (
+          options.signal?.aborted ||
+          !isSameEventsRequest(activeRequestRef.current, request)
+        ) {
+          return;
+        }
+
+        eventsRef.current = events;
         setState({
-          events: payload.events ?? [],
+          events,
           loading: false,
           error: null,
         });
@@ -1252,6 +1472,7 @@ export function OddsEventSearch() {
           return;
         }
 
+        eventsRef.current = [];
         setState({
           events: [],
           loading: false,
@@ -1259,7 +1480,7 @@ export function OddsEventSearch() {
         });
       }
     },
-    [],
+    [loadOddsForEvents],
   );
 
   const loadDatePreset = useCallback(
@@ -1351,13 +1572,112 @@ export function OddsEventSearch() {
     };
   }, [activeDatePreset, loadEvents, query]);
 
-  useEffect(() => {
-    let active = true;
-
-    async function checkFeedStatus() {
+  const handleStatusUpdate = useCallback(
+    async (payload: StatusResponse) => {
       const activeRequest = activeRequestRef.current;
 
       if (!activeRequest) {
+        return;
+      }
+
+      const nextFixturesVersion = payload.fixtures_version ?? null;
+      const nextOddsVersion =
+        payload.odds_version ?? payload.latest_odd_updated_at ?? null;
+      const previousFixturesVersion = latestFixturesVersionRef.current;
+      const previousOddsVersion =
+        latestOddsVersionRef.current ?? latestOddUpdatedAtRef.current;
+
+      if (
+        nextFixturesVersion &&
+        previousFixturesVersion &&
+        nextFixturesVersion !== previousFixturesVersion
+      ) {
+        latestFixturesVersionRef.current = nextFixturesVersion;
+        latestOddsVersionRef.current = nextOddsVersion;
+        latestOddUpdatedAtRef.current =
+          payload.latest_odd_updated_at ?? nextOddsVersion;
+        await loadEvents(activeRequest, { showLoading: false });
+        return;
+      }
+
+      if (!previousFixturesVersion && nextFixturesVersion) {
+        latestFixturesVersionRef.current = nextFixturesVersion;
+      }
+
+      if (!nextOddsVersion) {
+        return;
+      }
+
+      if (nextOddsVersion === previousOddsVersion) {
+        return;
+      }
+
+      latestOddsVersionRef.current = nextOddsVersion;
+      latestOddUpdatedAtRef.current = payload.latest_odd_updated_at ?? nextOddsVersion;
+
+      const currentEvents = eventsRef.current;
+
+      if (!currentEvents.length) {
+        return;
+      }
+
+      try {
+        const updatedEvents = await loadOddsForEvents(currentEvents, nextOddsVersion);
+
+        if (!isSameEventsRequest(activeRequestRef.current, activeRequest)) {
+          return;
+        }
+
+        eventsRef.current = updatedEvents;
+        setState((current) => ({
+          ...current,
+          events: updatedEvents,
+        }));
+      } catch {
+        // Odds refresh is best-effort; the current snapshot remains visible.
+      }
+    },
+    [loadEvents, loadOddsForEvents],
+  );
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    const channel = new BroadcastChannel(statusChannelName);
+    statusChannelRef.current = channel;
+
+    function handleMessage(event: MessageEvent) {
+      const data = event.data as {
+        status?: StatusResponse;
+        type?: string;
+      };
+
+      if (data?.type === "monitor-odds-status" && data.status) {
+        void handleStatusUpdate(data.status);
+      }
+    }
+
+    channel.addEventListener("message", handleMessage);
+
+    return () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.close();
+      statusChannelRef.current = null;
+    };
+  }, [handleStatusUpdate]);
+
+  useEffect(() => {
+    let active = true;
+    tabIdRef.current = tabIdRef.current || createStatusTabId();
+
+    async function checkFeedStatus() {
+      if (
+        !active ||
+        !activeRequestRef.current ||
+        !canLeadStatusPolling(tabIdRef.current)
+      ) {
         return;
       }
 
@@ -1371,37 +1691,31 @@ export function OddsEventSearch() {
         }
 
         const payload = (await response.json()) as StatusResponse;
-        const nextLatestOddUpdatedAt = payload.latest_odd_updated_at ?? null;
-        const previousLatestOddUpdatedAt = latestOddUpdatedAtRef.current;
 
-        if (!active || !nextLatestOddUpdatedAt) {
+        if (!active) {
           return;
         }
 
-        if (
-          previousLatestOddUpdatedAt &&
-          nextLatestOddUpdatedAt !== previousLatestOddUpdatedAt
-        ) {
-          latestOddUpdatedAtRef.current = nextLatestOddUpdatedAt;
-          await loadEvents(activeRequest, { showLoading: false });
-          return;
-        }
-
-        if (!previousLatestOddUpdatedAt) {
-          latestOddUpdatedAtRef.current = nextLatestOddUpdatedAt;
-        }
+        statusChannelRef.current?.postMessage({
+          status: payload,
+          type: "monitor-odds-status",
+        });
+        await handleStatusUpdate(payload);
       } catch {
         // Status polling is only a freshness hint; the search remains usable.
       }
     }
 
-    const intervalId = window.setInterval(checkFeedStatus, 10_000);
+    const timeoutId = window.setTimeout(checkFeedStatus, 750);
+    const intervalId = window.setInterval(checkFeedStatus, statusPollIntervalMs);
 
     return () => {
       active = false;
+      releaseStatusLeader(tabIdRef.current);
+      window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
-  }, [loadEvents]);
+  }, [handleStatusUpdate]);
 
   const hasQuery = query.trim().length >= 2;
   const hasDatePreset = activeDatePreset !== null;

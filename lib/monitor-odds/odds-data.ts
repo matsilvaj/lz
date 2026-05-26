@@ -3,8 +3,14 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getMonitorSupabaseClient } from "./client";
+import {
+  acquireMonitorOddsLock,
+  getMonitorOddsRedisClient,
+  readMonitorOddsCache,
+  writeMonitorOddsCache,
+} from "./shared-cache";
 
-const ODDS_FEED_COLUMNS = [
+const FIXTURE_FEED_COLUMNS = [
   "fixture_id",
   "api_football_fixture_id",
   "fixture_name",
@@ -18,6 +24,11 @@ const ODDS_FEED_COLUMNS = [
   "league_country",
   "league_logo_url",
   "league_country_flag_url",
+].join(",");
+
+const ODDS_SNAPSHOT_COLUMNS = [
+  "fixture_id",
+  "latest_odd_updated_at",
   "odds",
 ].join(",");
 
@@ -28,8 +39,29 @@ const DATE_RANGE_PAGE_SIZE = 200;
 const MAX_DATE_RANGE_PAGES = 8;
 const DEFAULT_DATE_RANGE_EVENT_LIMIT = 150;
 const MAX_DATE_RANGE_DAYS = 3;
+const MAX_ODDS_FIXTURE_IDS = 200;
+const STATUS_FRESH_MS = 3_000;
+const STATUS_LOCK_TTL_SECONDS = 5;
+const STATUS_SHARED_CACHE_TTL_SECONDS = 60;
+const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
+const ODDS_SHARED_CACHE_TTL_SECONDS = 2 * 60;
+const STATUS_CACHE_KEY = "monitor-odds:status:v2";
+const STATUS_LOCK_KEY = "monitor-odds:status:v2:lock";
 
-export type MonitorOddsFeedItem = {
+export type MonitorOddsSnapshotItem = {
+  bookmaker_slug: string;
+  bookmaker_name: string;
+  bookmaker_event_url: string | null;
+  market_code: string;
+  market_name: string;
+  selection: string;
+  price: number;
+  pa_category: string;
+  confidence_score: number | null;
+  odd_updated_at: string | null;
+};
+
+export type MonitorOddsFeedItem = MonitorOddsSnapshotItem & {
   fixture_id: string;
   api_football_fixture_id: number | null;
   fixture_name: string;
@@ -43,16 +75,6 @@ export type MonitorOddsFeedItem = {
   league_country: string | null;
   league_logo_url: string | null;
   league_country_flag_url: string | null;
-  bookmaker_slug: string;
-  bookmaker_name: string;
-  bookmaker_event_url: string | null;
-  market_code: string;
-  market_name: string;
-  selection: string;
-  price: number;
-  pa_category: string;
-  confidence_score: number | null;
-  odd_updated_at: string | null;
 };
 
 export type MonitorOddsEvent = {
@@ -75,14 +97,21 @@ export type MonitorOddsEvent = {
   odds: MonitorOddsFeedItem[];
 };
 
+export type MonitorOddsSnapshot = {
+  fixture_id: string;
+  latest_odd_updated_at: string | null;
+  odds: MonitorOddsSnapshotItem[];
+};
+
 export type MonitorOddsFeedStatus = {
+  fixtures_version: string | null;
+  odds_version: string | null;
   latest_odd_updated_at: string | null;
   upcoming_fixture_count: number;
   odd_count: number;
 };
 
-type RawOddsFeedItem = Partial<Record<keyof MonitorOddsFeedItem, unknown>>;
-type RawOddsFeedRow = Partial<
+type RawOddsFixtureRow = Partial<
   Record<
     | "fixture_id"
     | "api_football_fixture_id"
@@ -96,12 +125,18 @@ type RawOddsFeedRow = Partial<
     | "league_slug"
     | "league_country"
     | "league_logo_url"
-    | "league_country_flag_url"
-    | "odds",
+    | "league_country_flag_url",
     unknown
   >
 >;
+type RawOddsSnapshotItem = Partial<Record<keyof MonitorOddsSnapshotItem, unknown>>;
+type RawOddsSnapshotRow = Partial<
+  Record<"fixture_id" | "latest_odd_updated_at" | "odds", unknown>
+>;
 type RawOddsFeedStatus = Partial<Record<keyof MonitorOddsFeedStatus, unknown>>;
+type CachedMonitorOddsFeedStatus = MonitorOddsFeedStatus & {
+  checked_at_ms: number;
+};
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -134,14 +169,14 @@ function cleanCount(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
 }
 
-function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
-  const fixtureId = cleanString(row.fixture_id);
-  const fixtureName = cleanString(row.fixture_name);
-  const homeTeam = cleanString(row.home_team);
-  const awayTeam = cleanString(row.away_team);
-  const startsAt = cleanString(row.starts_at);
-  const leagueName = cleanString(row.league_name);
-  const leagueSlug = cleanString(row.league_slug);
+function cleanCachePart(value: string | null | undefined) {
+  const parsed = cleanString(value);
+  return encodeURIComponent(parsed || "none").slice(0, 180);
+}
+
+function cleanOddsSnapshotItem(
+  row: RawOddsSnapshotItem,
+): MonitorOddsSnapshotItem | null {
   const bookmakerSlug = cleanString(row.bookmaker_slug);
   const bookmakerName = cleanString(row.bookmaker_name);
   const marketCode = cleanString(row.market_code);
@@ -151,13 +186,6 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
   const paCategory = cleanString(row.pa_category);
 
   if (
-    !fixtureId ||
-    !fixtureName ||
-    !homeTeam ||
-    !awayTeam ||
-    !startsAt ||
-    !leagueName ||
-    !leagueSlug ||
     !bookmakerSlug ||
     !bookmakerName ||
     !marketCode ||
@@ -166,6 +194,41 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
     !paCategory ||
     price === null ||
     price <= 1
+  ) {
+    return null;
+  }
+
+  return {
+    bookmaker_slug: bookmakerSlug,
+    bookmaker_name: bookmakerName,
+    bookmaker_event_url: cleanExternalUrl(row.bookmaker_event_url),
+    market_code: marketCode,
+    market_name: marketName,
+    selection,
+    price,
+    pa_category: paCategory,
+    confidence_score: cleanNumber(row.confidence_score),
+    odd_updated_at: cleanOptionalString(row.odd_updated_at),
+  };
+}
+
+function cleanOddsFixtureRow(row: RawOddsFixtureRow): MonitorOddsEvent | null {
+  const fixtureId = cleanString(row.fixture_id);
+  const fixtureName = cleanString(row.fixture_name);
+  const homeTeam = cleanString(row.home_team);
+  const awayTeam = cleanString(row.away_team);
+  const startsAt = cleanString(row.starts_at);
+  const leagueName = cleanString(row.league_name);
+  const leagueSlug = cleanString(row.league_slug);
+
+  if (
+    !fixtureId ||
+    !fixtureName ||
+    !homeTeam ||
+    !awayTeam ||
+    !startsAt ||
+    !leagueName ||
+    !leagueSlug
   ) {
     return null;
   }
@@ -184,51 +247,26 @@ function cleanOddsFeedItem(row: RawOddsFeedItem): MonitorOddsFeedItem | null {
     league_country: cleanOptionalString(row.league_country),
     league_logo_url: cleanOptionalString(row.league_logo_url),
     league_country_flag_url: cleanOptionalString(row.league_country_flag_url),
-    bookmaker_slug: bookmakerSlug,
-    bookmaker_name: bookmakerName,
-    bookmaker_event_url: cleanExternalUrl(row.bookmaker_event_url),
-    market_code: marketCode,
-    market_name: marketName,
-    selection,
-    price,
-    pa_category: paCategory,
-    confidence_score: cleanNumber(row.confidence_score),
-    odd_updated_at: cleanOptionalString(row.odd_updated_at),
+    bookmaker_count: 0,
+    odd_count: 0,
+    latest_odd_updated_at: null,
+    odds: [],
   };
 }
 
-function expandOddsFeedRow(row: RawOddsFeedRow): MonitorOddsFeedItem[] {
+function expandOddsSnapshotRow(row: RawOddsSnapshotRow): MonitorOddsSnapshotItem[] {
   if (!Array.isArray(row.odds)) {
     return [];
   }
 
-  const fixtureFields: RawOddsFeedItem = {
-    fixture_id: row.fixture_id,
-    api_football_fixture_id: row.api_football_fixture_id,
-    fixture_name: row.fixture_name,
-    home_team: row.home_team,
-    away_team: row.away_team,
-    starts_at: row.starts_at,
-    status: row.status,
-    round: row.round,
-    league_name: row.league_name,
-    league_slug: row.league_slug,
-    league_country: row.league_country,
-    league_logo_url: row.league_logo_url,
-    league_country_flag_url: row.league_country_flag_url,
-  };
-
-  const odds: MonitorOddsFeedItem[] = [];
+  const odds: MonitorOddsSnapshotItem[] = [];
 
   for (const oddRow of row.odds) {
     if (!oddRow || typeof oddRow !== "object" || Array.isArray(oddRow)) {
       continue;
     }
 
-    const odd = cleanOddsFeedItem({
-      ...fixtureFields,
-      ...(oddRow as RawOddsFeedItem),
-    });
+    const odd = cleanOddsSnapshotItem(oddRow as RawOddsSnapshotItem);
 
     if (odd) {
       odds.push(odd);
@@ -238,9 +276,31 @@ function expandOddsFeedRow(row: RawOddsFeedRow): MonitorOddsFeedItem[] {
   return odds;
 }
 
-function cleanOddsFeedStatus(row: RawOddsFeedStatus | null): MonitorOddsFeedStatus {
+function cleanOddsSnapshotRow(row: RawOddsSnapshotRow): MonitorOddsSnapshot | null {
+  const fixtureId = cleanString(row.fixture_id);
+
+  if (!fixtureId) {
+    return null;
+  }
+
   return {
-    latest_odd_updated_at: cleanOptionalString(row?.latest_odd_updated_at),
+    fixture_id: fixtureId,
+    latest_odd_updated_at: cleanOptionalString(row.latest_odd_updated_at),
+    odds: expandOddsSnapshotRow(row),
+  };
+}
+
+function cleanOddsFeedStatus(row: RawOddsFeedStatus | null): MonitorOddsFeedStatus {
+  const oddsVersion =
+    cleanOptionalString(row?.odds_version) ??
+    cleanOptionalString(row?.latest_odd_updated_at);
+  const latestOddUpdatedAt =
+    cleanOptionalString(row?.latest_odd_updated_at) ?? oddsVersion;
+
+  return {
+    fixtures_version: cleanOptionalString(row?.fixtures_version),
+    odds_version: oddsVersion,
+    latest_odd_updated_at: latestOddUpdatedAt,
     upcoming_fixture_count: cleanCount(row?.upcoming_fixture_count),
     odd_count: cleanCount(row?.odd_count),
   };
@@ -290,80 +350,84 @@ function normalizeDateRange(from: string, to: string) {
   };
 }
 
-function updateEventFromOdd(
-  events: Map<
-    string,
-    MonitorOddsEvent & {
-      bookmakerSlugs: Set<string>;
-    }
-  >,
-  odd: MonitorOddsFeedItem,
-) {
-  const current =
-    events.get(odd.fixture_id) ??
-    ({
-      fixture_id: odd.fixture_id,
-      api_football_fixture_id: odd.api_football_fixture_id,
-      fixture_name: odd.fixture_name,
-      home_team: odd.home_team,
-      away_team: odd.away_team,
-      starts_at: odd.starts_at,
-      status: odd.status,
-      round: odd.round,
-      league_name: odd.league_name,
-      league_slug: odd.league_slug,
-      league_country: odd.league_country,
-      league_logo_url: odd.league_logo_url,
-      league_country_flag_url: odd.league_country_flag_url,
-      bookmaker_count: 0,
-      odd_count: 0,
-      latest_odd_updated_at: null,
-      odds: [],
-      bookmakerSlugs: new Set<string>(),
-    } satisfies MonitorOddsEvent & { bookmakerSlugs: Set<string> });
-
-  current.odd_count += 1;
-  current.odds.push(odd);
-  current.bookmakerSlugs.add(odd.bookmaker_slug);
-  current.bookmaker_count = current.bookmakerSlugs.size;
-
-  if (
-    odd.odd_updated_at &&
-    (!current.latest_odd_updated_at ||
-      new Date(odd.odd_updated_at).getTime() >
-        new Date(current.latest_odd_updated_at).getTime())
-  ) {
-    current.latest_odd_updated_at = odd.odd_updated_at;
-  }
-
-  current.league_logo_url = current.league_logo_url ?? odd.league_logo_url;
-  current.league_country_flag_url =
-    current.league_country_flag_url ?? odd.league_country_flag_url;
-
-  events.set(odd.fixture_id, current);
+function emptyOddsSnapshot(fixtureId: string): MonitorOddsSnapshot {
+  return {
+    fixture_id: fixtureId,
+    latest_odd_updated_at: null,
+    odds: [],
+  };
 }
 
-function stripInternalEventState(
-  event: MonitorOddsEvent & { bookmakerSlugs: Set<string> },
-): MonitorOddsEvent {
+function isMonitorOddsSnapshot(value: unknown): value is MonitorOddsSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const snapshot = value as Partial<MonitorOddsSnapshot>;
+  return typeof snapshot.fixture_id === "string" && Array.isArray(snapshot.odds);
+}
+
+function isCachedMonitorOddsFeedStatus(
+  value: unknown,
+): value is CachedMonitorOddsFeedStatus {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const status = value as Partial<CachedMonitorOddsFeedStatus>;
+  return typeof status.checked_at_ms === "number";
+}
+
+function stripCachedStatus(status: CachedMonitorOddsFeedStatus) {
   return {
-    fixture_id: event.fixture_id,
-    api_football_fixture_id: event.api_football_fixture_id,
-    fixture_name: event.fixture_name,
-    home_team: event.home_team,
-    away_team: event.away_team,
-    starts_at: event.starts_at,
-    status: event.status,
-    round: event.round,
-    league_name: event.league_name,
-    league_slug: event.league_slug,
-    league_country: event.league_country,
-    league_logo_url: event.league_logo_url,
-    league_country_flag_url: event.league_country_flag_url,
-    bookmaker_count: event.bookmaker_count,
-    odd_count: event.odd_count,
-    latest_odd_updated_at: event.latest_odd_updated_at,
-    odds: event.odds.sort((left, right) => {
+    fixtures_version: status.fixtures_version,
+    odds_version: status.odds_version,
+    latest_odd_updated_at: status.latest_odd_updated_at,
+    upcoming_fixture_count: status.upcoming_fixture_count,
+    odd_count: status.odd_count,
+  } satisfies MonitorOddsFeedStatus;
+}
+
+function getSafeFixtureIds(fixtureIds: string[]) {
+  return Array.from(
+    new Set(
+      fixtureIds
+        .map((fixtureId) => cleanString(fixtureId).slice(0, 160))
+        .filter(Boolean),
+    ),
+  )
+    .sort()
+    .slice(0, MAX_ODDS_FIXTURE_IDS);
+}
+
+function getOddsSnapshotCacheKey(fixtureId: string, oddsVersion: string) {
+  return `monitor-odds:odds:v2:${cleanCachePart(oddsVersion)}:${cleanCachePart(
+    fixtureId,
+  )}`;
+}
+
+function mergeEventWithSnapshot(
+  event: MonitorOddsEvent,
+  snapshot: MonitorOddsSnapshot | null | undefined,
+) {
+  const odds = (snapshot?.odds ?? [])
+    .map((odd) => ({
+      fixture_id: event.fixture_id,
+      api_football_fixture_id: event.api_football_fixture_id,
+      fixture_name: event.fixture_name,
+      home_team: event.home_team,
+      away_team: event.away_team,
+      starts_at: event.starts_at,
+      status: event.status,
+      round: event.round,
+      league_name: event.league_name,
+      league_slug: event.league_slug,
+      league_country: event.league_country,
+      league_logo_url: event.league_logo_url,
+      league_country_flag_url: event.league_country_flag_url,
+      ...odd,
+    }))
+    .sort((left, right) => {
       const marketOrder = left.market_code.localeCompare(right.market_code);
       if (marketOrder !== 0) return marketOrder;
 
@@ -374,11 +438,41 @@ function stripInternalEventState(
       if (bookmakerOrder !== 0) return bookmakerOrder;
 
       return left.selection.localeCompare(right.selection);
-    }),
-  };
+    });
+
+  return {
+    ...event,
+    bookmaker_count: new Set(odds.map((odd) => odd.bookmaker_slug)).size,
+    odd_count: odds.length,
+    latest_odd_updated_at: snapshot?.latest_odd_updated_at ?? null,
+    odds,
+  } satisfies MonitorOddsEvent;
 }
 
-async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LIMIT) {
+async function readThroughSharedCache<T>(
+  key: string,
+  ttlSeconds: number,
+  load: () => Promise<T>,
+) {
+  const cached = await readMonitorOddsCache<T>(key);
+
+  if (cached !== null) {
+    return cached;
+  }
+
+  const value = await load();
+  await writeMonitorOddsCache(key, value, ttlSeconds);
+
+  return value;
+}
+
+async function searchOddsEventsUncached(
+  search: string,
+  limit = DEFAULT_EVENT_LIMIT,
+  fixturesVersion = "unknown",
+) {
+  void fixturesVersion;
+
   const term = sanitizeSearchTerm(search);
   const eventLimit = normalizeLimit(limit);
 
@@ -387,7 +481,7 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
   }
 
   const supabase = getMonitorSupabaseClient();
-  const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
+  const events: MonitorOddsEvent[] = [];
   const filter = [
     `fixture_name.ilike.%${term}%`,
     `home_team.ilike.%${term}%`,
@@ -398,8 +492,8 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
   for (let page = 0; page < MAX_SEARCH_PAGES; page += 1) {
     const offset = page * SEARCH_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_feed")
-      .select(ODDS_FEED_COLUMNS)
+      .from("public_odds_fixtures")
+      .select(FIXTURE_FEED_COLUMNS)
       .or(filter)
       .order("starts_at", { ascending: true })
       .order("fixture_name", { ascending: true })
@@ -409,29 +503,34 @@ async function searchOddsEventsUncached(search: string, limit = DEFAULT_EVENT_LI
       throw error;
     }
 
-    for (const row of (data ?? []) as RawOddsFeedRow[]) {
-      for (const odd of expandOddsFeedRow(row)) {
-        updateEventFromOdd(events, odd);
+    for (const row of (data ?? []) as RawOddsFixtureRow[]) {
+      const event = cleanOddsFixtureRow(row);
+
+      if (event) {
+        events.push(event);
       }
 
-      if (events.size >= eventLimit) {
+      if (events.length >= eventLimit) {
         break;
       }
     }
 
-    if (events.size >= eventLimit || !data || data.length < SEARCH_PAGE_SIZE) {
+    if (events.length >= eventLimit || !data || data.length < SEARCH_PAGE_SIZE) {
       break;
     }
   }
 
-  return Array.from(events.values()).map(stripInternalEventState).slice(0, eventLimit);
+  return events.slice(0, eventLimit);
 }
 
 async function listOddsEventsByDateRangeUncached(
   from: string,
   to: string,
   limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+  fixturesVersion = "unknown",
 ) {
+  void fixturesVersion;
+
   const dateRange = normalizeDateRange(from, to);
   const eventLimit = normalizeDateRangeLimit(limit);
 
@@ -440,13 +539,13 @@ async function listOddsEventsByDateRangeUncached(
   }
 
   const supabase = getMonitorSupabaseClient();
-  const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
+  const events: MonitorOddsEvent[] = [];
 
   for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
     const offset = page * DATE_RANGE_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_feed")
-      .select(ODDS_FEED_COLUMNS)
+      .from("public_odds_fixtures")
+      .select(FIXTURE_FEED_COLUMNS)
       .gte("starts_at", dateRange.from)
       .lt("starts_at", dateRange.to)
       .order("league_name", { ascending: true })
@@ -458,25 +557,32 @@ async function listOddsEventsByDateRangeUncached(
       throw error;
     }
 
-    for (const row of (data ?? []) as RawOddsFeedRow[]) {
-      for (const odd of expandOddsFeedRow(row)) {
-        updateEventFromOdd(events, odd);
+    for (const row of (data ?? []) as RawOddsFixtureRow[]) {
+      const event = cleanOddsFixtureRow(row);
+
+      if (event) {
+        events.push(event);
       }
 
-      if (events.size >= eventLimit) {
+      if (events.length >= eventLimit) {
         break;
       }
     }
 
-    if (events.size >= eventLimit || !data || data.length < DATE_RANGE_PAGE_SIZE) {
+    if (events.length >= eventLimit || !data || data.length < DATE_RANGE_PAGE_SIZE) {
       break;
     }
   }
 
-  return Array.from(events.values()).map(stripInternalEventState).slice(0, eventLimit);
+  return events.slice(0, eventLimit);
 }
 
-async function getOddsEventByFixtureIdUncached(fixtureId: string) {
+async function getOddsFixtureByFixtureIdUncached(
+  fixtureId: string,
+  fixturesVersion = "unknown",
+) {
+  void fixturesVersion;
+
   const safeFixtureId = cleanString(fixtureId).slice(0, 160);
 
   if (!safeFixtureId) {
@@ -484,10 +590,9 @@ async function getOddsEventByFixtureIdUncached(fixtureId: string) {
   }
 
   const supabase = getMonitorSupabaseClient();
-  const events = new Map<string, MonitorOddsEvent & { bookmakerSlugs: Set<string> }>();
   const { data, error } = await supabase
-    .from("public_odds_feed")
-    .select(ODDS_FEED_COLUMNS)
+    .from("public_odds_fixtures")
+    .select(FIXTURE_FEED_COLUMNS)
     .eq("fixture_id", safeFixtureId)
     .maybeSingle();
 
@@ -495,22 +600,16 @@ async function getOddsEventByFixtureIdUncached(fixtureId: string) {
     throw error;
   }
 
-  const row = data as RawOddsFeedRow | null;
-
-  if (row) {
-    for (const odd of expandOddsFeedRow(row)) {
-      updateEventFromOdd(events, odd);
-    }
-  }
-
-  return Array.from(events.values()).map(stripInternalEventState)[0] ?? null;
+  return data ? cleanOddsFixtureRow(data as RawOddsFixtureRow) : null;
 }
 
-async function getOddsFeedStatusUncached() {
+async function getOddsFeedStatusFromDatabase() {
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
     .from("public_odds_feed_status")
-    .select("latest_odd_updated_at,upcoming_fixture_count,odd_count")
+    .select(
+      "fixtures_version,odds_version,latest_odd_updated_at,upcoming_fixture_count,odd_count",
+    )
     .maybeSingle();
 
   if (error) {
@@ -520,58 +619,250 @@ async function getOddsFeedStatusUncached() {
   return cleanOddsFeedStatus(data as RawOddsFeedStatus | null);
 }
 
+async function fetchOddsSnapshotsByFixtureIds(fixtureIds: string[]) {
+  if (!fixtureIds.length) {
+    return [];
+  }
+
+  const supabase = getMonitorSupabaseClient();
+  const { data, error } = await supabase
+    .from("public_odds_snapshot")
+    .select(ODDS_SNAPSHOT_COLUMNS)
+    .in("fixture_id", fixtureIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as RawOddsSnapshotRow[])
+    .map(cleanOddsSnapshotRow)
+    .filter((snapshot): snapshot is MonitorOddsSnapshot => Boolean(snapshot));
+}
+
 const getCachedOddsEventSearch = unstable_cache(
   searchOddsEventsUncached,
-  ["monitor-odds-event-search"],
+  ["monitor-odds-event-search-v2"],
   {
     tags: ["monitor-odds-event-search"],
-    revalidate: 20,
-  },
-);
-
-const getCachedOddsFeedStatus = unstable_cache(
-  getOddsFeedStatusUncached,
-  ["monitor-odds-feed-status"],
-  {
-    tags: ["monitor-odds-feed-status"],
-    revalidate: 15,
+    revalidate: EVENTS_SHARED_CACHE_TTL_SECONDS,
   },
 );
 
 const getCachedOddsEventsByDateRange = unstable_cache(
   listOddsEventsByDateRangeUncached,
-  ["monitor-odds-events-by-date-range"],
+  ["monitor-odds-events-by-date-range-v2"],
   {
     tags: ["monitor-odds-events-by-date-range"],
-    revalidate: 20,
+    revalidate: EVENTS_SHARED_CACHE_TTL_SECONDS,
   },
 );
 
-const getCachedOddsEventByFixtureId = unstable_cache(
-  getOddsEventByFixtureIdUncached,
-  ["monitor-odds-event-by-fixture-id"],
+const getCachedOddsFixtureByFixtureId = unstable_cache(
+  getOddsFixtureByFixtureIdUncached,
+  ["monitor-odds-fixture-by-fixture-id-v2"],
   {
-    tags: ["monitor-odds-event-by-fixture-id"],
-    revalidate: 20,
+    tags: ["monitor-odds-fixture-by-fixture-id"],
+    revalidate: EVENTS_SHARED_CACHE_TTL_SECONDS,
   },
 );
 
-export async function searchOddsEvents(search: string, limit = DEFAULT_EVENT_LIMIT) {
-  return getCachedOddsEventSearch(search, limit);
+const getCachedOddsFeedStatusFromDatabase = unstable_cache(
+  getOddsFeedStatusFromDatabase,
+  ["monitor-odds-feed-status-v2"],
+  {
+    tags: ["monitor-odds-feed-status"],
+    revalidate: 5,
+  },
+);
+
+export async function searchOddsEvents(
+  search: string,
+  limit = DEFAULT_EVENT_LIMIT,
+  fixturesVersion?: string | null,
+) {
+  const term = sanitizeSearchTerm(search);
+
+  if (term.length < 2) {
+    return [];
+  }
+
+  const eventLimit = normalizeLimit(limit);
+  const version = cleanCachePart(fixturesVersion ?? "unknown");
+  const key = `monitor-odds:events:search:v2:${version}:${cleanCachePart(
+    term,
+  )}:${eventLimit}`;
+
+  return readThroughSharedCache(key, EVENTS_SHARED_CACHE_TTL_SECONDS, () =>
+    getCachedOddsEventSearch(term, eventLimit, version),
+  );
 }
 
 export async function listOddsEventsByDateRange(
   from: string,
   to: string,
   limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+  fixturesVersion?: string | null,
 ) {
-  return getCachedOddsEventsByDateRange(from, to, limit);
+  const dateRange = normalizeDateRange(from, to);
+
+  if (!dateRange) {
+    return [];
+  }
+
+  const eventLimit = normalizeDateRangeLimit(limit);
+  const version = cleanCachePart(fixturesVersion ?? "unknown");
+  const key = `monitor-odds:events:date:v2:${version}:${cleanCachePart(
+    dateRange.from,
+  )}:${cleanCachePart(dateRange.to)}:${eventLimit}`;
+
+  return readThroughSharedCache(key, EVENTS_SHARED_CACHE_TTL_SECONDS, () =>
+    getCachedOddsEventsByDateRange(
+      dateRange.from,
+      dateRange.to,
+      eventLimit,
+      version,
+    ),
+  );
+}
+
+export async function getOddsSnapshotsByFixtureIds(
+  fixtureIds: string[],
+  oddsVersion?: string | null,
+) {
+  const safeFixtureIds = getSafeFixtureIds(fixtureIds);
+
+  if (!safeFixtureIds.length) {
+    return [];
+  }
+
+  const version = cleanCachePart(oddsVersion ?? "unknown");
+  const redis = getMonitorOddsRedisClient();
+  const cachedByFixtureId = new Map<string, MonitorOddsSnapshot>();
+  const missingFixtureIds = new Set(safeFixtureIds);
+
+  if (redis) {
+    const cacheKeys = safeFixtureIds.map((fixtureId) =>
+      getOddsSnapshotCacheKey(fixtureId, version),
+    );
+
+    try {
+      const cachedSnapshots =
+        await redis.mget<(MonitorOddsSnapshot | null)[]>(...cacheKeys);
+
+      cachedSnapshots.forEach((snapshot, index) => {
+        const fixtureId = safeFixtureIds[index];
+
+        if (fixtureId && isMonitorOddsSnapshot(snapshot)) {
+          cachedByFixtureId.set(fixtureId, snapshot);
+          missingFixtureIds.delete(fixtureId);
+        }
+      });
+    } catch (error) {
+      console.warn("Monitor odds snapshot shared cache read failed.", { error });
+    }
+  }
+
+  const loadedByFixtureId = new Map<string, MonitorOddsSnapshot>();
+  const missing = Array.from(missingFixtureIds);
+
+  if (missing.length) {
+    const snapshots = await fetchOddsSnapshotsByFixtureIds(missing);
+
+    for (const snapshot of snapshots) {
+      loadedByFixtureId.set(snapshot.fixture_id, snapshot);
+    }
+
+    for (const fixtureId of missing) {
+      if (!loadedByFixtureId.has(fixtureId)) {
+        loadedByFixtureId.set(fixtureId, emptyOddsSnapshot(fixtureId));
+      }
+    }
+
+    await Promise.all(
+      Array.from(loadedByFixtureId.values()).map((snapshot) =>
+        writeMonitorOddsCache(
+          getOddsSnapshotCacheKey(snapshot.fixture_id, version),
+          snapshot,
+          ODDS_SHARED_CACHE_TTL_SECONDS,
+        ),
+      ),
+    );
+  }
+
+  return safeFixtureIds.map(
+    (fixtureId) =>
+      cachedByFixtureId.get(fixtureId) ??
+      loadedByFixtureId.get(fixtureId) ??
+      emptyOddsSnapshot(fixtureId),
+  );
 }
 
 export async function getOddsEventByFixtureId(fixtureId: string) {
-  return getCachedOddsEventByFixtureId(fixtureId);
+  const safeFixtureId = cleanString(fixtureId).slice(0, 160);
+
+  if (!safeFixtureId) {
+    return null;
+  }
+
+  const status = await getOddsFeedStatus();
+  const fixture = await getCachedOddsFixtureByFixtureId(
+    safeFixtureId,
+    status.fixtures_version ?? "unknown",
+  );
+
+  if (!fixture) {
+    return null;
+  }
+
+  const [snapshot] = await getOddsSnapshotsByFixtureIds(
+    [fixture.fixture_id],
+    status.odds_version ?? status.latest_odd_updated_at ?? "unknown",
+  );
+
+  return mergeEventWithSnapshot(fixture, snapshot);
 }
 
 export async function getOddsFeedStatus() {
-  return getCachedOddsFeedStatus();
+  const cached = await readMonitorOddsCache<CachedMonitorOddsFeedStatus>(
+    STATUS_CACHE_KEY,
+  );
+  const hasFreshCachedStatus =
+    isCachedMonitorOddsFeedStatus(cached) &&
+    Date.now() - cached.checked_at_ms <= STATUS_FRESH_MS;
+
+  if (hasFreshCachedStatus) {
+    return stripCachedStatus(cached);
+  }
+
+  const hasLock = await acquireMonitorOddsLock(
+    STATUS_LOCK_KEY,
+    STATUS_LOCK_TTL_SECONDS,
+  );
+
+  if (hasLock) {
+    try {
+      const status = await getOddsFeedStatusFromDatabase();
+      await writeMonitorOddsCache(
+        STATUS_CACHE_KEY,
+        {
+          ...status,
+          checked_at_ms: Date.now(),
+        } satisfies CachedMonitorOddsFeedStatus,
+        STATUS_SHARED_CACHE_TTL_SECONDS,
+      );
+      return status;
+    } catch (error) {
+      if (isCachedMonitorOddsFeedStatus(cached)) {
+        return stripCachedStatus(cached);
+      }
+
+      throw error;
+    }
+  }
+
+  if (isCachedMonitorOddsFeedStatus(cached)) {
+    return stripCachedStatus(cached);
+  }
+
+  return getCachedOddsFeedStatusFromDatabase();
 }
