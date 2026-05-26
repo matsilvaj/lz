@@ -7,7 +7,10 @@ import { createPortal } from "react-dom";
 import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
+import { copyTextToClipboard } from "../_components/clipboard";
 import { ProcedureModal } from "../_components/procedure-modal";
+import { buildProcedureShareUrl } from "../_components/procedure-share";
+import { type ProcedureShareValues } from "../_components/procedure-share-types";
 import { CloseIcon } from "../_components/ui";
 import { deleteProcedureAction } from "../procedure-actions";
 
@@ -23,6 +26,7 @@ type ProcedureRowActionsProps = {
     jogo_time_pa: string;
     casas_envolvidas: string;
     lucro_final: number;
+    lucro_real: number;
     observacao: string;
     valor_freebet_coletada: number;
     casa_destino_freebet: string;
@@ -82,13 +86,17 @@ function toHousesInputValue(value: string) {
     .join(", ");
 }
 
+function getMenuHeight(hasObservation: boolean) {
+  return hasObservation ? 236 : 192;
+}
+
 function getMenuPosition(left: number, top: number, hasObservation: boolean) {
   if (typeof window === "undefined") {
     return { left, top };
   }
 
   const menuWidth = 176;
-  const menuHeight = hasObservation ? 132 : 88;
+  const menuHeight = getMenuHeight(hasObservation);
   const padding = 12;
 
   return {
@@ -114,11 +122,34 @@ export function ProcedureRowActions({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<"button" | "pointer">("button");
   const [editOpen, setEditOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [isPending, startTransition] = useTransition();
   const hasObservation = procedure.observacao.trim().length > 0;
+  const procedureDefaultStatus: "Pendente" | "Concluído" =
+    procedure.status_procedimento === "Concluído" ? "Concluído" : "Pendente";
+  const procedureDefaultValues: ProcedureShareValues = {
+    version: 1,
+    procedureType: procedure.tipo_procedimento as
+      | "SureBet"
+      | "Tentativa de Duplo"
+      | "Coletar Freebet"
+      | "Converter Freebet"
+      | "Cassino",
+    operationDate: toDateInputValue(procedure.data_operacao),
+    game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
+    houses: toHousesInputValue(procedure.casas_envolvidas),
+    entryValue: Number(procedure.lucro_real ?? procedure.lucro_final ?? 0),
+    note: procedure.observacao,
+    doubleValue: procedure.valor_freebet_coletada,
+    hitDouble: procedure.bateu_duplo,
+    freebetHouse: procedure.casa_destino_freebet,
+    freebetValue: procedure.valor_da_freebet,
+    freebetCondition: procedure.condicao_freebet,
+    procedureStatus: procedureDefaultStatus,
+  };
 
   const getButtonMenuPosition = useCallback(() => {
     if (!buttonRef.current || typeof window === "undefined") {
@@ -127,7 +158,7 @@ export function ProcedureRowActions({
 
     const rect = buttonRef.current.getBoundingClientRect();
     const menuWidth = 176;
-    const menuHeight = hasObservation ? 132 : 88;
+    const menuHeight = getMenuHeight(hasObservation);
     const spacing = 8;
     const openUp = rect.bottom + menuHeight > window.innerHeight - 16;
 
@@ -220,6 +251,7 @@ export function ProcedureRowActions({
       if (event.key === "Escape") {
         setMenuOpen(false);
         setEditOpen(false);
+        setDuplicateOpen(false);
         setNoteOpen(false);
         setDeleteOpen(false);
       }
@@ -251,6 +283,20 @@ export function ProcedureRowActions({
           tone: "error",
         });
       }
+    });
+  }
+
+  async function handleCopyProcedure() {
+    setMenuOpen(false);
+    const copied = await copyTextToClipboard(
+      buildProcedureShareUrl(procedureDefaultValues),
+    );
+
+    showToast({
+      title: copied
+        ? "Link do procedimento copiado."
+        : "Não foi possível copiar o link.",
+      tone: copied ? "success" : "error",
     });
   }
 
@@ -287,6 +333,18 @@ export function ProcedureRowActions({
         returnTo="/procedimentos"
         submitLabel="Salvar alterações"
         title="Editar procedimento"
+      />
+
+      <ProcedureModal
+        bookmakers={bookmakers}
+        defaultValues={procedureDefaultValues}
+        hideTrigger
+        mode="create"
+        onOpenChange={setDuplicateOpen}
+        open={duplicateOpen}
+        returnTo="/procedimentos"
+        submitLabel="Criar cópia"
+        title="Duplicar procedimento"
       />
 
       <button
@@ -326,6 +384,25 @@ export function ProcedureRowActions({
                 type="button"
               >
                 Editar
+              </button>
+
+              <button
+                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDuplicateOpen(true);
+                }}
+                type="button"
+              >
+                Duplicar
+              </button>
+
+              <button
+                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                onClick={handleCopyProcedure}
+                type="button"
+              >
+                Copiar
               </button>
 
               {hasObservation ? (

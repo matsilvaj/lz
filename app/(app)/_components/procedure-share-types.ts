@@ -1,0 +1,42 @@
+export type ProcedureShareProtectionDraft = {
+  stake?: string;
+  odd?: string;
+  side?: "back" | "lay";
+  layOdd?: string;
+  commission?: string;
+};
+
+export type ProcedureShareValues = {
+  version?: 1;
+  procedureType?: string;
+  operationDate?: string;
+  game?: string;
+  houses?: string;
+  entryValue?: number;
+  note?: string;
+  hitDouble?: boolean;
+  doubleValue?: number;
+  freebetHouse?: string;
+  freebetValue?: number;
+  freebetCondition?: string;
+  procedureStatus?: "Pendente" | "Concluído";
+  selectedHouses?: string[];
+  collectionHouses?: string[];
+  selectedFreebetHouse?: string;
+  primaryStake?: string;
+  primaryOdd?: string;
+  primarySide?: "back" | "lay";
+  primaryLayOdd?: string;
+  primaryCommission?: string;
+  sportProtections?: ProcedureShareProtectionDraft[];
+  sportResultSelections?: string[];
+  collectionPrimaryStake?: string;
+  collectionPrimaryOdd?: string;
+  collectionPrimarySide?: "back" | "lay";
+  collectionPrimaryLayOdd?: string;
+  collectionPrimaryCommission?: string;
+  collectionProtections?: ProcedureShareProtectionDraft[];
+  collectionResultSelections?: string[];
+  freebetCollectionOpen?: boolean;
+  freebetConversionOpen?: boolean;
+};

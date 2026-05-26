@@ -97,9 +97,6 @@ export default async function Home() {
 
           {user ? (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-[var(--text-secondary)]">
-                Olá, {firstName}! Escolha uma aba para continuar.
-              </p>
               <Link
                 className="lz-button-primary inline-flex rounded-full px-5 py-3 text-sm font-semibold"
                 href="/dashboard"

@@ -5,10 +5,19 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { useToast } from "@/app/_components/toast-provider";
 
+import { copyTextToClipboard } from "./clipboard";
 import { DatePickerField } from "./date-picker-field";
 import { LzSelect } from "./lz-select";
-import { ChevronDownIcon, CloseIcon, formatCurrency } from "./ui";
+import {
+  ChevronDownIcon,
+  CloseIcon,
+  CopyIcon,
+  formatCurrency,
+} from "./ui";
+import { buildProcedureShareUrl } from "./procedure-share";
+import { type ProcedureShareValues } from "./procedure-share-types";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
 
 type ProcedureType = string;
@@ -42,7 +51,7 @@ type ProcedureModalProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
-  defaultValues?: {
+  defaultValues?: ProcedureShareValues & {
     procedureType?: ProcedureType;
     operationDate?: string;
     game?: string;
@@ -427,6 +436,10 @@ function getInitialProtectionKeys(
   defaultValues: ProcedureModalProps["defaultValues"],
   procedureType: string,
 ) {
+  if (defaultValues?.sportProtections?.length) {
+    return defaultValues.sportProtections.map((_, index) => index);
+  }
+
   if (defaultValues?.protections?.length) {
     return defaultValues.protections.map((_, index) => index);
   }
@@ -436,6 +449,61 @@ function getInitialProtectionKeys(
   }
 
   return [];
+}
+
+function getInitialCollectionProtectionKeys(
+  defaultValues: ProcedureModalProps["defaultValues"],
+  procedureType: string,
+) {
+  if (defaultValues?.collectionProtections?.length) {
+    return defaultValues.collectionProtections.map((_, index) => index);
+  }
+
+  return isFreebetProcedureType(procedureType)
+    ? getInitialProtectionKeys(defaultValues, procedureType)
+    : [];
+}
+
+function getInitialBetSide(value: unknown): BetSide {
+  return value === "lay" ? "lay" : DEFAULT_BET_SIDE;
+}
+
+function getInitialResultSelections(
+  values: unknown,
+): SportResultSelection[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.filter(
+    (value): value is SportResultSelection =>
+      value === "principal" ||
+      value === "defeat" ||
+      /^protection-\d+$/.test(String(value)),
+  );
+}
+
+function createProtectionDraftRecord(
+  keys: number[],
+  drafts:
+    | ProcedureShareValues["sportProtections"]
+    | ProcedureShareValues["collectionProtections"],
+) {
+  return keys.reduce<Record<number, ProtectionDraft>>((record, key, index) => {
+    const draft = drafts?.[index];
+
+    if (draft) {
+      record[key] = createProtectionDraft({
+        stake: draft.stake,
+        odd: draft.odd,
+        side: getInitialBetSide(draft.side),
+        layOdd: draft.layOdd,
+        commission: draft.commission,
+      });
+    }
+
+    return record;
+  }, {});
 }
 
 function HousePickerDialog({
@@ -576,6 +644,7 @@ export function ProcedureModal({
   hideTrigger = false,
   defaultValues,
 }: ProcedureModalProps) {
+  const { showToast } = useToast();
   const [internalOpen, setInternalOpen] = useState(false);
   const protectionKeyRef = useRef(1000);
   const collectionProtectionKeyRef = useRef(2000);
@@ -585,6 +654,14 @@ export function ProcedureModal({
     defaultValues?.freebetValue === undefined
       ? ""
       : String(defaultValues.freebetValue);
+  const initialProtectionKeys = getInitialProtectionKeys(
+    defaultValues,
+    initialProcedureType,
+  );
+  const initialCollectionProtectionKeys = getInitialCollectionProtectionKeys(
+    defaultValues,
+    initialProcedureType,
+  );
   const usesDefaultTypeOptions = typeOptions === PROCEDURE_TYPES;
   const [selectedType, setSelectedType] = useState<ProcedureType>(
     initialProcedureType,
@@ -594,13 +671,14 @@ export function ProcedureModal({
   const [operationDate, setOperationDate] = useState(
     defaultValues?.operationDate ?? getTodayInputValue(),
   );
+  const [gameValue, setGameValue] = useState(
+    defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""),
+  );
   const [protectionKeys, setProtectionKeys] = useState<number[]>(
-    getInitialProtectionKeys(defaultValues, initialProcedureType),
+    initialProtectionKeys,
   );
   const [collectionProtectionKeys, setCollectionProtectionKeys] = useState<number[]>(
-    isFreebetProcedureType(initialProcedureType)
-      ? getInitialProtectionKeys(defaultValues, initialProcedureType)
-      : [],
+    initialCollectionProtectionKeys,
   );
   const [procedureStatus, setProcedureStatus] =
     useState<ProcedureStatus>(defaultValues?.procedureStatus ?? "Pendente");
@@ -608,41 +686,60 @@ export function ProcedureModal({
     defaultValues?.entryValue === undefined ? "" : String(defaultValues.entryValue),
   );
   const [primaryStake, setPrimaryStake] = useState(
-    isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : "",
+    defaultValues?.primaryStake ??
+      (isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : ""),
   );
-  const [primaryOdd, setPrimaryOdd] = useState("");
-  const [primarySide, setPrimarySide] = useState<BetSide>(DEFAULT_BET_SIDE);
-  const [primaryLayOdd, setPrimaryLayOdd] = useState("");
-  const [primaryCommission, setPrimaryCommission] = useState("");
+  const [primaryOdd, setPrimaryOdd] = useState(defaultValues?.primaryOdd ?? "");
+  const [primarySide, setPrimarySide] = useState<BetSide>(
+    getInitialBetSide(defaultValues?.primarySide),
+  );
+  const [primaryLayOdd, setPrimaryLayOdd] = useState(
+    defaultValues?.primaryLayOdd ?? "",
+  );
+  const [primaryCommission, setPrimaryCommission] = useState(
+    defaultValues?.primaryCommission ?? "",
+  );
   const [collectionPrimaryStake, setCollectionPrimaryStake] = useState(
-    isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : "",
+    defaultValues?.collectionPrimaryStake ??
+      (isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : ""),
   );
-  const [collectionPrimaryOdd, setCollectionPrimaryOdd] = useState("");
+  const [collectionPrimaryOdd, setCollectionPrimaryOdd] = useState(
+    defaultValues?.collectionPrimaryOdd ?? "",
+  );
   const [collectionPrimarySide, setCollectionPrimarySide] =
-    useState<BetSide>(DEFAULT_BET_SIDE);
-  const [collectionPrimaryLayOdd, setCollectionPrimaryLayOdd] = useState("");
+    useState<BetSide>(getInitialBetSide(defaultValues?.collectionPrimarySide));
+  const [collectionPrimaryLayOdd, setCollectionPrimaryLayOdd] = useState(
+    defaultValues?.collectionPrimaryLayOdd ?? "",
+  );
   const [collectionPrimaryCommission, setCollectionPrimaryCommission] =
-    useState("");
+    useState(defaultValues?.collectionPrimaryCommission ?? "");
   const [protectionDrafts, setProtectionDrafts] = useState<
     Record<number, ProtectionDraft>
-  >({});
+  >(createProtectionDraftRecord(initialProtectionKeys, defaultValues?.sportProtections));
   const [collectionProtectionDrafts, setCollectionProtectionDrafts] = useState<
     Record<number, ProtectionDraft>
-  >({});
+  >(
+    createProtectionDraftRecord(
+      initialCollectionProtectionKeys,
+      defaultValues?.collectionProtections,
+    ),
+  );
   const [sportResultSelections, setSportResultSelections] = useState<
     SportResultSelection[]
-  >([]);
+  >(getInitialResultSelections(defaultValues?.sportResultSelections));
   const [collectionResultSelections, setCollectionResultSelections] = useState<
     SportResultSelection[]
-  >([]);
+  >(getInitialResultSelections(defaultValues?.collectionResultSelections));
   const [noteExpanded, setNoteExpanded] = useState(Boolean(defaultValues?.note));
   const [noteValue, setNoteValue] = useState(defaultValues?.note ?? "");
   const [selectedHouses, setSelectedHouses] = useState<string[]>(
-    parseHouseList(defaultValues?.houses),
+    defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses),
   );
-  const [collectionHouses, setCollectionHouses] = useState<string[]>([]);
+  const [collectionHouses, setCollectionHouses] = useState<string[]>(
+    defaultValues?.collectionHouses ?? [],
+  );
   const [selectedFreebetHouse, setSelectedFreebetHouse] = useState(
-    defaultValues?.freebetHouse ?? "",
+    defaultValues?.selectedFreebetHouse ?? defaultValues?.freebetHouse ?? "",
   );
   const [freebetValueInput, setFreebetValueInput] = useState(
     initialFreebetValueInput,
@@ -650,8 +747,12 @@ export function ProcedureModal({
   const [freebetConditionValue, setFreebetConditionValue] = useState(
     defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "",
   );
-  const [freebetCollectionOpen, setFreebetCollectionOpen] = useState(false);
-  const [freebetConversionOpen, setFreebetConversionOpen] = useState(false);
+  const [freebetCollectionOpen, setFreebetCollectionOpen] = useState(
+    Boolean(defaultValues?.freebetCollectionOpen),
+  );
+  const [freebetConversionOpen, setFreebetConversionOpen] = useState(
+    Boolean(defaultValues?.freebetConversionOpen),
+  );
   const [housePickerTarget, setHousePickerTarget] =
     useState<HousePickerTarget | null>(null);
   const [freebetHousePickerOpen, setFreebetHousePickerOpen] = useState(false);
@@ -819,6 +920,66 @@ export function ProcedureModal({
       ? collectionHouses[housePickerTarget.index]
       : selectedHouses[housePickerTarget.index]
     : "";
+
+  function getProcedureSharePayload(): ProcedureShareValues {
+    const resultAmount =
+      selectedGroup === "sports"
+        ? isFreebetType
+          ? freebetResultAmount
+          : sportsResultAmount
+        : entryProfitAmount;
+    const housesText = submittedHouses || selectedHouses.filter(Boolean).join(", ");
+
+    return {
+      version: 1,
+      procedureType: selectedType,
+      operationDate,
+      game: gameValue,
+      houses: housesText,
+      entryValue: resultAmount,
+      note: noteValue,
+      freebetHouse: selectedFreebetHouse,
+      freebetValue: parseDecimalInput(freebetValueInput),
+      freebetCondition: freebetConditionValue,
+      procedureStatus,
+      selectedHouses,
+      collectionHouses,
+      selectedFreebetHouse,
+      primaryStake,
+      primaryOdd,
+      primarySide,
+      primaryLayOdd,
+      primaryCommission,
+      sportProtections: protectionKeys.map((key) =>
+        createProtectionDraft(protectionDrafts[key]),
+      ),
+      sportResultSelections,
+      collectionPrimaryStake,
+      collectionPrimaryOdd,
+      collectionPrimarySide,
+      collectionPrimaryLayOdd,
+      collectionPrimaryCommission,
+      collectionProtections: collectionProtectionKeys.map((key) =>
+        createProtectionDraft(collectionProtectionDrafts[key]),
+      ),
+      collectionResultSelections,
+      freebetCollectionOpen,
+      freebetConversionOpen,
+    };
+  }
+
+  async function handleCopyProcedure() {
+    const copied = await copyTextToClipboard(
+      buildProcedureShareUrl(getProcedureSharePayload()),
+    );
+
+    showToast({
+      title: copied
+        ? "Link do procedimento copiado."
+        : "Não foi possível copiar o link.",
+      tone: copied ? "success" : "error",
+    });
+  }
 
   function renderSportsBetFields({
     stakeName,
@@ -1184,45 +1345,71 @@ export function ProcedureModal({
         ? ""
         : String(defaultValues.freebetValue);
     const shouldSeedFreebetValue = isFreebetProcedureType(nextType);
+    const nextProtectionKeys = getInitialProtectionKeys(defaultValues, nextType);
+    const nextCollectionProtectionKeys = getInitialCollectionProtectionKeys(
+      defaultValues,
+      nextType,
+    );
 
     setSelectedGroup(nextGroup);
     setSelectedType(nextType);
     setOperationDate(defaultValues?.operationDate ?? getTodayInputValue());
-    setProtectionKeys(getInitialProtectionKeys(defaultValues, nextType));
-    setCollectionProtectionKeys(
-      isFreebetProcedureType(nextType)
-        ? getInitialProtectionKeys(defaultValues, nextType)
-        : [],
-    );
+    setGameValue(defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""));
+    setProtectionKeys(nextProtectionKeys);
+    setCollectionProtectionKeys(nextCollectionProtectionKeys);
     setProcedureStatus(defaultValues?.procedureStatus ?? "Pendente");
     setEntryProfitValue(
       defaultValues?.entryValue === undefined ? "" : String(defaultValues.entryValue),
     );
-    setPrimaryStake(shouldSeedFreebetValue ? nextFreebetValue : "");
-    setPrimaryOdd("");
-    setPrimarySide(DEFAULT_BET_SIDE);
-    setPrimaryLayOdd("");
-    setPrimaryCommission("");
-    setCollectionPrimaryStake(shouldSeedFreebetValue ? nextFreebetValue : "");
-    setCollectionPrimaryOdd("");
-    setCollectionPrimarySide(DEFAULT_BET_SIDE);
-    setCollectionPrimaryLayOdd("");
-    setCollectionPrimaryCommission("");
-    setProtectionDrafts({});
-    setCollectionProtectionDrafts({});
-    setSportResultSelections([]);
-    setCollectionResultSelections([]);
+    setPrimaryStake(
+      defaultValues?.primaryStake ??
+        (shouldSeedFreebetValue ? nextFreebetValue : ""),
+    );
+    setPrimaryOdd(defaultValues?.primaryOdd ?? "");
+    setPrimarySide(getInitialBetSide(defaultValues?.primarySide));
+    setPrimaryLayOdd(defaultValues?.primaryLayOdd ?? "");
+    setPrimaryCommission(defaultValues?.primaryCommission ?? "");
+    setCollectionPrimaryStake(
+      defaultValues?.collectionPrimaryStake ??
+        (shouldSeedFreebetValue ? nextFreebetValue : ""),
+    );
+    setCollectionPrimaryOdd(defaultValues?.collectionPrimaryOdd ?? "");
+    setCollectionPrimarySide(getInitialBetSide(defaultValues?.collectionPrimarySide));
+    setCollectionPrimaryLayOdd(defaultValues?.collectionPrimaryLayOdd ?? "");
+    setCollectionPrimaryCommission(
+      defaultValues?.collectionPrimaryCommission ?? "",
+    );
+    setProtectionDrafts(
+      createProtectionDraftRecord(
+        nextProtectionKeys,
+        defaultValues?.sportProtections,
+      ),
+    );
+    setCollectionProtectionDrafts(
+      createProtectionDraftRecord(
+        nextCollectionProtectionKeys,
+        defaultValues?.collectionProtections,
+      ),
+    );
+    setSportResultSelections(
+      getInitialResultSelections(defaultValues?.sportResultSelections),
+    );
+    setCollectionResultSelections(
+      getInitialResultSelections(defaultValues?.collectionResultSelections),
+    );
     setNoteExpanded(Boolean(defaultValues?.note));
     setNoteValue(defaultValues?.note ?? "");
-    setSelectedHouses(parseHouseList(defaultValues?.houses));
-    setCollectionHouses([]);
-    setSelectedFreebetHouse(defaultValues?.freebetHouse ?? "");
+    setSelectedHouses(defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses));
+    setCollectionHouses(defaultValues?.collectionHouses ?? []);
+    setSelectedFreebetHouse(
+      defaultValues?.selectedFreebetHouse ?? defaultValues?.freebetHouse ?? "",
+    );
     setFreebetValueInput(nextFreebetValue);
     setFreebetConditionValue(
       defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "",
     );
-    setFreebetCollectionOpen(false);
-    setFreebetConversionOpen(false);
+    setFreebetCollectionOpen(Boolean(defaultValues?.freebetCollectionOpen));
+    setFreebetConversionOpen(Boolean(defaultValues?.freebetConversionOpen));
     setHousePickerTarget(null);
     setFreebetHousePickerOpen(false);
   }
@@ -1383,10 +1570,11 @@ export function ProcedureModal({
                     <span className="font-medium text-white">Jogo</span>
                     <input
                       className="lz-input w-full rounded-2xl px-3 py-3"
-                      defaultValue={defaultValues?.game ?? ""}
                       name="game"
+                      onChange={(event) => setGameValue(event.target.value)}
                       placeholder="Ex.: Barcelona x Real Madrid"
                       type="text"
+                      value={gameValue}
                     />
                   </label>
                 ) : null}
@@ -2043,14 +2231,15 @@ export function ProcedureModal({
                       </span>
                       <input
                         className="lz-input w-full rounded-2xl px-3 py-3"
-                        defaultValue={defaultValues?.game ?? ""}
                         name="game"
+                        onChange={(event) => setGameValue(event.target.value)}
                         placeholder={
                           selectedGroup === "expenses"
                             ? "Ex.: depósito, taxa, compra"
                             : "Ex.: missão semanal, giros, método"
                         }
                         type="text"
+                        value={gameValue}
                       />
                     </label>
                   </div>
@@ -2077,6 +2266,15 @@ export function ProcedureModal({
               )}
 
               <div className="flex items-center justify-end gap-3">
+                <button
+                  aria-label="Copiar link do procedimento"
+                  className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+                  onClick={handleCopyProcedure}
+                  title="Copiar link"
+                  type="button"
+                >
+                  <CopyIcon />
+                </button>
                 <button
                   className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
                   onClick={() => setOpen(false)}

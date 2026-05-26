@@ -19,6 +19,10 @@ import { createPortal } from "react-dom";
 
 import { DatePickerField } from "../_components/date-picker-field";
 import { ProcedureModal } from "../_components/procedure-modal";
+import {
+  decodeProcedureSharePayload,
+  PROCEDURE_SHARE_PARAM,
+} from "../_components/procedure-share";
 import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
 import {
   ProcedureRowActions,
@@ -178,10 +182,17 @@ export function ProceduresWorkspace({
   const selectedStatuses = filters.statuses;
   const dateFrom = filters.dateFrom;
   const dateTo = filters.dateTo;
+  const sharedProcedureParam = searchParams.get(PROCEDURE_SHARE_PARAM) ?? "";
+  const sharedProcedureValues = sharedProcedureParam
+    ? decodeProcedureSharePayload(sharedProcedureParam)
+    : null;
   const visibleBookmakers = bookmakers.filter((bookmaker) =>
     bookmaker.toLowerCase().includes(normalizedHouseSearch),
   );
   const procedureRows = procedures;
+  const [sharedModalOpen, setSharedModalOpen] = useState(
+    Boolean(sharedProcedureValues),
+  );
 
   const replaceWithParams = useCallback(
     (params: URLSearchParams) => {
@@ -362,6 +373,27 @@ export function ProceduresWorkspace({
 
   return (
     <div className="space-y-5">
+      {sharedProcedureValues ? (
+        <ProcedureModal
+          bookmakers={bookmakers}
+          defaultValues={sharedProcedureValues}
+          hideTrigger
+          onOpenChange={(nextOpen) => {
+            setSharedModalOpen(nextOpen);
+
+            if (!nextOpen) {
+              updateParams((params) => {
+                params.delete(PROCEDURE_SHARE_PARAM);
+              });
+            }
+          }}
+          open={sharedModalOpen}
+          returnTo="/procedimentos"
+          submitLabel="Criar procedimento"
+          title="Novo procedimento"
+        />
+      ) : null}
+
       <div className="lz-panel flex flex-col gap-3 rounded-[28px] p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <input
