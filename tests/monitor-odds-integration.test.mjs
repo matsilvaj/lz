@@ -26,6 +26,10 @@ const oddsUi = readFileSync(
   new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
   "utf8",
 );
+const globalsCss = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("monitor odds repository reads only public monitor views", () => {
   const forbiddenTables = [
@@ -163,7 +167,7 @@ test("monitor odds snapshots cache is scoped by odds version", () => {
 
 test("monitor odds UI renders events before refreshing odds", () => {
   const renderIndex = oddsUi.indexOf(
-    "setState({\n          events,\n          loading: false,\n          error: null,\n        });",
+    "refreshingOdds: Boolean(events.length && nextOddsVersion)",
   );
   const oddsRefreshIndex = oddsUi.indexOf(
     "const result = await fetchOddsForEvents(events, nextOddsVersion",
@@ -173,4 +177,25 @@ test("monitor odds UI renders events before refreshing odds", () => {
   assert.notEqual(renderIndex, -1);
   assert.notEqual(oddsRefreshIndex, -1);
   assert.ok(renderIndex < oddsRefreshIndex);
+});
+
+test("monitor odds UI keeps remembered odds while a refresh is pending", () => {
+  assert.match(oddsUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(oddsUi, /rememberOddsSnapshots/);
+  assert.match(oddsUi, /preserveExistingOddsOnEmptySnapshot: true/);
+  assert.doesNotMatch(oddsUi, /Atualizando odds/);
+});
+
+test("monitor odds detail shows the event odds update timestamp", () => {
+  assert.match(oddsUi, /formatLastOddsUpdate/);
+  assert.match(oddsUi, /currentEvent\.latest_odd_updated_at/);
+  assert.match(oddsUi, /Odds atualizadas às/);
+  assert.doesNotMatch(oddsUi, /Odds atualizadas em/);
+});
+
+test("monitor odds UI highlights actual odd price movement", () => {
+  assert.match(oddsUi, /OddPricePulse/);
+  assert.match(oddsUi, /price > previousPrice/);
+  assert.match(globalsCss, /odds-price-move-up/);
+  assert.match(globalsCss, /odds-price-move-down/);
 });

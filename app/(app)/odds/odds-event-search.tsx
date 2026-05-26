@@ -80,6 +80,7 @@ type OddsEvent = {
 type SearchState = {
   events: OddsEvent[];
   loading: boolean;
+  refreshingOdds: boolean;
   error: string | null;
 };
 
@@ -166,6 +167,7 @@ const statusLeaderKey = "lz-monitor-odds-status-leader";
 const statusLeaderTtlMs = 12_000;
 const statusPollIntervalMs = 4_000;
 const unversionedFixturesRefreshMs = 60_000;
+const oddsSnapshotMemoryLimit = 300;
 const leagueCountryNames: Record<string, string> = {
   albania: "Albânia",
   algeria: "Argélia",
@@ -369,6 +371,10 @@ const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
+const lastOddsUpdateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeStyle: "short",
+});
+
 function formatDate(value: string | null) {
   if (!value) return "Sem data";
 
@@ -385,6 +391,15 @@ function formatTime(value: string | null) {
   if (Number.isNaN(date.getTime())) return "Sem horário";
 
   return timeFormatter.format(date);
+}
+
+function formatLastOddsUpdate(value: string | null) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return lastOddsUpdateFormatter.format(date);
 }
 
 function normalizeLabelKey(value: string) {
@@ -583,13 +598,94 @@ function createStatusTabId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function mergeOddsSnapshots(events: OddsEvent[], snapshots: OddsSnapshot[]) {
+const oddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
+
+function getSnapshotFromEvent(event: OddsEvent): OddsSnapshot | null {
+  if (!event.odds.length) {
+    return null;
+  }
+
+  return {
+    fixture_id: event.fixture_id,
+    latest_odd_updated_at: event.latest_odd_updated_at,
+    odds: event.odds.map((odd) => ({
+      bookmaker_event_url: odd.bookmaker_event_url,
+      bookmaker_name: odd.bookmaker_name,
+      bookmaker_slug: odd.bookmaker_slug,
+      confidence_score: odd.confidence_score,
+      market_code: odd.market_code,
+      market_name: odd.market_name,
+      odd_updated_at: odd.odd_updated_at,
+      pa_category: odd.pa_category,
+      price: odd.price,
+      selection: odd.selection,
+    })),
+  };
+}
+
+function rememberOddsSnapshots(snapshots: OddsSnapshot[]) {
+  for (const snapshot of snapshots) {
+    if (!snapshot.fixture_id || !snapshot.odds.length) {
+      continue;
+    }
+
+    oddsSnapshotsByFixtureId.delete(snapshot.fixture_id);
+    oddsSnapshotsByFixtureId.set(snapshot.fixture_id, snapshot);
+  }
+
+  while (oddsSnapshotsByFixtureId.size > oddsSnapshotMemoryLimit) {
+    const oldestFixtureId = oddsSnapshotsByFixtureId.keys().next().value;
+
+    if (!oldestFixtureId) {
+      return;
+    }
+
+    oddsSnapshotsByFixtureId.delete(oldestFixtureId);
+  }
+}
+
+function rememberEventOdds(events: OddsEvent[]) {
+  const snapshots = events
+    .map(getSnapshotFromEvent)
+    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
+
+  rememberOddsSnapshots(snapshots);
+}
+
+function hydrateEventsWithRememberedOdds(events: OddsEvent[]) {
+  const snapshots = events
+    .map((event) => oddsSnapshotsByFixtureId.get(event.fixture_id))
+    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
+
+  if (!snapshots.length) {
+    return events;
+  }
+
+  return mergeOddsSnapshots(events, snapshots, {
+    preserveExistingOddsOnEmptySnapshot: true,
+  });
+}
+
+function mergeOddsSnapshots(
+  events: OddsEvent[],
+  snapshots: OddsSnapshot[],
+  options: { preserveExistingOddsOnEmptySnapshot?: boolean } = {},
+) {
   const snapshotsByFixtureId = new Map(
     snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
   );
 
   return events.map((event) => {
     const snapshot = snapshotsByFixtureId.get(event.fixture_id);
+
+    if (
+      options.preserveExistingOddsOnEmptySnapshot &&
+      event.odds.length &&
+      (!snapshot || !snapshot.odds.length)
+    ) {
+      return event;
+    }
+
     const odds = (snapshot?.odds ?? [])
       .map((odd) => ({
         fixture_id: event.fixture_id,
@@ -673,8 +769,13 @@ async function fetchOddsForEvents(
     };
   }
 
+  const snapshots = payload.snapshots ?? [];
+  rememberOddsSnapshots(snapshots);
+
   return {
-    events: mergeOddsSnapshots(events, payload.snapshots ?? []),
+    events: mergeOddsSnapshots(events, snapshots, {
+      preserveExistingOddsOnEmptySnapshot: true,
+    }),
     oddsVersion: payload.odds_version ?? oddsVersion,
   };
 }
@@ -960,14 +1061,76 @@ function getRowEventUrl(row: OddsTableRow) {
     .find((eventUrl): eventUrl is string => Boolean(eventUrl)) ?? null;
 }
 
-function OddsSummaryRow({ event }: { event: OddsEvent }) {
+function OddPricePulse({
+  children,
+  className,
+  price,
+}: {
+  children: ReactNode;
+  className: string;
+  price: number | undefined;
+}) {
+  const elementRef = useRef<HTMLSpanElement | null>(null);
+  const previousPriceRef = useRef(price);
+
+  useEffect(() => {
+    const previousPrice = previousPriceRef.current;
+    previousPriceRef.current = price;
+
+    if (
+      price === undefined ||
+      previousPrice === undefined ||
+      price === previousPrice
+    ) {
+      return;
+    }
+
+    const element = elementRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const movementClass =
+      price > previousPrice ? "odds-price-move-up" : "odds-price-move-down";
+
+    element.classList.remove("odds-price-move-up", "odds-price-move-down");
+    void element.offsetWidth;
+    element.classList.add(movementClass);
+
+    const timeoutId = window.setTimeout(() => {
+      element.classList.remove(movementClass);
+    }, 1400);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [price]);
+
+  return (
+    <span className={className} ref={elementRef}>
+      {children}
+    </span>
+  );
+}
+
+function OddsSummaryRow({
+  event,
+  oddsLoading = false,
+}: {
+  event: OddsEvent;
+  oddsLoading?: boolean;
+}) {
   const bestOdds = getBest1x2Odds(event);
   const hasAnyOdd = bestOdds.some(({ odd }) => odd);
+  const showEmptyLabel = !hasAnyOdd && !oddsLoading;
 
   return (
     <span className="w-full max-w-[360px] rounded-[18px] border border-white/8 bg-white/[0.025] p-3">
-      {!hasAnyOdd ? (
-        <span className="mb-2 block text-xs text-[var(--text-muted)]">Sem odds</span>
+      {showEmptyLabel ? (
+        <span className="mb-2 block text-xs text-[var(--text-muted)]">
+          Sem odds
+        </span>
       ) : null}
 
       <span className="grid grid-cols-3 gap-2">
@@ -976,9 +1139,10 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
           const categoryLabel = summaryCategoryLabel(odd?.pa_category);
 
           return (
-            <span
+            <OddPricePulse
               className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border border-transparent bg-white/[0.035] px-2 py-2 text-center"
               key={`best-${selection}`}
+              price={odd?.price}
             >
               <span className="text-base font-semibold text-white">
                 {formatOdd(odd?.price)}
@@ -996,10 +1160,10 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
                     {categoryLabel ? ` ${categoryLabel}` : ""}
                   </>
                 ) : (
-                  "Sem odd"
+                  oddsLoading ? "" : "Sem odd"
                 )}
               </span>
-            </span>
+            </OddPricePulse>
           );
         })}
       </span>
@@ -1009,9 +1173,11 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
 
 function EventCard({
   event,
+  oddsLoading = false,
   showLeague = true,
 }: {
   event: OddsEvent;
+  oddsLoading?: boolean;
   showLeague?: boolean;
 }) {
   return (
@@ -1045,7 +1211,7 @@ function EventCard({
         </div>
 
         <div className="flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow event={event} />
+          <OddsSummaryRow event={event} oddsLoading={oddsLoading} />
         </div>
       </div>
     </article>
@@ -1190,8 +1356,10 @@ function LeagueIcon({
 
 function LeagueEventsSection({
   group,
+  oddsLoading = false,
 }: {
   group: LeagueGroup;
+  oddsLoading?: boolean;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -1228,6 +1396,7 @@ function LeagueEventsSection({
           <EventCard
             event={event}
             key={event.fixture_id}
+            oddsLoading={oddsLoading}
             showLeague={false}
           />
         ))}
@@ -1327,14 +1496,38 @@ function SortHeaderButton({
   );
 }
 
+function OddsTableLoadingRows() {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, rowIndex) => (
+        <div
+          aria-hidden="true"
+          className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
+          key={`odds-loading-row-${rowIndex}`}
+        >
+          <span className="mx-2 h-4 rounded-full bg-white/8" />
+          {selections.map((selection) => (
+            <span
+              className={`${oddsBoxClass} animate-pulse border border-transparent bg-white/[0.04]`}
+              key={`odds-loading-row-${rowIndex}-${selection}`}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function OddsTable({
   category,
   event,
+  oddsLoading = false,
   sort,
   onSortChange,
 }: {
   category: PaCategory;
   event: OddsEvent;
+  oddsLoading?: boolean;
   sort: OddsSortState | null;
   onSortChange: (category: PaCategory, selection: Selection) => void;
 }) {
@@ -1392,21 +1585,24 @@ function OddsTable({
                   const odd = row.odds[selection];
 
                   return (
-                    <span
+                    <OddPricePulse
                       className={`${oddsBoxClass} text-[13px] font-semibold text-white ${
                         odd?.price === highestPrices[selection]
                           ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
                           : "border border-transparent bg-white/[0.04]"
                       }`}
                       key={`${row.key}-${selection}`}
+                      price={odd?.price}
                     >
                       {formatOdd(odd?.price)}
-                    </span>
+                    </OddPricePulse>
                   );
                 })}
               </div>
             );
           })
+        ) : oddsLoading ? (
+          <OddsTableLoadingRows />
         ) : (
           <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-[var(--text-muted)]">
             Sem odds 1X2.
@@ -1430,18 +1626,49 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
     COM_PA: null,
     SEM_PA: null,
   });
+  const [refreshingOdds, setRefreshingOdds] = useState(false);
   const currentEventRef = useRef(event);
   const currentEventFixtureIdRef = useRef(event.fixture_id);
   const latestOddsVersionRef = useRef<string | null>(event.latest_odd_updated_at);
+  const lastOddsUpdateLabel = formatLastOddsUpdate(
+    currentEvent.latest_odd_updated_at,
+  );
 
   useEffect(() => {
     currentEventRef.current = currentEvent;
+    rememberEventOdds([currentEvent]);
 
     if (currentEvent.fixture_id !== currentEventFixtureIdRef.current) {
       currentEventFixtureIdRef.current = currentEvent.fixture_id;
       latestOddsVersionRef.current = currentEvent.latest_odd_updated_at;
     }
   }, [currentEvent]);
+
+  useEffect(() => {
+    let active = true;
+    const [rememberedEvent] = hydrateEventsWithRememberedOdds([event]);
+
+    if (
+      rememberedEvent &&
+      rememberedEvent.odds.length > event.odds.length
+    ) {
+      currentEventRef.current = rememberedEvent;
+      window.setTimeout(() => {
+        if (!active) {
+          return;
+        }
+
+        setCurrentEvent({
+          event: rememberedEvent,
+          fixtureId: rememberedEvent.fixture_id,
+        });
+      }, 0);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [event]);
 
   const handleStatusUpdate = useCallback(async (payload: StatusResponse) => {
     const nextOddsVersion =
@@ -1451,9 +1678,12 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
       return;
     }
 
+    setRefreshingOdds(true);
+
     try {
+      const previousEvent = currentEventRef.current;
       const result = await fetchOddsForEvents(
-        [currentEventRef.current],
+        [previousEvent],
         nextOddsVersion,
       );
       const [updatedEvent] = result.events;
@@ -1466,6 +1696,13 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
         latestOddsVersionRef.current = result.oddsVersion;
       }
 
+      if (
+        updatedEvent.latest_odd_updated_at === previousEvent.latest_odd_updated_at &&
+        updatedEvent.odd_count === previousEvent.odd_count
+      ) {
+        return;
+      }
+
       currentEventRef.current = updatedEvent;
       setCurrentEvent({
         event: updatedEvent,
@@ -1473,6 +1710,8 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
       });
     } catch {
       // Detail odds refresh is best-effort; the current snapshot remains visible.
+    } finally {
+      setRefreshingOdds(false);
     }
   }, []);
   const canPollStatus = useCallback(() => Boolean(currentEventRef.current.fixture_id), []);
@@ -1506,6 +1745,11 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
             <p className="mt-2 text-sm text-[var(--text-muted)]">
               {formatTime(currentEvent.starts_at)}
             </p>
+            {lastOddsUpdateLabel ? (
+              <p className="mt-1 text-xs text-[var(--text-dim)]">
+                Odds atualizadas às {lastOddsUpdateLabel}
+              </p>
+            ) : null}
           </div>
 
           <Link
@@ -1522,12 +1766,14 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
           category="COM_PA"
           event={currentEvent}
           onSortChange={handleSortChange}
+          oddsLoading={refreshingOdds}
           sort={sorts.COM_PA}
         />
         <OddsTable
           category="SEM_PA"
           event={currentEvent}
           onSortChange={handleSortChange}
+          oddsLoading={refreshingOdds}
           sort={sorts.SEM_PA}
         />
       </div>
@@ -1541,6 +1787,7 @@ export function OddsEventSearch() {
   const [state, setState] = useState<SearchState>({
     events: [],
     loading: true,
+    refreshingOdds: false,
     error: null,
   });
   const eventsRef = useRef<OddsEvent[]>([]);
@@ -1559,7 +1806,12 @@ export function OddsEventSearch() {
 
       if (options.showLoading !== false) {
         eventsRef.current = [];
-        setState({ events: [], loading: true, error: null });
+        setState({
+          events: [],
+          loading: true,
+          refreshingOdds: false,
+          error: null,
+        });
       }
 
       try {
@@ -1589,7 +1841,7 @@ export function OddsEventSearch() {
         const nextFixturesVersion = payload.fixtures_version ?? null;
         const nextOddsVersion =
           payload.odds_version ?? payload.latest_odd_updated_at ?? null;
-        const events = payload.events ?? [];
+        const events = hydrateEventsWithRememberedOdds(payload.events ?? []);
 
         if (
           options.signal?.aborted ||
@@ -1607,6 +1859,7 @@ export function OddsEventSearch() {
         setState({
           events,
           loading: false,
+          refreshingOdds: Boolean(events.length && nextOddsVersion),
           error: null,
         });
 
@@ -1638,11 +1891,17 @@ export function OddsEventSearch() {
             events: result.events,
             error: null,
             loading: false,
+            refreshingOdds: false,
           }));
         } catch {
           if (options.signal?.aborted) {
             return;
           }
+
+          setState((current) => ({
+            ...current,
+            refreshingOdds: false,
+          }));
         }
       } catch (error) {
         if (
@@ -1656,6 +1915,7 @@ export function OddsEventSearch() {
         setState({
           events: [],
           loading: false,
+          refreshingOdds: false,
           error: error instanceof Error ? error.message : "Erro ao buscar eventos.",
         });
       }
@@ -1805,11 +2065,20 @@ export function OddsEventSearch() {
         return;
       }
 
+      setState((current) => ({
+        ...current,
+        refreshingOdds: true,
+      }));
+
       try {
         const result = await fetchOddsForEvents(currentEvents, nextOddsVersion);
         const updatedEvents = result.events;
 
         if (!isSameEventsRequest(activeRequestRef.current, activeRequest)) {
+          setState((current) => ({
+            ...current,
+            refreshingOdds: false,
+          }));
           return;
         }
 
@@ -1826,9 +2095,14 @@ export function OddsEventSearch() {
         setState((current) => ({
           ...current,
           events: updatedEvents,
+          refreshingOdds: false,
         }));
       } catch {
         // Odds refresh is best-effort; the current snapshot remains visible.
+        setState((current) => ({
+          ...current,
+          refreshingOdds: false,
+        }));
       }
     },
     [loadEvents],
@@ -1909,6 +2183,7 @@ export function OddsEventSearch() {
             <LeagueEventsSection
               group={group}
               key={group.key}
+              oddsLoading={state.refreshingOdds}
             />
           ))}
         </section>
@@ -1920,6 +2195,7 @@ export function OddsEventSearch() {
             <EventCard
               event={event}
               key={event.fixture_id}
+              oddsLoading={state.refreshingOdds}
             />
           ))}
         </section>
