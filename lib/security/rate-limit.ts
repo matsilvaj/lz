@@ -5,6 +5,7 @@ import { Redis } from "@upstash/redis";
 import { headers } from "next/headers";
 
 type RateLimitOptions = {
+  distributed?: boolean;
   identity?: string;
   key: string;
   limit: number;
@@ -98,13 +99,16 @@ function consumeMemoryRateLimit(bucketKey: string, limit: number, windowMs: numb
 }
 
 export async function consumeRateLimit({
+  distributed = true,
   identity,
   key,
   limit,
   windowMs,
 }: RateLimitOptions) {
   const resolvedIdentity = identity ?? (await getRequestIdentity());
-  const distributedLimiter = getDistributedLimiter(key, limit, windowMs);
+  const distributedLimiter = distributed
+    ? getDistributedLimiter(key, limit, windowMs)
+    : null;
 
   if (distributedLimiter) {
     try {

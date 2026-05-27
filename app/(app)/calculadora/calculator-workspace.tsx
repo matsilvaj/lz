@@ -221,6 +221,42 @@ function formatCalculatedValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed.toFixed(2) : "0.00";
 }
 
+function formatRealOddValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed.toFixed(3) : "0.000";
+}
+
+function calculateEffectiveOdd(line: CalculatorLine) {
+  const odd = toNumber(line.odd);
+
+  if (odd <= 1) {
+    return odd;
+  }
+
+  return 1 + (odd - 1) * (1 + toNumber(line.aumento_percentual) / 100);
+}
+
+function calculateRealOdd(line: CalculatorLine) {
+  const effectiveOdd = calculateEffectiveOdd(line);
+  const commissionMultiplier = 1 - toNumber(line.comissao_percentual) / 100;
+  const cashbackRate = toNumber(line.cashback_percentual) / 100;
+
+  if (line.tipo === "L") {
+    return (
+      effectiveOdd -
+      1 +
+      commissionMultiplier -
+      (effectiveOdd - 1) * cashbackRate
+    );
+  }
+
+  if (line.freebet) {
+    return (effectiveOdd - 1) * commissionMultiplier;
+  }
+
+  return 1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate;
+}
+
 function roundCurrencyValue(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -767,9 +803,10 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               : 0;
           const hasCustomConfig =
             line.freebet ||
-            toNumber(line.aumento_percentual) > 0 ||
-            toNumber(line.comissao_percentual) > 0 ||
-            toNumber(line.cashback_percentual) > 0;
+            toNumber(line.aumento_percentual) !== 0 ||
+            toNumber(line.comissao_percentual) !== 0 ||
+            toNumber(line.cashback_percentual) !== 0;
+          const realOddValue = lineResult?.math?.M ?? calculateRealOdd(line);
           const displayedStake =
             index === workspaceIndex
               ? line.stake
@@ -800,13 +837,22 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               <div className="flex flex-1 flex-col gap-4">
                 <label className="space-y-2 text-sm">
                   <span className="font-medium text-[var(--text-secondary)]">Odd</span>
-                  <input
-                    className="lz-input w-full rounded-2xl px-3 py-3 text-white"
-                    onChange={(event) => updateLine(index, { odd: event.target.value })}
-                    step="0.01"
-                    type="number"
-                    value={line.odd}
-                  />
+                  <div className="relative">
+                    <input
+                      className={`lz-input w-full rounded-2xl px-3 py-3 text-white ${
+                        hasCustomConfig ? "pr-[7.3rem]" : ""
+                      }`}
+                      onChange={(event) => updateLine(index, { odd: event.target.value })}
+                      step="0.01"
+                      type="number"
+                      value={line.odd}
+                    />
+                    {hasCustomConfig ? (
+                      <span className="pointer-events-none absolute right-2 top-1/2 inline-flex max-w-[6.7rem] -translate-y-1/2 items-center truncate rounded-xl border border-[rgba(255,119,163,0.28)] bg-[rgba(216,31,89,0.24)] px-2.5 py-1 text-[11px] font-semibold text-[#fff7fa] shadow-[0_10px_24px_rgba(216,31,89,0.14)] sm:text-xs">
+                        Real: {formatRealOddValue(realOddValue)}
+                      </span>
+                    ) : null}
+                  </div>
                 </label>
 
                 <div

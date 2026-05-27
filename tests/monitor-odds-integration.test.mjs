@@ -18,6 +18,18 @@ const statusRoute = readFileSync(
   new URL("../app/api/monitor-odds/status/route.ts", import.meta.url),
   "utf8",
 );
+const oddsRoute = readFileSync(
+  new URL("../app/api/monitor-odds/odds/route.ts", import.meta.url),
+  "utf8",
+);
+const oddsUi = readFileSync(
+  new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
+  "utf8",
+);
+const globalsCss = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("monitor odds repository reads only public monitor views", () => {
   const forbiddenTables = [
@@ -29,7 +41,10 @@ test("monitor odds repository reads only public monitor views", () => {
     "bookmaker_league_links",
   ];
 
-  assert.match(oddsRepository, /\.from\("public_odds_feed"\)/);
+  assert.match(oddsRepository, /\.from\("public_odds_fixtures"\)/);
+  assert.match(oddsRepository, /\.from\("public_odds_snapshot"\)/);
+  assert.doesNotMatch(oddsRepository, /\.from\("public_odds_feed"\)/);
+  assert.doesNotMatch(oddsRepository, /public_odds_feed_compact/);
   assert.match(oddsRepository, /\.from\("public_odds_feed_status"\)/);
 
   for (const table of forbiddenTables) {
@@ -47,17 +62,29 @@ test("monitor odds client uses server-only env names", () => {
 test("monitor odds routes are rate limited", () => {
   assert.match(eventsRoute, /consumeRateLimit/);
   assert.match(eventsRoute, /monitor-odds:events/);
+  assert.match(eventsRoute, /distributed: false/);
   assert.match(statusRoute, /consumeRateLimit/);
   assert.match(statusRoute, /monitor-odds:status/);
+  assert.match(statusRoute, /distributed: false/);
+  assert.match(oddsRoute, /consumeRateLimit/);
+  assert.match(oddsRoute, /monitor-odds:odds/);
+  assert.match(oddsRoute, /distributed: false/);
 });
 
 test("monitor odds search has bounded pagination", () => {
   assert.match(oddsRepository, /const MAX_SEARCH_PAGES = \d+;/);
   assert.match(oddsRepository, /page < MAX_SEARCH_PAGES/);
+  assert.match(oddsRepository, /events\.length >= eventLimit/);
+});
+
+test("monitor odds repository expands grouped snapshot odds safely", () => {
+  assert.match(oddsRepository, /ODDS_SNAPSHOT_COLUMNS/);
+  assert.match(oddsRepository, /Array\.isArray\(row\.odds\)/);
+  assert.match(oddsRepository, /expandOddsSnapshotRow/);
 });
 
 test("monitor odds feed exposes safe bookmaker event urls", () => {
-  assert.match(oddsRepository, /"bookmaker_event_url"/);
+  assert.match(oddsRepository, /bookmaker_event_url/);
   assert.match(oddsRepository, /cleanExternalUrl\(row\.bookmaker_event_url\)/);
   assert.match(oddsRepository, /url\.protocol === "https:"/);
 });
@@ -67,5 +94,113 @@ test("monitor odds date range listing is bounded and filtered by start time", ()
   assert.match(oddsRepository, /page < MAX_DATE_RANGE_PAGES/);
   assert.match(oddsRepository, /\.gte\("starts_at", dateRange\.from\)/);
   assert.match(oddsRepository, /\.lt\("starts_at", dateRange\.to\)/);
-  assert.match(eventsRoute, /listOddsEventsByDateRange\(from, to\)/);
+  assert.match(eventsRoute, /listOddsEventsByDateRange\(from, to, undefined, fixturesVersion\)/);
+});
+
+test("monitor odds fixtures cache does not fall back to odds updates", () => {
+  assert.match(eventsRoute, /const fixturesVersion = status\.fixtures_version;/);
+  assert.doesNotMatch(
+    eventsRoute,
+    /fixturesVersion\s*=\s*[^;]*latest_odd_updated_at/,
+  );
+  assert.doesNotMatch(
+    eventsRoute,
+    /status\.fixtures_version\s*\?\?\s*status\.latest_odd_updated_at/,
+  );
+  assert.match(oddsRepository, /UNVERSIONED_FIXTURES_VERSION/);
+  assert.match(oddsRepository, /EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS/);
+});
+
+test("monitor odds hot path does not depend on Redis", () => {
+  assert.doesNotMatch(oddsRepository, /shared-cache/);
+  assert.doesNotMatch(oddsRepository, /getMonitorOddsRedisClient/);
+  assert.doesNotMatch(oddsRepository, /readMonitorOddsCache/);
+  assert.doesNotMatch(oddsRepository, /writeMonitorOddsCache/);
+  assert.doesNotMatch(oddsRepository, /acquireMonitorOddsLock/);
+  assert.match(oddsRepository, /getCachedOddsSnapshotsByFixtureIds/);
+  assert.match(oddsRepository, /ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3/);
+  assert.match(oddsRepository, /complete: true/);
+});
+
+test("monitor odds snapshot route supports POST bodies", () => {
+  assert.match(oddsRoute, /export async function POST/);
+  assert.match(oddsRoute, /await request\.json\(\)/);
+  assert.match(oddsRoute, /buildOddsResponse\(body\.fixtureIds, body\.oddsVersion\)/);
+  assert.match(oddsRoute, /complete: snapshotsResult\.complete/);
+  assert.match(oddsRoute, /stale: !snapshotsResult\.complete/);
+});
+
+test("monitor odds UI refreshes snapshots without URL-sized fixture queries", () => {
+  assert.match(oddsUi, /fetch\("\/api\/monitor-odds\/odds"/);
+  assert.match(oddsUi, /method: "POST"/);
+  assert.match(oddsUi, /fixtureIds: events\.map/);
+  assert.match(oddsUi, /useMonitorOddsStatusFeed/);
+  assert.match(oddsUi, /function OddsEventDetails/);
+  assert.match(oddsUi, /payload\.complete !== false/);
+});
+
+test("monitor odds UI keeps retrying incomplete odds versions", () => {
+  assert.match(oddsUi, /if \(!isComplete\) \{/);
+  assert.match(oddsUi, /oddsVersion: null/);
+  assert.match(oddsUi, /if \(result\.oddsVersion\) \{/);
+  assert.doesNotMatch(
+    oddsUi,
+    /latestOddsVersionRef\.current = result\.oddsVersion \?\? nextOddsVersion/,
+  );
+  assert.doesNotMatch(
+    oddsUi,
+    /latestOddUpdatedAtRef\.current =\s*payload\.latest_odd_updated_at \?\? result\.oddsVersion \?\? nextOddsVersion/,
+  );
+});
+
+test("monitor odds snapshots cache is scoped by odds version", () => {
+  assert.match(oddsRepository, /getCachedOddsSnapshotsByFixtureIds/);
+  assert.match(
+    oddsRepository,
+    /const version = cleanCachePart\(oddsVersion \?\? "unknown"\)/,
+  );
+  assert.match(
+    oddsRepository,
+    /getCachedOddsSnapshotsByFixtureIds\(\s*safeFixtureIds,\s*version,\s*\)/,
+  );
+});
+
+test("monitor odds UI renders events before refreshing odds", () => {
+  const renderIndex = oddsUi.indexOf(
+    "refreshingOdds: Boolean(events.length && nextOddsVersion)",
+  );
+  const oddsRefreshIndex = oddsUi.indexOf(
+    "const result = await fetchOddsForEvents(events, nextOddsVersion",
+    renderIndex,
+  );
+
+  assert.notEqual(renderIndex, -1);
+  assert.notEqual(oddsRefreshIndex, -1);
+  assert.ok(renderIndex < oddsRefreshIndex);
+});
+
+test("monitor odds UI keeps remembered odds while a refresh is pending", () => {
+  assert.match(oddsUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(oddsUi, /rememberOddsSnapshots/);
+  assert.match(oddsUi, /preserveExistingOddsOnEmptySnapshot: true/);
+  assert.doesNotMatch(oddsUi, /Atualizando odds/);
+});
+
+test("monitor odds detail shows the event odds update timestamp", () => {
+  assert.match(oddsUi, /formatLastOddsUpdate/);
+  assert.match(oddsUi, /currentEvent\.latest_odd_updated_at/);
+  assert.match(oddsUi, /Odds atualizadas às/);
+  assert.doesNotMatch(oddsUi, /Odds atualizadas em/);
+});
+
+test("monitor odds UI highlights actual odd price movement", () => {
+  assert.match(oddsUi, /OddPricePulse/);
+  assert.match(oddsUi, /price > previousPrice/);
+  assert.match(oddsUi, /previousPulseIdRef/);
+  assert.match(oddsUi, /previousPulseVersionRef/);
+  assert.match(oddsUi, /pulseVersion === previousPulseVersion/);
+  assert.match(oddsUi, /oddsPulseVersion: current\.oddsPulseVersion \+ 1/);
+  assert.match(oddsUi, /pulseId={`table:\$\{row\.key\}:\$\{selection\}`}/);
+  assert.match(globalsCss, /odds-price-move-up/);
+  assert.match(globalsCss, /odds-price-move-down/);
 });

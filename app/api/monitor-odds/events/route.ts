@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const canSearch = await consumeRateLimit({
+    distributed: false,
     identity: user.id,
     key: "monitor-odds:events",
     limit: 60,
@@ -34,17 +35,19 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const from = request.nextUrl.searchParams.get("from");
   const to = request.nextUrl.searchParams.get("to");
-  const eventsPromise =
-    from && to ? listOddsEventsByDateRange(from, to) : searchOddsEvents(query);
-  const [events, status] = await Promise.all([
-    eventsPromise,
-    getOddsFeedStatus(),
-  ]);
+  const status = await getOddsFeedStatus();
+  const fixturesVersion = status.fixtures_version;
+  const events =
+    from && to
+      ? await listOddsEventsByDateRange(from, to, undefined, fixturesVersion)
+      : await searchOddsEvents(query, undefined, fixturesVersion);
 
   return Response.json(
     {
       events,
+      fixtures_version: status.fixtures_version,
       latest_odd_updated_at: status.latest_odd_updated_at,
+      odds_version: status.odds_version,
     },
     {
       headers: {

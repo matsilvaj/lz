@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   type ChangeEvent,
   type ReactNode,
@@ -9,9 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
-
-import { CloseIcon } from "../_components/ui";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -39,6 +37,26 @@ type OddsFeedItem = {
   odd_updated_at: string | null;
 };
 
+type OddsSnapshotItem = Pick<
+  OddsFeedItem,
+  | "bookmaker_slug"
+  | "bookmaker_name"
+  | "bookmaker_event_url"
+  | "market_code"
+  | "market_name"
+  | "selection"
+  | "price"
+  | "pa_category"
+  | "confidence_score"
+  | "odd_updated_at"
+>;
+
+type OddsSnapshot = {
+  fixture_id: string;
+  latest_odd_updated_at: string | null;
+  odds: OddsSnapshotItem[];
+};
+
 type OddsEvent = {
   fixture_id: string;
   api_football_fixture_id: number | null;
@@ -62,16 +80,34 @@ type OddsEvent = {
 type SearchState = {
   events: OddsEvent[];
   loading: boolean;
+  oddsPulseVersion: number;
+  refreshingOdds: boolean;
   error: string | null;
 };
 
 type EventsResponse = {
   events?: OddsEvent[];
+  fixtures_version?: string | null;
   latest_odd_updated_at?: string | null;
+  odds_version?: string | null;
+};
+
+type OddsResponse = {
+  complete?: boolean;
+  odds_version?: string | null;
+  snapshots?: OddsSnapshot[];
+  stale?: boolean;
 };
 
 type StatusResponse = {
+  fixtures_version?: string | null;
   latest_odd_updated_at?: string | null;
+  odds_version?: string | null;
+};
+
+type OddsRefreshResult = {
+  events: OddsEvent[];
+  oddsVersion: string | null;
 };
 
 type DatePreset = "today" | "tomorrow";
@@ -127,6 +163,12 @@ const oddsTableGridClass =
   "grid grid-cols-[minmax(84px,1fr)_repeat(3,minmax(54px,78px))] items-center gap-1.5 sm:grid-cols-[minmax(120px,1fr)_repeat(3,minmax(62px,90px))] sm:gap-2";
 const oddsBoxClass =
   "flex h-9 w-full min-w-0 items-center justify-center rounded-xl px-2 text-center";
+const statusChannelName = "lz-monitor-odds-status";
+const statusLeaderKey = "lz-monitor-odds-status-leader";
+const statusLeaderTtlMs = 12_000;
+const statusPollIntervalMs = 4_000;
+const unversionedFixturesRefreshMs = 60_000;
+const oddsSnapshotMemoryLimit = 300;
 const leagueCountryNames: Record<string, string> = {
   albania: "Albânia",
   algeria: "Argélia",
@@ -330,6 +372,10 @@ const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
+const lastOddsUpdateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeStyle: "short",
+});
+
 function formatDate(value: string | null) {
   if (!value) return "Sem data";
 
@@ -346,6 +392,15 @@ function formatTime(value: string | null) {
   if (Number.isNaN(date.getTime())) return "Sem horário";
 
   return timeFormatter.format(date);
+}
+
+function formatLastOddsUpdate(value: string | null) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return lastOddsUpdateFormatter.format(date);
 }
 
 function normalizeLabelKey(value: string) {
@@ -426,6 +481,10 @@ function formatLeagueLine(event: OddsEvent) {
   return country ? `${leagueName} - ${country}` : leagueName;
 }
 
+function getEventHref(event: OddsEvent) {
+  return `/odds/${encodeURIComponent(event.fixture_id)}`;
+}
+
 function getDatePresetRange(preset: DatePreset) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -473,6 +532,338 @@ function isSameEventsRequest(
   }
 
   return false;
+}
+
+function getStatusLeader() {
+  try {
+    const raw = window.localStorage.getItem(statusLeaderKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { expiresAt?: unknown; id?: unknown };
+
+    if (typeof parsed.id !== "string" || typeof parsed.expiresAt !== "number") {
+      return null;
+    }
+
+    return {
+      expiresAt: parsed.expiresAt,
+      id: parsed.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function canLeadStatusPolling(tabId: string) {
+  if (document.visibilityState === "hidden") {
+    return false;
+  }
+
+  const now = Date.now();
+  const leader = getStatusLeader();
+
+  if (leader && leader.id !== tabId && leader.expiresAt > now) {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(
+      statusLeaderKey,
+      JSON.stringify({ expiresAt: now + statusLeaderTtlMs, id: tabId }),
+    );
+  } catch {
+    return true;
+  }
+
+  return true;
+}
+
+function releaseStatusLeader(tabId: string) {
+  const leader = getStatusLeader();
+
+  if (leader?.id !== tabId) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(statusLeaderKey);
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function createStatusTabId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const oddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
+
+function getSnapshotFromEvent(event: OddsEvent): OddsSnapshot | null {
+  if (!event.odds.length) {
+    return null;
+  }
+
+  return {
+    fixture_id: event.fixture_id,
+    latest_odd_updated_at: event.latest_odd_updated_at,
+    odds: event.odds.map((odd) => ({
+      bookmaker_event_url: odd.bookmaker_event_url,
+      bookmaker_name: odd.bookmaker_name,
+      bookmaker_slug: odd.bookmaker_slug,
+      confidence_score: odd.confidence_score,
+      market_code: odd.market_code,
+      market_name: odd.market_name,
+      odd_updated_at: odd.odd_updated_at,
+      pa_category: odd.pa_category,
+      price: odd.price,
+      selection: odd.selection,
+    })),
+  };
+}
+
+function rememberOddsSnapshots(snapshots: OddsSnapshot[]) {
+  for (const snapshot of snapshots) {
+    if (!snapshot.fixture_id || !snapshot.odds.length) {
+      continue;
+    }
+
+    oddsSnapshotsByFixtureId.delete(snapshot.fixture_id);
+    oddsSnapshotsByFixtureId.set(snapshot.fixture_id, snapshot);
+  }
+
+  while (oddsSnapshotsByFixtureId.size > oddsSnapshotMemoryLimit) {
+    const oldestFixtureId = oddsSnapshotsByFixtureId.keys().next().value;
+
+    if (!oldestFixtureId) {
+      return;
+    }
+
+    oddsSnapshotsByFixtureId.delete(oldestFixtureId);
+  }
+}
+
+function rememberEventOdds(events: OddsEvent[]) {
+  const snapshots = events
+    .map(getSnapshotFromEvent)
+    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
+
+  rememberOddsSnapshots(snapshots);
+}
+
+function hydrateEventsWithRememberedOdds(events: OddsEvent[]) {
+  const snapshots = events
+    .map((event) => oddsSnapshotsByFixtureId.get(event.fixture_id))
+    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
+
+  if (!snapshots.length) {
+    return events;
+  }
+
+  return mergeOddsSnapshots(events, snapshots, {
+    preserveExistingOddsOnEmptySnapshot: true,
+  });
+}
+
+function mergeOddsSnapshots(
+  events: OddsEvent[],
+  snapshots: OddsSnapshot[],
+  options: { preserveExistingOddsOnEmptySnapshot?: boolean } = {},
+) {
+  const snapshotsByFixtureId = new Map(
+    snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
+  );
+
+  return events.map((event) => {
+    const snapshot = snapshotsByFixtureId.get(event.fixture_id);
+
+    if (
+      options.preserveExistingOddsOnEmptySnapshot &&
+      event.odds.length &&
+      (!snapshot || !snapshot.odds.length)
+    ) {
+      return event;
+    }
+
+    const odds = (snapshot?.odds ?? [])
+      .map((odd) => ({
+        fixture_id: event.fixture_id,
+        api_football_fixture_id: event.api_football_fixture_id,
+        fixture_name: event.fixture_name,
+        home_team: event.home_team,
+        away_team: event.away_team,
+        starts_at: event.starts_at,
+        status: event.status,
+        round: event.round,
+        league_name: event.league_name,
+        league_slug: event.league_slug,
+        league_country: event.league_country,
+        league_logo_url: event.league_logo_url,
+        league_country_flag_url: event.league_country_flag_url,
+        ...odd,
+      }))
+      .sort((left, right) => {
+        const marketOrder = left.market_code.localeCompare(right.market_code);
+        if (marketOrder !== 0) return marketOrder;
+
+        const categoryOrder = left.pa_category.localeCompare(right.pa_category);
+        if (categoryOrder !== 0) return categoryOrder;
+
+        const bookmakerOrder = left.bookmaker_name.localeCompare(right.bookmaker_name);
+        if (bookmakerOrder !== 0) return bookmakerOrder;
+
+        return left.selection.localeCompare(right.selection);
+      });
+
+    return {
+      ...event,
+      bookmaker_count: new Set(odds.map((odd) => odd.bookmaker_slug)).size,
+      latest_odd_updated_at: snapshot?.latest_odd_updated_at ?? null,
+      odd_count: odds.length,
+      odds,
+    };
+  });
+}
+
+async function fetchOddsForEvents(
+  events: OddsEvent[],
+  oddsVersion: string | null,
+  options: { signal?: AbortSignal } = {},
+): Promise<OddsRefreshResult> {
+  if (!events.length) {
+    return {
+      events,
+      oddsVersion,
+    };
+  }
+
+  const response = await fetch("/api/monitor-odds/odds", {
+    body: JSON.stringify({
+      fixtureIds: events.map((event) => event.fixture_id),
+      oddsVersion,
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal: options.signal,
+  });
+
+  if (response.status === 429) {
+    throw new Error("Muitas atualizacoes em pouco tempo. Aguarde alguns segundos.");
+  }
+
+  if (!response.ok) {
+    throw new Error("Nao foi possivel atualizar as odds.");
+  }
+
+  const payload = (await response.json()) as OddsResponse;
+  const isComplete = payload.complete !== false && payload.stale !== true;
+
+  if (!isComplete) {
+    return {
+      events,
+      oddsVersion: null,
+    };
+  }
+
+  const snapshots = payload.snapshots ?? [];
+  rememberOddsSnapshots(snapshots);
+
+  return {
+    events: mergeOddsSnapshots(events, snapshots, {
+      preserveExistingOddsOnEmptySnapshot: true,
+    }),
+    oddsVersion: payload.odds_version ?? oddsVersion,
+  };
+}
+
+function useMonitorOddsStatusFeed(
+  canPollStatus: () => boolean,
+  onStatusUpdate: (payload: StatusResponse) => Promise<void> | void,
+) {
+  const statusChannelRef = useRef<BroadcastChannel | null>(null);
+  const tabIdRef = useRef<string>("");
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    const channel = new BroadcastChannel(statusChannelName);
+    statusChannelRef.current = channel;
+
+    function handleMessage(event: MessageEvent) {
+      const data = event.data as {
+        status?: StatusResponse;
+        type?: string;
+      };
+
+      if (data?.type === "monitor-odds-status" && data.status) {
+        void onStatusUpdate(data.status);
+      }
+    }
+
+    channel.addEventListener("message", handleMessage);
+
+    return () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.close();
+      statusChannelRef.current = null;
+    };
+  }, [onStatusUpdate]);
+
+  useEffect(() => {
+    let active = true;
+    tabIdRef.current = tabIdRef.current || createStatusTabId();
+
+    async function checkFeedStatus() {
+      if (
+        !active ||
+        !canPollStatus() ||
+        !canLeadStatusPolling(tabIdRef.current)
+      ) {
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/monitor-odds/status", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as StatusResponse;
+
+        if (!active) {
+          return;
+        }
+
+        statusChannelRef.current?.postMessage({
+          status: payload,
+          type: "monitor-odds-status",
+        });
+        await onStatusUpdate(payload);
+      } catch {
+        // Status polling is only a freshness hint; the search remains usable.
+      }
+    }
+
+    const timeoutId = window.setTimeout(checkFeedStatus, 750);
+    const intervalId = window.setInterval(checkFeedStatus, statusPollIntervalMs);
+
+    return () => {
+      active = false;
+      releaseStatusLeader(tabIdRef.current);
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [canPollStatus, onStatusUpdate]);
 }
 
 function groupEventsByLeague(events: OddsEvent[]) {
@@ -671,14 +1062,95 @@ function getRowEventUrl(row: OddsTableRow) {
     .find((eventUrl): eventUrl is string => Boolean(eventUrl)) ?? null;
 }
 
-function OddsSummaryRow({ event }: { event: OddsEvent }) {
+function OddPricePulse({
+  children,
+  className,
+  price,
+  pulseId,
+  pulseVersion,
+}: {
+  children: ReactNode;
+  className: string;
+  price: number | undefined;
+  pulseId: string;
+  pulseVersion: number;
+}) {
+  const elementRef = useRef<HTMLSpanElement | null>(null);
+  const previousPriceRef = useRef(price);
+  const previousPulseIdRef = useRef(pulseId);
+  const previousPulseVersionRef = useRef(pulseVersion);
+
+  useEffect(() => {
+    const element = elementRef.current;
+
+    if (previousPulseIdRef.current !== pulseId) {
+      previousPulseIdRef.current = pulseId;
+      previousPriceRef.current = price;
+      previousPulseVersionRef.current = pulseVersion;
+      element?.classList.remove("odds-price-move-up", "odds-price-move-down");
+      return;
+    }
+
+    const previousPrice = previousPriceRef.current;
+    const previousPulseVersion = previousPulseVersionRef.current;
+    previousPriceRef.current = price;
+    previousPulseVersionRef.current = pulseVersion;
+
+    if (
+      pulseVersion === previousPulseVersion ||
+      price === undefined ||
+      previousPrice === undefined ||
+      price === previousPrice
+    ) {
+      return;
+    }
+
+    if (!element) {
+      return;
+    }
+
+    const movementClass =
+      price > previousPrice ? "odds-price-move-up" : "odds-price-move-down";
+
+    element.classList.remove("odds-price-move-up", "odds-price-move-down");
+    void element.offsetWidth;
+    element.classList.add(movementClass);
+
+    const timeoutId = window.setTimeout(() => {
+      element.classList.remove(movementClass);
+    }, 1400);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [price, pulseId, pulseVersion]);
+
+  return (
+    <span className={className} ref={elementRef}>
+      {children}
+    </span>
+  );
+}
+
+function OddsSummaryRow({
+  event,
+  oddsLoading = false,
+  pulseVersion,
+}: {
+  event: OddsEvent;
+  oddsLoading?: boolean;
+  pulseVersion: number;
+}) {
   const bestOdds = getBest1x2Odds(event);
   const hasAnyOdd = bestOdds.some(({ odd }) => odd);
+  const showEmptyLabel = !hasAnyOdd && !oddsLoading;
 
   return (
     <span className="w-full max-w-[360px] rounded-[18px] border border-white/8 bg-white/[0.025] p-3">
-      {!hasAnyOdd ? (
-        <span className="mb-2 block text-xs text-[var(--text-muted)]">Sem odds</span>
+      {showEmptyLabel ? (
+        <span className="mb-2 block text-xs text-[var(--text-muted)]">
+          Sem odds
+        </span>
       ) : null}
 
       <span className="grid grid-cols-3 gap-2">
@@ -687,9 +1159,12 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
           const categoryLabel = summaryCategoryLabel(odd?.pa_category);
 
           return (
-            <span
+            <OddPricePulse
               className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border border-transparent bg-white/[0.035] px-2 py-2 text-center"
               key={`best-${selection}`}
+              price={odd?.price}
+              pulseId={`summary:${event.fixture_id}:${selection}`}
+              pulseVersion={pulseVersion}
             >
               <span className="text-base font-semibold text-white">
                 {formatOdd(odd?.price)}
@@ -707,10 +1182,10 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
                     {categoryLabel ? ` ${categoryLabel}` : ""}
                   </>
                 ) : (
-                  "Sem odd"
+                  oddsLoading ? "" : "Sem odd"
                 )}
               </span>
-            </span>
+            </OddPricePulse>
           );
         })}
       </span>
@@ -720,22 +1195,23 @@ function OddsSummaryRow({ event }: { event: OddsEvent }) {
 
 function EventCard({
   event,
-  onOpen,
+  oddsLoading = false,
+  pulseVersion,
   showLeague = true,
 }: {
   event: OddsEvent;
-  onOpen: (event: OddsEvent) => void;
+  oddsLoading?: boolean;
+  pulseVersion: number;
   showLeague?: boolean;
 }) {
   return (
     <article
       className="group relative w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] md:p-5"
     >
-      <button
+      <Link
         aria-label={`Abrir odds de ${event.home_team} x ${event.away_team}`}
         className="absolute inset-0 z-0 rounded-[24px] border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        onClick={() => onOpen(event)}
-        type="button"
+        href={getEventHref(event)}
       />
       <div className="pointer-events-none relative z-10 flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
         <div className="min-w-0">
@@ -759,7 +1235,11 @@ function EventCard({
         </div>
 
         <div className="flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow event={event} />
+          <OddsSummaryRow
+            event={event}
+            oddsLoading={oddsLoading}
+            pulseVersion={pulseVersion}
+          />
         </div>
       </div>
     </article>
@@ -904,10 +1384,12 @@ function LeagueIcon({
 
 function LeagueEventsSection({
   group,
-  onOpen,
+  oddsLoading = false,
+  pulseVersion,
 }: {
   group: LeagueGroup;
-  onOpen: (event: OddsEvent) => void;
+  oddsLoading?: boolean;
+  pulseVersion: number;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -944,7 +1426,8 @@ function LeagueEventsSection({
           <EventCard
             event={event}
             key={event.fixture_id}
-            onOpen={onOpen}
+            oddsLoading={oddsLoading}
+            pulseVersion={pulseVersion}
             showLeague={false}
           />
         ))}
@@ -1044,14 +1527,40 @@ function SortHeaderButton({
   );
 }
 
+function OddsTableLoadingRows() {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, rowIndex) => (
+        <div
+          aria-hidden="true"
+          className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
+          key={`odds-loading-row-${rowIndex}`}
+        >
+          <span className="mx-2 h-4 rounded-full bg-white/8" />
+          {selections.map((selection) => (
+            <span
+              className={`${oddsBoxClass} animate-pulse border border-transparent bg-white/[0.04]`}
+              key={`odds-loading-row-${rowIndex}-${selection}`}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function OddsTable({
   category,
   event,
+  oddsLoading = false,
+  pulseVersion,
   sort,
   onSortChange,
 }: {
   category: PaCategory;
   event: OddsEvent;
+  oddsLoading?: boolean;
+  pulseVersion: number;
   sort: OddsSortState | null;
   onSortChange: (category: PaCategory, selection: Selection) => void;
 }) {
@@ -1109,21 +1618,26 @@ function OddsTable({
                   const odd = row.odds[selection];
 
                   return (
-                    <span
+                    <OddPricePulse
                       className={`${oddsBoxClass} text-[13px] font-semibold text-white ${
                         odd?.price === highestPrices[selection]
                           ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
                           : "border border-transparent bg-white/[0.04]"
                       }`}
                       key={`${row.key}-${selection}`}
+                      price={odd?.price}
+                      pulseId={`table:${row.key}:${selection}`}
+                      pulseVersion={pulseVersion}
                     >
                       {formatOdd(odd?.price)}
-                    </span>
+                    </OddPricePulse>
                   );
                 })}
               </div>
             );
           })
+        ) : oddsLoading ? (
+          <OddsTableLoadingRows />
         ) : (
           <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-[var(--text-muted)]">
             Sem odds 1X2.
@@ -1134,41 +1648,112 @@ function OddsTable({
   );
 }
 
-function EventOddsPanel({
-  event,
-  onClose,
-}: {
-  event: OddsEvent | null;
-  onClose: () => void;
-}) {
+export function OddsEventDetails({ event }: { event: OddsEvent }) {
+  const [currentEventState, setCurrentEvent] = useState(() => ({
+    event,
+    fixtureId: event.fixture_id,
+  }));
+  const currentEvent =
+    currentEventState.fixtureId === event.fixture_id
+      ? currentEventState.event
+      : event;
   const [sorts, setSorts] = useState<Record<PaCategory, OddsSortState | null>>({
     COM_PA: null,
     SEM_PA: null,
   });
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const [oddsPulseVersion, setOddsPulseVersion] = useState(0);
+  const [refreshingOdds, setRefreshingOdds] = useState(false);
+  const currentEventRef = useRef(event);
+  const currentEventFixtureIdRef = useRef(event.fixture_id);
+  const latestOddsVersionRef = useRef<string | null>(event.latest_odd_updated_at);
+  const lastOddsUpdateLabel = formatLastOddsUpdate(
+    currentEvent.latest_odd_updated_at,
+  );
 
   useEffect(() => {
-    if (!event) return;
-    const previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    currentEventRef.current = currentEvent;
+    rememberEventOdds([currentEvent]);
 
-    function handleKeyDown(keyboardEvent: KeyboardEvent) {
-      if (keyboardEvent.key === "Escape") {
-        onClose();
-      }
+    if (currentEvent.fixture_id !== currentEventFixtureIdRef.current) {
+      currentEventFixtureIdRef.current = currentEvent.fixture_id;
+      latestOddsVersionRef.current = currentEvent.latest_odd_updated_at;
+    }
+  }, [currentEvent]);
+
+  useEffect(() => {
+    let active = true;
+    const [rememberedEvent] = hydrateEventsWithRememberedOdds([event]);
+
+    if (
+      rememberedEvent &&
+      rememberedEvent.odds.length > event.odds.length
+    ) {
+      currentEventRef.current = rememberedEvent;
+      window.setTimeout(() => {
+        if (!active) {
+          return;
+        }
+
+        setCurrentEvent({
+          event: rememberedEvent,
+          fixtureId: rememberedEvent.fixture_id,
+        });
+      }, 0);
     }
 
-    document.addEventListener("keydown", handleKeyDown);
-
     return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
+      active = false;
     };
-  }, [event, onClose]);
+  }, [event]);
 
-  if (!event || typeof document === "undefined") {
-    return null;
-  }
+  const handleStatusUpdate = useCallback(async (payload: StatusResponse) => {
+    const nextOddsVersion =
+      payload.odds_version ?? payload.latest_odd_updated_at ?? null;
+
+    if (!nextOddsVersion || nextOddsVersion === latestOddsVersionRef.current) {
+      return;
+    }
+
+    setRefreshingOdds(true);
+
+    try {
+      const previousEvent = currentEventRef.current;
+      const result = await fetchOddsForEvents(
+        [previousEvent],
+        nextOddsVersion,
+      );
+      const [updatedEvent] = result.events;
+
+      if (!updatedEvent) {
+        return;
+      }
+
+      if (result.oddsVersion) {
+        latestOddsVersionRef.current = result.oddsVersion;
+      }
+
+      if (
+        updatedEvent.latest_odd_updated_at === previousEvent.latest_odd_updated_at &&
+        updatedEvent.odd_count === previousEvent.odd_count
+      ) {
+        return;
+      }
+
+      currentEventRef.current = updatedEvent;
+      setCurrentEvent({
+        event: updatedEvent,
+        fixtureId: updatedEvent.fixture_id,
+      });
+      setOddsPulseVersion((current) => current + 1);
+    } catch {
+      // Detail odds refresh is best-effort; the current snapshot remains visible.
+    } finally {
+      setRefreshingOdds(false);
+    }
+  }, []);
+  const canPollStatus = useCallback(() => Boolean(currentEventRef.current.fixture_id), []);
+
+  useMonitorOddsStatusFeed(canPollStatus, handleStatusUpdate);
 
   function handleSortChange(category: PaCategory, selection: Selection) {
     setSorts((current) => ({
@@ -1177,70 +1762,61 @@ function EventOddsPanel({
     }));
   }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] overflow-y-auto bg-black/70 p-2 backdrop-blur-sm sm:p-4"
-      onMouseDown={(mouseEvent) => {
-        if (!dialogRef.current?.contains(mouseEvent.target as Node)) {
-          onClose();
-        }
-      }}
-      role="presentation"
-    >
-      <div className="flex min-h-full items-end justify-center py-2 sm:items-center sm:py-0">
-        <div
-          aria-modal="true"
-          className="lz-panel lz-odds-dialog max-h-[calc(100dvh-1rem)] w-full max-w-6xl rounded-[24px] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:p-4 md:p-5"
-          onMouseDown={(mouseEvent) => mouseEvent.stopPropagation()}
-          ref={dialogRef}
-          role="dialog"
-        >
-          <div className="lz-odds-dialog-header sticky top-0 z-20 -mx-3 -mt-3 flex items-start justify-between gap-4 rounded-t-[24px] border-b border-white/8 px-3 pb-3 pt-3 backdrop-blur-xl sm:-mx-4 sm:-mt-4 sm:rounded-t-[28px] sm:px-4 sm:pt-4 md:-mx-5 md:-mt-5 md:px-5 md:pt-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                  {formatDate(event.starts_at)}
-                </span>
-                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                  {formatLeagueLine(event)}
-                </span>
-              </div>
-              <h2 className="mt-3 text-xl font-semibold tracking-tight text-white">
-                {event.home_team} x {event.away_team}
-              </h2>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                {formatTime(event.starts_at)}
-              </p>
+  return (
+    <div className="space-y-5">
+      <section className="lz-panel rounded-[28px] p-4 md:p-6">
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                {formatDate(currentEvent.starts_at)}
+              </span>
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                {formatLeagueLine(currentEvent)}
+              </span>
             </div>
 
-            <button
-              aria-label="Fechar"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
-              onClick={onClose}
-              type="button"
-            >
-              <CloseIcon />
-            </button>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">
+              {currentEvent.home_team} x {currentEvent.away_team}
+            </h1>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              {formatTime(currentEvent.starts_at)}
+            </p>
+            {lastOddsUpdateLabel ? (
+              <p className="mt-1 text-xs text-[var(--text-dim)]">
+                Odds atualizadas às {lastOddsUpdateLabel}
+              </p>
+            ) : null}
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            <OddsTable
-              category="COM_PA"
-              event={event}
-              onSortChange={handleSortChange}
-              sort={sorts.COM_PA}
-            />
-            <OddsTable
-              category="SEM_PA"
-              event={event}
-              onSortChange={handleSortChange}
-              sort={sorts.SEM_PA}
-            />
-          </div>
+          <Link
+            className="lz-button-secondary inline-flex h-11 w-full items-center justify-center rounded-full px-4 text-sm font-semibold transition sm:w-auto"
+            href="/odds"
+          >
+            Voltar
+          </Link>
         </div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <OddsTable
+          category="COM_PA"
+          event={currentEvent}
+          onSortChange={handleSortChange}
+          oddsLoading={refreshingOdds}
+          pulseVersion={oddsPulseVersion}
+          sort={sorts.COM_PA}
+        />
+        <OddsTable
+          category="SEM_PA"
+          event={currentEvent}
+          onSortChange={handleSortChange}
+          oddsLoading={refreshingOdds}
+          pulseVersion={oddsPulseVersion}
+          sort={sorts.SEM_PA}
+        />
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 
@@ -1250,10 +1826,15 @@ export function OddsEventSearch() {
   const [state, setState] = useState<SearchState>({
     events: [],
     loading: true,
+    oddsPulseVersion: 0,
+    refreshingOdds: false,
     error: null,
   });
-  const [selectedEvent, setSelectedEvent] = useState<OddsEvent | null>(null);
+  const eventsRef = useRef<OddsEvent[]>([]);
+  const latestFixturesVersionRef = useRef<string | null>(null);
   const latestOddUpdatedAtRef = useRef<string | null>(null);
+  const latestOddsVersionRef = useRef<string | null>(null);
+  const lastUnversionedFixturesRefreshAtRef = useRef(0);
   const activeRequestRef = useRef<EventsRequest | null>(null);
 
   const loadEvents = useCallback(
@@ -1264,7 +1845,14 @@ export function OddsEventSearch() {
       activeRequestRef.current = request;
 
       if (options.showLoading !== false) {
-        setState({ events: [], loading: true, error: null });
+        eventsRef.current = [];
+        setState({
+          events: [],
+          loading: true,
+          oddsPulseVersion: 0,
+          refreshingOdds: false,
+          error: null,
+        });
       }
 
       try {
@@ -1291,12 +1879,73 @@ export function OddsEventSearch() {
           return;
         }
 
-        latestOddUpdatedAtRef.current = payload.latest_odd_updated_at ?? null;
+        const nextFixturesVersion = payload.fixtures_version ?? null;
+        const nextOddsVersion =
+          payload.odds_version ?? payload.latest_odd_updated_at ?? null;
+        const events = hydrateEventsWithRememberedOdds(payload.events ?? []);
+
+        if (
+          options.signal?.aborted ||
+          !isSameEventsRequest(activeRequestRef.current, request)
+        ) {
+          return;
+        }
+
+        latestFixturesVersionRef.current = nextFixturesVersion;
+        lastUnversionedFixturesRefreshAtRef.current = Date.now();
+        latestOddsVersionRef.current = null;
+        latestOddUpdatedAtRef.current = null;
+
+        eventsRef.current = events;
         setState({
-          events: payload.events ?? [],
+          events,
           loading: false,
+          oddsPulseVersion: 0,
+          refreshingOdds: Boolean(events.length && nextOddsVersion),
           error: null,
         });
+
+        if (!events.length || !nextOddsVersion) {
+          return;
+        }
+
+        try {
+          const result = await fetchOddsForEvents(events, nextOddsVersion, {
+            signal: options.signal,
+          });
+
+          if (
+            options.signal?.aborted ||
+            !isSameEventsRequest(activeRequestRef.current, request)
+          ) {
+            return;
+          }
+
+          if (result.oddsVersion) {
+            latestOddsVersionRef.current = result.oddsVersion;
+            latestOddUpdatedAtRef.current =
+              payload.latest_odd_updated_at ?? result.oddsVersion;
+          }
+
+          eventsRef.current = result.events;
+          setState((current) => ({
+            ...current,
+            events: result.events,
+            error: null,
+            loading: false,
+            oddsPulseVersion: current.oddsPulseVersion,
+            refreshingOdds: false,
+          }));
+        } catch {
+          if (options.signal?.aborted) {
+            return;
+          }
+
+          setState((current) => ({
+            ...current,
+            refreshingOdds: false,
+          }));
+        }
       } catch (error) {
         if (
           options.signal?.aborted ||
@@ -1305,9 +1954,12 @@ export function OddsEventSearch() {
           return;
         }
 
+        eventsRef.current = [];
         setState({
           events: [],
           loading: false,
+          oddsPulseVersion: 0,
+          refreshingOdds: false,
           error: error instanceof Error ? error.message : "Erro ao buscar eventos.",
         });
       }
@@ -1404,57 +2056,106 @@ export function OddsEventSearch() {
     };
   }, [activeDatePreset, loadEvents, query]);
 
-  useEffect(() => {
-    let active = true;
-
-    async function checkFeedStatus() {
+  const handleStatusUpdate = useCallback(
+    async (payload: StatusResponse) => {
       const activeRequest = activeRequestRef.current;
 
       if (!activeRequest) {
         return;
       }
 
-      try {
-        const response = await fetch("/api/monitor-odds/status", {
-          cache: "no-store",
-        });
+      const nextFixturesVersion = payload.fixtures_version ?? null;
+      const nextOddsVersion =
+        payload.odds_version ?? payload.latest_odd_updated_at ?? null;
+      const previousFixturesVersion = latestFixturesVersionRef.current;
+      const previousOddsVersion =
+        latestOddsVersionRef.current ?? latestOddUpdatedAtRef.current;
+      const shouldRefreshUnversionedFixtures =
+        !nextFixturesVersion &&
+        !previousFixturesVersion &&
+        Date.now() - lastUnversionedFixturesRefreshAtRef.current >
+          unversionedFixturesRefreshMs;
 
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as StatusResponse;
-        const nextLatestOddUpdatedAt = payload.latest_odd_updated_at ?? null;
-        const previousLatestOddUpdatedAt = latestOddUpdatedAtRef.current;
-
-        if (!active || !nextLatestOddUpdatedAt) {
-          return;
-        }
-
-        if (
-          previousLatestOddUpdatedAt &&
-          nextLatestOddUpdatedAt !== previousLatestOddUpdatedAt
-        ) {
-          latestOddUpdatedAtRef.current = nextLatestOddUpdatedAt;
-          await loadEvents(activeRequest, { showLoading: false });
-          return;
-        }
-
-        if (!previousLatestOddUpdatedAt) {
-          latestOddUpdatedAtRef.current = nextLatestOddUpdatedAt;
-        }
-      } catch {
-        // Status polling is only a freshness hint; the search remains usable.
+      if (
+        nextFixturesVersion &&
+        previousFixturesVersion &&
+        nextFixturesVersion !== previousFixturesVersion
+      ) {
+        await loadEvents(activeRequest, { showLoading: false });
+        return;
       }
-    }
 
-    const intervalId = window.setInterval(checkFeedStatus, 10_000);
+      if (!previousFixturesVersion && nextFixturesVersion) {
+        await loadEvents(activeRequest, { showLoading: false });
+        return;
+      }
 
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-    };
-  }, [loadEvents]);
+      if (shouldRefreshUnversionedFixtures) {
+        await loadEvents(activeRequest, { showLoading: false });
+        return;
+      }
+
+      if (!nextOddsVersion) {
+        return;
+      }
+
+      if (nextOddsVersion === previousOddsVersion) {
+        return;
+      }
+
+      const currentEvents = eventsRef.current;
+
+      if (!currentEvents.length) {
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        refreshingOdds: true,
+      }));
+
+      try {
+        const result = await fetchOddsForEvents(currentEvents, nextOddsVersion);
+        const updatedEvents = result.events;
+
+        if (!isSameEventsRequest(activeRequestRef.current, activeRequest)) {
+          setState((current) => ({
+            ...current,
+            refreshingOdds: false,
+          }));
+          return;
+        }
+
+        if (result.oddsVersion) {
+          latestOddsVersionRef.current = result.oddsVersion;
+          latestOddUpdatedAtRef.current =
+            payload.latest_odd_updated_at ?? result.oddsVersion;
+        } else {
+          latestOddsVersionRef.current = null;
+          latestOddUpdatedAtRef.current = null;
+        }
+
+        eventsRef.current = updatedEvents;
+        setState((current) => ({
+          ...current,
+          events: updatedEvents,
+          oddsPulseVersion: current.oddsPulseVersion + 1,
+          refreshingOdds: false,
+        }));
+      } catch {
+        // Odds refresh is best-effort; the current snapshot remains visible.
+        setState((current) => ({
+          ...current,
+          refreshingOdds: false,
+        }));
+      }
+    },
+    [loadEvents],
+  );
+
+  const canPollStatus = useCallback(() => Boolean(activeRequestRef.current), []);
+
+  useMonitorOddsStatusFeed(canPollStatus, handleStatusUpdate);
 
   const hasQuery = query.trim().length >= 2;
   const hasDatePreset = activeDatePreset !== null;
@@ -1527,7 +2228,8 @@ export function OddsEventSearch() {
             <LeagueEventsSection
               group={group}
               key={group.key}
-              onOpen={setSelectedEvent}
+              oddsLoading={state.refreshingOdds}
+              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>
@@ -1539,17 +2241,12 @@ export function OddsEventSearch() {
             <EventCard
               event={event}
               key={event.fixture_id}
-              onOpen={setSelectedEvent}
+              oddsLoading={state.refreshingOdds}
+              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>
       ) : null}
-
-      <EventOddsPanel
-        event={selectedEvent}
-        key={selectedEvent?.fixture_id ?? "closed"}
-        onClose={() => setSelectedEvent(null)}
-      />
     </div>
   );
 }
