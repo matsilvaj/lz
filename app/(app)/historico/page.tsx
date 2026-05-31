@@ -24,6 +24,7 @@ export default async function HistoryPage({
 
   return (
     <HistoryWorkspace
+      bookmakers={data.bookmakers}
       months={data.months}
       operations={data.operations}
       selectedMonth={data.selectedMonth}

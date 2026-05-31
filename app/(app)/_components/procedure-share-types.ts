@@ -4,6 +4,31 @@ export type ProcedureShareProtectionDraft = {
   side?: "back" | "lay";
   layOdd?: string;
   commission?: string;
+  increase?: string;
+  cashback?: string;
+  freebet?: boolean;
+};
+
+export type ProcedureShareEntryDetail = {
+  scope: "sports" | "freebet_collection" | "freebet_conversion";
+  role: "principal" | "protecao";
+  order: number;
+  resultKey: string;
+  house?: string;
+  value?: number;
+  odd?: number;
+  side?: "back" | "lay";
+  layOdd?: number;
+  commission?: number;
+  increase?: number;
+  cashback?: number;
+  freebet?: boolean;
+  operationDate?: string;
+};
+
+export type ProcedureShareResultDetail = {
+  scope: "sports" | "freebet_collection" | "freebet_conversion";
+  resultKey: string;
 };
 
 export type ProcedureShareValues = {
@@ -11,6 +36,9 @@ export type ProcedureShareValues = {
   procedureType?: string;
   operationDate?: string;
   game?: string;
+  collectionGame?: string;
+  conversionGame?: string;
+  conversionBatchId?: string;
   houses?: string;
   entryValue?: number;
   note?: string;
@@ -28,6 +56,9 @@ export type ProcedureShareValues = {
   primarySide?: "back" | "lay";
   primaryLayOdd?: string;
   primaryCommission?: string;
+  primaryIncrease?: string;
+  primaryCashback?: string;
+  primaryFreebet?: boolean;
   sportProtections?: ProcedureShareProtectionDraft[];
   sportResultSelections?: string[];
   collectionPrimaryStake?: string;
@@ -35,8 +66,17 @@ export type ProcedureShareValues = {
   collectionPrimarySide?: "back" | "lay";
   collectionPrimaryLayOdd?: string;
   collectionPrimaryCommission?: string;
+  collectionPrimaryIncrease?: string;
+  collectionPrimaryCashback?: string;
+  collectionPrimaryFreebet?: boolean;
   collectionProtections?: ProcedureShareProtectionDraft[];
   collectionResultSelections?: string[];
+  collectionDate?: string;
+  conversionDate?: string;
   freebetCollectionOpen?: boolean;
   freebetConversionOpen?: boolean;
+  freebetVisibleScope?: "all" | "collection" | "conversion";
+  originIds?: number[];
+  procedureEntries?: ProcedureShareEntryDetail[];
+  procedureResults?: ProcedureShareResultDetail[];
 };

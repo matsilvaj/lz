@@ -1,7 +1,14 @@
 "use client";
 
-import { calculateSurebet, FREEBET_CONDITIONS, PROCEDURE_TYPES } from "@/core";
-import { useMemo, useRef, useState } from "react";
+import {
+  calculateSurebet,
+  FREEBET_CONDITIONS,
+  FREEBET_CONDITION_CONVERSION_ONLY,
+  FREEBET_CONDITION_LOSS_ONLY,
+  PROCEDURE_TYPES,
+} from "@/core";
+import { Settings } from "lucide-react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
@@ -17,7 +24,11 @@ import {
   formatCurrency,
 } from "./ui";
 import { buildProcedureShareUrl } from "./procedure-share";
-import { type ProcedureShareValues } from "./procedure-share-types";
+import {
+  type ProcedureShareEntryDetail,
+  type ProcedureShareResultDetail,
+  type ProcedureShareValues,
+} from "./procedure-share-types";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
 
 type ProcedureType = string;
@@ -30,6 +41,9 @@ type ProtectionDraft = {
   side: BetSide;
   layOdd: string;
   commission: string;
+  increase: string;
+  cashback: string;
+  freebet: boolean;
 };
 type ProcedureStatus = "Pendente" | "Concluído";
 type HousePickerTarget = {
@@ -51,6 +65,7 @@ type ProcedureModalProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
+  hideTypeSelector?: boolean;
   defaultValues?: ProcedureShareValues & {
     procedureType?: ProcedureType;
     operationDate?: string;
@@ -124,6 +139,9 @@ function createProtectionDraft(
     side: draft.side ?? DEFAULT_BET_SIDE,
     layOdd: draft.layOdd ?? "",
     commission: draft.commission ?? "",
+    increase: draft.increase ?? "",
+    cashback: draft.cashback ?? "",
+    freebet: Boolean(draft.freebet),
   };
 }
 
@@ -242,6 +260,34 @@ function formatProcedureCurrency(value: number) {
   return formatCurrency(normalizeCurrencyAmount(value));
 }
 
+function calculateAdjustedOdd(odd: number, increase: number) {
+  if (odd <= 1) {
+    return odd;
+  }
+
+  return 1 + (odd - 1) * (1 + increase / 100);
+}
+
+function calculateLayReturn(
+  responsibility: number,
+  effectiveOdd: number,
+  commission: number,
+  cashback: number,
+) {
+  if (responsibility <= 0 || effectiveOdd <= 1) {
+    return 0;
+  }
+
+  const layStake = responsibility / (effectiveOdd - 1);
+  const commissionMultiplier = 1 - commission / 100;
+  const cashbackRate = cashback / 100;
+
+  return (
+    layStake *
+    (effectiveOdd - 1 + commissionMultiplier - (effectiveOdd - 1) * cashbackRate)
+  );
+}
+
 function getProtectionResultId(key: number): SportResultSelection {
   return `protection-${key}`;
 }
@@ -254,6 +300,9 @@ function calculateSportsProfit(
     side: BetSide;
     layOddInput?: string;
     commissionInput?: string;
+    increaseInput?: string;
+    cashbackInput?: string;
+    freebet?: boolean;
   }>,
   selectedResults: SportResultSelection[],
 ) {
@@ -265,7 +314,13 @@ function calculateSportsProfit(
       side === "lay"
         ? parseDecimalInput(layOddInput.trim() ? layOddInput : entry.oddInput)
         : parseDecimalInput(entry.oddInput);
-    const stake = side === "lay" && odd > 1 ? riskValue / (odd - 1) : riskValue;
+    const increase = parseDecimalInput(entry.increaseInput ?? "");
+    const cashback = parseDecimalInput(entry.cashbackInput ?? "");
+    const effectiveOdd = calculateAdjustedOdd(odd, increase);
+    const stake =
+      side === "lay" && effectiveOdd > 1
+        ? riskValue / (effectiveOdd - 1)
+        : riskValue;
 
     return {
       ...entry,
@@ -273,13 +328,18 @@ function calculateSportsProfit(
       stake,
       responsibility: side === "lay" ? riskValue : 0,
       odd,
+      effectiveOdd,
       commission: parseDecimalInput(entry.commissionInput ?? ""),
+      increase,
+      cashback,
+      freebet: Boolean(entry.freebet),
     };
   });
   const baseIndex = normalizedEntries.findIndex((entry) => entry.stake > 0);
   const fallbackInvestment = normalizedEntries.reduce(
     (sum, entry) =>
-      sum + (entry.side === "lay" ? entry.responsibility : entry.stake),
+      sum +
+      (entry.side === "lay" ? entry.responsibility : entry.freebet ? 0 : entry.stake),
     0,
   );
 
@@ -294,7 +354,10 @@ function calculateSportsProfit(
           stake: entry.stake,
           tipo: entry.side === "lay" ? "L" : "B",
           responsabilidade: entry.responsibility,
+          aumento_percentual: entry.increase,
           comissao_percentual: entry.commission,
+          cashback_percentual: entry.cashback,
+          freebet: entry.freebet,
         })),
         baseIndex,
       );
@@ -309,16 +372,23 @@ function calculateSportsProfit(
     } catch {
       returnsByIndex = new Map(
         normalizedEntries.map((entry, index) => {
-          const layReturn =
-            entry.odd > 1
-              ? entry.responsibility +
-                (entry.responsibility / (entry.odd - 1)) *
-                  (1 - entry.commission / 100)
-              : 0;
+          const layReturn = calculateLayReturn(
+            entry.responsibility,
+            entry.effectiveOdd,
+            entry.commission,
+            entry.cashback,
+          );
+          const backReturn = entry.freebet
+            ? entry.stake *
+              ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
+            : entry.stake *
+              (1 +
+                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
+                entry.cashback / 100);
 
           return [
             index,
-            entry.side === "lay" ? layReturn : entry.stake * entry.odd,
+            entry.side === "lay" ? layReturn : backReturn,
           ];
         }),
       );
@@ -326,16 +396,23 @@ function calculateSportsProfit(
   } else {
     returnsByIndex = new Map(
       normalizedEntries.map((entry, index) => {
-        const layReturn =
-          entry.odd > 1
-            ? entry.responsibility +
-              (entry.responsibility / (entry.odd - 1)) *
-                (1 - entry.commission / 100)
-            : 0;
+        const layReturn = calculateLayReturn(
+          entry.responsibility,
+          entry.effectiveOdd,
+          entry.commission,
+          entry.cashback,
+        );
+        const backReturn = entry.freebet
+          ? entry.stake *
+            ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
+          : entry.stake *
+            (1 +
+              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
+              entry.cashback / 100);
 
         return [
           index,
-          entry.side === "lay" ? layReturn : entry.stake * entry.odd,
+          entry.side === "lay" ? layReturn : backReturn,
         ];
       }),
     );
@@ -464,6 +541,21 @@ function getInitialCollectionProtectionKeys(
     : [];
 }
 
+function getInitialCollectionProtectionDrafts(
+  defaultValues: ProcedureModalProps["defaultValues"],
+  procedureType: string,
+) {
+  if (defaultValues?.collectionProtections?.length) {
+    return defaultValues.collectionProtections;
+  }
+
+  if (isFreebetProcedureType(procedureType)) {
+    return defaultValues?.sportProtections;
+  }
+
+  return undefined;
+}
+
 function getInitialBetSide(value: unknown): BetSide {
   return value === "lay" ? "lay" : DEFAULT_BET_SIDE;
 }
@@ -499,6 +591,9 @@ function createProtectionDraftRecord(
         side: getInitialBetSide(draft.side),
         layOdd: draft.layOdd,
         commission: draft.commission,
+        increase: draft.increase,
+        cashback: draft.cashback,
+        freebet: draft.freebet,
       });
     }
 
@@ -642,6 +737,7 @@ export function ProcedureModal({
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
+  hideTypeSelector = false,
   defaultValues,
 }: ProcedureModalProps) {
   const { showToast } = useToast();
@@ -654,6 +750,10 @@ export function ProcedureModal({
     defaultValues?.freebetValue === undefined
       ? ""
       : String(defaultValues.freebetValue);
+  const initialFreebetCondition =
+    defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "";
+  const initialFreebetCollectionBlocked =
+    initialFreebetCondition === FREEBET_CONDITION_CONVERSION_ONLY;
   const initialProtectionKeys = getInitialProtectionKeys(
     defaultValues,
     initialProcedureType,
@@ -662,6 +762,11 @@ export function ProcedureModal({
     defaultValues,
     initialProcedureType,
   );
+  const initialSelectedHouses =
+    defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses);
+  const initialCollectionHouses =
+    defaultValues?.collectionHouses ??
+    (isFreebetProcedureType(initialProcedureType) ? initialSelectedHouses : []);
   const usesDefaultTypeOptions = typeOptions === PROCEDURE_TYPES;
   const [selectedType, setSelectedType] = useState<ProcedureType>(
     initialProcedureType,
@@ -671,8 +776,33 @@ export function ProcedureModal({
   const [operationDate, setOperationDate] = useState(
     defaultValues?.operationDate ?? getTodayInputValue(),
   );
+  const [collectionDate, setCollectionDate] = useState(
+    defaultValues?.collectionDate ??
+      (isFreebetProcedureType(initialProcedureType)
+        ? (defaultValues?.operationDate ?? "")
+        : ""),
+  );
+  const [conversionDate, setConversionDate] = useState(
+    defaultValues?.conversionDate ??
+      (initialProcedureType === FREEBET_CONVERSION_TYPE
+        ? (defaultValues?.operationDate ?? "")
+        : ""),
+  );
   const [gameValue, setGameValue] = useState(
     defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""),
+  );
+  const [collectionGameValue, setCollectionGameValue] = useState(
+    defaultValues?.collectionGame ??
+      (isFreebetProcedureType(initialProcedureType)
+        ? (defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""))
+        : ""),
+  );
+  const [conversionGameValue, setConversionGameValue] = useState(
+    defaultValues?.conversionGame ??
+      (isFreebetProcedureType(initialProcedureType) &&
+      defaultValues?.freebetVisibleScope === "conversion"
+        ? (defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""))
+        : ""),
   );
   const [protectionKeys, setProtectionKeys] = useState<number[]>(
     initialProtectionKeys,
@@ -699,6 +829,15 @@ export function ProcedureModal({
   const [primaryCommission, setPrimaryCommission] = useState(
     defaultValues?.primaryCommission ?? "",
   );
+  const [primaryIncrease, setPrimaryIncrease] = useState(
+    defaultValues?.primaryIncrease ?? "",
+  );
+  const [primaryCashback, setPrimaryCashback] = useState(
+    defaultValues?.primaryCashback ?? "",
+  );
+  const [primaryFreebet, setPrimaryFreebet] = useState(
+    Boolean(defaultValues?.primaryFreebet),
+  );
   const [collectionPrimaryStake, setCollectionPrimaryStake] = useState(
     defaultValues?.collectionPrimaryStake ??
       (isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : ""),
@@ -713,6 +852,13 @@ export function ProcedureModal({
   );
   const [collectionPrimaryCommission, setCollectionPrimaryCommission] =
     useState(defaultValues?.collectionPrimaryCommission ?? "");
+  const [collectionPrimaryIncrease, setCollectionPrimaryIncrease] =
+    useState(defaultValues?.collectionPrimaryIncrease ?? "");
+  const [collectionPrimaryCashback, setCollectionPrimaryCashback] =
+    useState(defaultValues?.collectionPrimaryCashback ?? "");
+  const [collectionPrimaryFreebet, setCollectionPrimaryFreebet] = useState(
+    Boolean(defaultValues?.collectionPrimaryFreebet),
+  );
   const [protectionDrafts, setProtectionDrafts] = useState<
     Record<number, ProtectionDraft>
   >(createProtectionDraftRecord(initialProtectionKeys, defaultValues?.sportProtections));
@@ -721,7 +867,7 @@ export function ProcedureModal({
   >(
     createProtectionDraftRecord(
       initialCollectionProtectionKeys,
-      defaultValues?.collectionProtections,
+      getInitialCollectionProtectionDrafts(defaultValues, initialProcedureType),
     ),
   );
   const [sportResultSelections, setSportResultSelections] = useState<
@@ -733,10 +879,10 @@ export function ProcedureModal({
   const [noteExpanded, setNoteExpanded] = useState(Boolean(defaultValues?.note));
   const [noteValue, setNoteValue] = useState(defaultValues?.note ?? "");
   const [selectedHouses, setSelectedHouses] = useState<string[]>(
-    defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses),
+    initialSelectedHouses,
   );
   const [collectionHouses, setCollectionHouses] = useState<string[]>(
-    defaultValues?.collectionHouses ?? [],
+    initialCollectionHouses,
   );
   const [selectedFreebetHouse, setSelectedFreebetHouse] = useState(
     defaultValues?.selectedFreebetHouse ?? defaultValues?.freebetHouse ?? "",
@@ -745,14 +891,18 @@ export function ProcedureModal({
     initialFreebetValueInput,
   );
   const [freebetConditionValue, setFreebetConditionValue] = useState(
-    defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "",
+    initialFreebetCondition,
   );
   const [freebetCollectionOpen, setFreebetCollectionOpen] = useState(
-    Boolean(defaultValues?.freebetCollectionOpen),
+    Boolean(defaultValues?.freebetCollectionOpen) &&
+      !initialFreebetCollectionBlocked,
   );
   const [freebetConversionOpen, setFreebetConversionOpen] = useState(
     Boolean(defaultValues?.freebetConversionOpen),
   );
+  const [sportsConfigOpen, setSportsConfigOpen] = useState<
+    Record<string, boolean>
+  >({});
   const [housePickerTarget, setHousePickerTarget] =
     useState<HousePickerTarget | null>(null);
   const [freebetHousePickerOpen, setFreebetHousePickerOpen] = useState(false);
@@ -768,6 +918,38 @@ export function ProcedureModal({
   const supportsGame = selectedGroup === "sports";
   const supportsProfitDistribution = selectedGroup === "sports";
   const showFreebetBeforeHouses = isFreebetType;
+  const freebetVisibleScope = defaultValues?.freebetVisibleScope ?? "all";
+  const showFreebetCollectionSection =
+    showFreebetBeforeHouses && freebetVisibleScope !== "conversion";
+  const showFreebetConversionSection =
+    !isFreebetType || freebetVisibleScope !== "collection";
+  const freebetCollectionBlocked =
+    isFreebetType &&
+    freebetConditionValue === FREEBET_CONDITION_CONVERSION_ONLY;
+  const freebetConversionBlocked =
+    isFreebetType &&
+    freebetConditionValue === FREEBET_CONDITION_LOSS_ONLY &&
+    collectionResultSelections.includes("principal");
+  const freebetCollectionExpanded =
+    freebetCollectionOpen && !freebetCollectionBlocked;
+  const freebetConversionExpanded =
+    freebetConversionOpen && !freebetConversionBlocked;
+  const collectionDateForSubmit =
+    freebetCollectionBlocked
+      ? ""
+      : collectionDate ||
+        (collectionResultSelections.length > 0 ? operationDate : "");
+  const conversionDateForSubmit =
+    freebetConversionBlocked
+      ? ""
+      : conversionDate || (sportResultSelections.length > 0 ? operationDate : "");
+  const operationDateForSubmit = isFreebetType
+    ? collectionDateForSubmit || conversionDateForSubmit || operationDate
+    : operationDate;
+  const freebetGameForSubmit =
+    freebetVisibleScope === "conversion"
+      ? conversionGameValue || collectionGameValue
+      : collectionGameValue || conversionGameValue;
   const sportEntries = [
     {
       resultId: "principal" as SportResultSelection,
@@ -776,6 +958,9 @@ export function ProcedureModal({
       side: primarySide,
       layOddInput: primaryLayOdd,
       commissionInput: primaryCommission,
+      increaseInput: primaryIncrease,
+      cashbackInput: primaryCashback,
+      freebet: primaryFreebet,
     },
     ...protectionKeys.map((key) => ({
       resultId: getProtectionResultId(key),
@@ -784,6 +969,9 @@ export function ProcedureModal({
       side: protectionDrafts[key]?.side ?? DEFAULT_BET_SIDE,
       layOddInput: protectionDrafts[key]?.layOdd ?? "",
       commissionInput: protectionDrafts[key]?.commission ?? "",
+      increaseInput: protectionDrafts[key]?.increase ?? "",
+      cashbackInput: protectionDrafts[key]?.cashback ?? "",
+      freebet: Boolean(protectionDrafts[key]?.freebet),
     })),
   ];
   const collectionEntries = [
@@ -794,6 +982,9 @@ export function ProcedureModal({
       side: collectionPrimarySide,
       layOddInput: collectionPrimaryLayOdd,
       commissionInput: collectionPrimaryCommission,
+      increaseInput: collectionPrimaryIncrease,
+      cashbackInput: collectionPrimaryCashback,
+      freebet: collectionPrimaryFreebet,
     },
     ...collectionProtectionKeys.map((key) => ({
       resultId: getProtectionResultId(key),
@@ -802,6 +993,9 @@ export function ProcedureModal({
       side: collectionProtectionDrafts[key]?.side ?? DEFAULT_BET_SIDE,
       layOddInput: collectionProtectionDrafts[key]?.layOdd ?? "",
       commissionInput: collectionProtectionDrafts[key]?.commission ?? "",
+      increaseInput: collectionProtectionDrafts[key]?.increase ?? "",
+      cashbackInput: collectionProtectionDrafts[key]?.cashback ?? "",
+      freebet: Boolean(collectionProtectionDrafts[key]?.freebet),
     })),
   ];
   const hasSportsCalculationInput =
@@ -809,6 +1003,9 @@ export function ProcedureModal({
     primaryOdd.trim() !== "" ||
     primaryLayOdd.trim() !== "" ||
     primaryCommission.trim() !== "" ||
+    primaryIncrease.trim() !== "" ||
+    primaryCashback.trim() !== "" ||
+    primaryFreebet ||
     primarySide === "lay" ||
     Object.values(protectionDrafts).some(
       (draft) =>
@@ -816,6 +1013,9 @@ export function ProcedureModal({
         draft.odd.trim() !== "" ||
         draft.layOdd.trim() !== "" ||
         draft.commission.trim() !== "" ||
+        draft.increase.trim() !== "" ||
+        draft.cashback.trim() !== "" ||
+        draft.freebet ||
         draft.side === "lay",
     ) ||
     sportResultSelections.length > 0;
@@ -824,6 +1024,9 @@ export function ProcedureModal({
     collectionPrimaryOdd.trim() !== "" ||
     collectionPrimaryLayOdd.trim() !== "" ||
     collectionPrimaryCommission.trim() !== "" ||
+    collectionPrimaryIncrease.trim() !== "" ||
+    collectionPrimaryCashback.trim() !== "" ||
+    collectionPrimaryFreebet ||
     collectionPrimarySide === "lay" ||
     Object.values(collectionProtectionDrafts).some(
       (draft) =>
@@ -831,6 +1034,9 @@ export function ProcedureModal({
         draft.odd.trim() !== "" ||
         draft.layOdd.trim() !== "" ||
         draft.commission.trim() !== "" ||
+        draft.increase.trim() !== "" ||
+        draft.cashback.trim() !== "" ||
+        draft.freebet ||
         draft.side === "lay",
     ) ||
     collectionResultSelections.length > 0;
@@ -838,24 +1044,26 @@ export function ProcedureModal({
     sportEntries,
     sportResultSelections,
   );
-  const calculatedCollectionProfit = calculateSportsProfit(
-    collectionEntries,
-    collectionResultSelections,
-  );
+  const calculatedCollectionProfit = freebetCollectionBlocked
+    ? 0
+    : calculateSportsProfit(collectionEntries, collectionResultSelections);
   const sportsResultAmount = normalizeCurrencyAmount(
     hasSportsCalculationInput
       ? calculatedSportsProfit
       : parseDecimalInput(entryProfitValue),
   );
   const collectionResultAmount = normalizeCurrencyAmount(
-    hasCollectionCalculationInput ? calculatedCollectionProfit : 0,
+    !freebetCollectionBlocked && hasCollectionCalculationInput
+      ? calculatedCollectionProfit
+      : 0,
   );
   const freebetCollectionResultAmount = collectionResultAmount;
   const freebetConversionResultAmount = normalizeCurrencyAmount(
-    hasSportsCalculationInput ? sportsResultAmount : 0,
+    !freebetConversionBlocked && hasSportsCalculationInput ? sportsResultAmount : 0,
   );
   const freebetResultAmount = normalizeCurrencyAmount(
-    hasSportsCalculationInput || hasCollectionCalculationInput
+    (!freebetConversionBlocked && hasSportsCalculationInput) ||
+      (!freebetCollectionBlocked && hasCollectionCalculationInput)
       ? freebetCollectionResultAmount + freebetConversionResultAmount
       : parseDecimalInput(entryProfitValue),
   );
@@ -900,7 +1108,7 @@ export function ProcedureModal({
   const submittedHouses = (
     isFreebetType
       ? [
-          ...collectionHouses.slice(1),
+          ...(freebetCollectionBlocked ? [] : collectionHouses.slice(1)),
           ...selectedHouses.slice(1),
           selectedFreebetHouse,
         ]
@@ -920,6 +1128,274 @@ export function ProcedureModal({
       ? collectionHouses[housePickerTarget.index]
       : selectedHouses[housePickerTarget.index]
     : "";
+  const procedureDetailsPayload = getProcedureDetailsPayload();
+  const procedureDetailsValue = JSON.stringify(procedureDetailsPayload);
+
+  function buildEntryDetail({
+    scope,
+    role,
+    order,
+    resultKey,
+    house,
+    stake,
+    odd,
+    side,
+    layOdd,
+    commission,
+    increase,
+    cashback,
+    freebet,
+    operationDate: detailOperationDate,
+  }: {
+    scope: ProcedureShareEntryDetail["scope"];
+    role: ProcedureShareEntryDetail["role"];
+    order: number;
+    resultKey: string;
+    house?: string;
+    stake: string;
+    odd: string;
+    side: BetSide;
+    layOdd: string;
+    commission: string;
+    increase: string;
+    cashback: string;
+    freebet: boolean;
+    operationDate?: string;
+  }): ProcedureShareEntryDetail {
+    return {
+      scope,
+      role,
+      order,
+      resultKey,
+      house: house ?? "",
+      value: parseDecimalInput(stake),
+      odd: parseDecimalInput(odd),
+      side,
+      layOdd: parseDecimalInput(layOdd),
+      commission: parseDecimalInput(commission),
+      increase: parseDecimalInput(increase),
+      cashback: parseDecimalInput(cashback),
+      freebet,
+      operationDate: detailOperationDate ?? "",
+    };
+  }
+
+  function buildResultDetails(
+    scope: ProcedureShareResultDetail["scope"],
+    selections: SportResultSelection[],
+    keys: number[],
+  ): ProcedureShareResultDetail[] {
+    if (selections.includes("defeat")) {
+      return [{ scope, resultKey: "defeat" }];
+    }
+
+    const results: ProcedureShareResultDetail[] = [];
+
+    if (selections.includes("principal")) {
+      results.push({ scope, resultKey: "principal" });
+    }
+
+    keys.forEach((key, index) => {
+      if (selections.includes(getProtectionResultId(key))) {
+        results.push({ scope, resultKey: getProtectionResultId(index) });
+      }
+    });
+
+    return results;
+  }
+
+  function buildSportEntryDetails({
+    scope,
+    includePrimaryHouse,
+    houses,
+    primary,
+    protections,
+    operationDate: detailOperationDate,
+  }: {
+    scope: ProcedureShareEntryDetail["scope"];
+    includePrimaryHouse: boolean;
+    houses: string[];
+    primary: {
+      stake: string;
+      odd: string;
+      side: BetSide;
+      layOdd: string;
+      commission: string;
+      increase: string;
+      cashback: string;
+      freebet: boolean;
+    };
+    protections: Array<{
+      key: number;
+      draft: ProtectionDraft;
+    }>;
+    operationDate?: string;
+  }) {
+    return [
+      buildEntryDetail({
+        scope,
+        role: "principal",
+        order: 0,
+        resultKey: "principal",
+        house: includePrimaryHouse ? (houses[0] ?? "") : "",
+        stake: primary.stake,
+        odd: primary.odd,
+        side: primary.side,
+        layOdd: primary.layOdd,
+        commission: primary.commission,
+        increase: primary.increase,
+        cashback: primary.cashback,
+        freebet: primary.freebet,
+        operationDate: detailOperationDate,
+      }),
+      ...protections.map(({ draft }, index) =>
+        buildEntryDetail({
+          scope,
+          role: "protecao",
+          order: index,
+          resultKey: getProtectionResultId(index),
+          house: houses[index + 1] ?? "",
+          stake: draft.stake,
+          odd: draft.odd,
+          side: draft.side,
+          layOdd: draft.layOdd,
+          commission: draft.commission,
+          increase: draft.increase,
+          cashback: draft.cashback,
+          freebet: draft.freebet,
+          operationDate: detailOperationDate,
+        }),
+      ),
+    ];
+  }
+
+  function getProcedureDetailsPayload(): {
+    entries: ProcedureShareEntryDetail[];
+    results: ProcedureShareResultDetail[];
+  } {
+    if (selectedGroup !== "sports") {
+      return {
+        entries: [
+          buildEntryDetail({
+            scope: "sports",
+            role: "principal",
+            order: 0,
+            resultKey: "principal",
+            house: selectedHouses[0] ?? "",
+            stake: entryValueForSubmit,
+            odd: "1",
+            side: DEFAULT_BET_SIDE,
+            layOdd: "",
+            commission: "",
+            increase: "",
+            cashback: "",
+            freebet: false,
+            operationDate: operationDateForSubmit,
+          }),
+        ],
+        results: procedureStatus === "Conclu\u00eddo"
+          ? [{ scope: "sports", resultKey: "principal" }]
+          : [],
+      };
+    }
+
+    if (!isFreebetType) {
+      return {
+        entries: buildSportEntryDetails({
+          scope: "sports",
+          includePrimaryHouse: true,
+          houses: selectedHouses,
+          primary: {
+            stake: primaryStake,
+            odd: primaryOdd,
+            side: primarySide,
+            layOdd: primaryLayOdd,
+            commission: primaryCommission,
+            increase: primaryIncrease,
+            cashback: primaryCashback,
+            freebet: primaryFreebet,
+          },
+          protections: (isNormalBet ? [] : protectionKeys).map((key) => ({
+            key,
+            draft: createProtectionDraft(protectionDrafts[key]),
+          })),
+          operationDate: operationDateForSubmit,
+        }),
+        results: buildResultDetails(
+          "sports",
+          sportResultSelections,
+          isNormalBet ? [] : protectionKeys,
+        ),
+      };
+    }
+
+    const conversionEntries = freebetConversionBlocked
+      ? []
+      : buildSportEntryDetails({
+          scope: "freebet_conversion",
+          includePrimaryHouse: false,
+          houses: selectedHouses,
+          primary: {
+            stake: primaryStake,
+            odd: primaryOdd,
+            side: primarySide,
+            layOdd: primaryLayOdd,
+            commission: primaryCommission,
+            increase: primaryIncrease,
+            cashback: primaryCashback,
+            freebet: primaryFreebet,
+          },
+          protections: protectionKeys.map((key) => ({
+            key,
+            draft: createProtectionDraft(protectionDrafts[key]),
+          })),
+          operationDate: conversionDateForSubmit,
+        });
+    const conversionResults = freebetConversionBlocked
+      ? []
+      : buildResultDetails(
+          "freebet_conversion",
+          sportResultSelections,
+          protectionKeys,
+        );
+    const collectionEntriesForSubmit = freebetCollectionBlocked
+      ? []
+      : buildSportEntryDetails({
+          scope: "freebet_collection",
+          includePrimaryHouse: true,
+          houses: [selectedFreebetHouse, ...collectionHouses.slice(1)],
+          primary: {
+            stake: collectionPrimaryStake,
+            odd: collectionPrimaryOdd,
+            side: collectionPrimarySide,
+            layOdd: collectionPrimaryLayOdd,
+            commission: collectionPrimaryCommission,
+            increase: collectionPrimaryIncrease,
+            cashback: collectionPrimaryCashback,
+            freebet: collectionPrimaryFreebet,
+          },
+          protections: collectionProtectionKeys.map((key) => ({
+            key,
+            draft: createProtectionDraft(collectionProtectionDrafts[key]),
+          })),
+          operationDate: collectionDateForSubmit,
+        });
+    const collectionResultsForSubmit = freebetCollectionBlocked
+      ? []
+      : buildResultDetails(
+          "freebet_collection",
+          collectionResultSelections,
+          collectionProtectionKeys,
+        );
+
+    return {
+      entries: [
+        ...collectionEntriesForSubmit,
+        ...conversionEntries,
+      ],
+      results: [...collectionResultsForSubmit, ...conversionResults],
+    };
+  }
 
   function getProcedureSharePayload(): ProcedureShareValues {
     const resultAmount =
@@ -933,8 +1409,13 @@ export function ProcedureModal({
     return {
       version: 1,
       procedureType: selectedType,
-      operationDate,
-      game: gameValue,
+      operationDate: operationDateForSubmit,
+      collectionDate: collectionDateForSubmit,
+      conversionDate: conversionDateForSubmit,
+      game: isFreebetType ? freebetGameForSubmit : gameValue,
+      collectionGame: isFreebetType ? collectionGameValue : "",
+      conversionGame: isFreebetType ? conversionGameValue : "",
+      conversionBatchId: defaultValues?.conversionBatchId,
       houses: housesText,
       entryValue: resultAmount,
       note: noteValue,
@@ -950,21 +1431,40 @@ export function ProcedureModal({
       primarySide,
       primaryLayOdd,
       primaryCommission,
-      sportProtections: protectionKeys.map((key) =>
+      primaryIncrease,
+      primaryCashback,
+      primaryFreebet,
+      sportProtections: (isNormalBet ? [] : protectionKeys).map((key) =>
         createProtectionDraft(protectionDrafts[key]),
       ),
-      sportResultSelections,
+      sportResultSelections: buildResultDetails(
+        "sports",
+        sportResultSelections,
+        isNormalBet ? [] : protectionKeys,
+      ).map((result) => result.resultKey),
       collectionPrimaryStake,
       collectionPrimaryOdd,
       collectionPrimarySide,
       collectionPrimaryLayOdd,
       collectionPrimaryCommission,
+      collectionPrimaryIncrease,
+      collectionPrimaryCashback,
+      collectionPrimaryFreebet,
       collectionProtections: collectionProtectionKeys.map((key) =>
         createProtectionDraft(collectionProtectionDrafts[key]),
       ),
-      collectionResultSelections,
-      freebetCollectionOpen,
+      collectionResultSelections: freebetCollectionBlocked
+        ? []
+        : buildResultDetails(
+            "freebet_collection",
+            collectionResultSelections,
+            collectionProtectionKeys,
+          ).map((result) => result.resultKey),
+      freebetCollectionOpen: freebetCollectionOpen && !freebetCollectionBlocked,
       freebetConversionOpen,
+      freebetVisibleScope,
+      procedureEntries: procedureDetailsPayload.entries,
+      procedureResults: procedureDetailsPayload.results,
     };
   }
 
@@ -981,6 +1481,26 @@ export function ProcedureModal({
     });
   }
 
+  function handleFreebetConditionChange(value: string) {
+    setFreebetConditionValue(value);
+
+    if (value === FREEBET_CONDITION_CONVERSION_ONLY) {
+      setFreebetCollectionOpen(false);
+      setFreebetConversionOpen(true);
+    }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (isFreebetType && !selectedFreebetHouse.trim()) {
+      event.preventDefault();
+      setFreebetHousePickerOpen(true);
+      showToast({
+        title: "Informe a casa da freebet.",
+        tone: "error",
+      });
+    }
+  }
+
   function renderSportsBetFields({
     stakeName,
     oddName,
@@ -989,11 +1509,19 @@ export function ProcedureModal({
     side,
     layOddValue,
     commissionValue,
+    increaseValue,
+    cashbackValue,
+    freebetChecked,
+    configOpen,
     onStakeChange,
     onOddChange,
     onToggleSide,
     onLayOddChange,
     onCommissionChange,
+    onIncreaseChange,
+    onCashbackChange,
+    onFreebetChange,
+    onToggleConfig,
   }: {
     stakeName: string;
     oddName: string;
@@ -1002,18 +1530,34 @@ export function ProcedureModal({
     side: BetSide;
     layOddValue: string;
     commissionValue: string;
+    increaseValue: string;
+    cashbackValue: string;
+    freebetChecked: boolean;
+    configOpen: boolean;
     onStakeChange: (value: string) => void;
     onOddChange: (value: string) => void;
     onToggleSide: () => void;
     onLayOddChange: (value: string) => void;
     onCommissionChange: (value: string) => void;
+    onIncreaseChange: (value: string) => void;
+    onCashbackChange: (value: string) => void;
+    onFreebetChange: (checked: boolean) => void;
+    onToggleConfig: () => void;
   }) {
     const isLay = side === "lay";
+    const displayedOddValue = isLay ? (layOddValue || oddValue) : oddValue;
+    const hasCustomConfig =
+      parseDecimalInput(increaseValue) !== 0 ||
+      parseDecimalInput(commissionValue) !== 0 ||
+      parseDecimalInput(cashbackValue) !== 0 ||
+      freebetChecked;
+    const configFieldClass =
+      "flex min-h-[84px] flex-col justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm";
 
     return (
       <>
         <label className="space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">Valor R$</span>
+          <span className="text-[var(--text-muted)]">Stake</span>
           <input
             className="lz-input w-full rounded-2xl px-3 py-3"
             inputMode="decimal"
@@ -1023,7 +1567,7 @@ export function ProcedureModal({
             value={stakeValue}
           />
           {isLay ? (
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-gold)]">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-soft)]">
               <RiskWarningIcon />
               Valor do risco!
             </p>
@@ -1031,21 +1575,37 @@ export function ProcedureModal({
         </label>
 
         <div className="space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">Odd</span>
+          <span className="text-[var(--text-muted)]">
+            {isLay ? "Odd Lay" : "Odd"}
+          </span>
           <div className="flex gap-2">
             <input
               className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
               inputMode="decimal"
               name={oddName}
-              onChange={(event) => onOddChange(event.target.value)}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+
+                if (isLay) {
+                  onLayOddChange(nextValue);
+
+                  if (!oddValue.trim()) {
+                    onOddChange(nextValue);
+                  }
+
+                  return;
+                }
+
+                onOddChange(nextValue);
+              }}
               placeholder="0.000"
-              value={oddValue}
+              value={displayedOddValue}
             />
             <button
               aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
               className={`min-w-12 rounded-2xl px-3 py-3 text-sm font-bold transition ${
                 isLay
-                  ? "border border-[rgba(255,217,64,0.55)] bg-[var(--accent-gold)] text-black shadow-[0_12px_32px_rgba(255,217,64,0.18)]"
+                  ? "border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)]"
                   : "lz-button-secondary"
               }`}
               onClick={onToggleSide}
@@ -1054,15 +1614,40 @@ export function ProcedureModal({
             >
               {isLay ? "L" : "B"}
             </button>
+            <button
+              aria-expanded={configOpen}
+              aria-label="Configurações da entrada"
+              className={`inline-flex min-w-12 items-center justify-center rounded-2xl border px-3 py-3 transition ${
+                configOpen || hasCustomConfig
+                  ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
+                  : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
+              }`}
+              onClick={onToggleConfig}
+              title="Configurações"
+              type="button"
+            >
+              <Settings className="h-3.5 w-3.5" strokeWidth={1.7} />
+            </button>
           </div>
         </div>
 
-        {isLay ? (
-          <>
-            <label className="space-y-2 text-sm">
-              <span className="text-[var(--text-muted)]">Comissão %</span>
+        {configOpen ? (
+          <div className="grid items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+            <label className={configFieldClass}>
+              <span className="text-[var(--text-muted)]">Aumento (%)</span>
               <input
-                className="lz-input w-full rounded-2xl px-3 py-3"
+                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
+                inputMode="decimal"
+                onChange={(event) => onIncreaseChange(event.target.value)}
+                placeholder="0,00"
+                value={increaseValue}
+              />
+            </label>
+
+            <label className={configFieldClass}>
+              <span className="text-[var(--text-muted)]">Comissão (%)</span>
+              <input
+                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
                 inputMode="decimal"
                 onChange={(event) => onCommissionChange(event.target.value)}
                 placeholder="0,00"
@@ -1070,17 +1655,27 @@ export function ProcedureModal({
               />
             </label>
 
-            <label className="space-y-2 text-sm">
-              <span className="text-[var(--text-muted)]">Odd Lay</span>
+            <label className={configFieldClass}>
+              <span className="text-[var(--text-muted)]">Cashback (%)</span>
               <input
-                className="lz-input w-full rounded-2xl px-3 py-3"
+                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
                 inputMode="decimal"
-                onChange={(event) => onLayOddChange(event.target.value)}
-                placeholder="0.000"
-                value={layOddValue}
+                onChange={(event) => onCashbackChange(event.target.value)}
+                placeholder="0,00"
+                value={cashbackValue}
               />
             </label>
-          </>
+
+            <label className="inline-flex min-h-[84px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] lg:min-w-28 lg:justify-center">
+              <input
+                checked={freebetChecked}
+                className="lz-checkbox"
+                onChange={(event) => onFreebetChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Freebet</span>
+            </label>
+          </div>
         ) : null}
       </>
     );
@@ -1102,18 +1697,12 @@ export function ProcedureModal({
     setPrimarySide(DEFAULT_BET_SIDE);
     setPrimaryLayOdd("");
     setPrimaryCommission("");
+    setPrimaryIncrease("");
+    setPrimaryCashback("");
+    setPrimaryFreebet(false);
     setProtectionDrafts({});
     setSportResultSelections([]);
-  }
-
-  function resetCollectionCalculationState() {
-    setCollectionPrimaryStake("");
-    setCollectionPrimaryOdd("");
-    setCollectionPrimarySide(DEFAULT_BET_SIDE);
-    setCollectionPrimaryLayOdd("");
-    setCollectionPrimaryCommission("");
-    setCollectionProtectionDrafts({});
-    setCollectionResultSelections([]);
+    setSportsConfigOpen({});
   }
 
   function addProtection() {
@@ -1136,46 +1725,131 @@ export function ProcedureModal({
     });
   }
 
+  function moveSportsFieldsToCollection() {
+    const nextCollectionKeys = protectionKeys.map(() =>
+      getNextCollectionProtectionKey(),
+    );
+    const nextCollectionDrafts = nextCollectionKeys.reduce<
+      Record<number, ProtectionDraft>
+    >((record, nextKey, index) => {
+      const sourceKey = protectionKeys[index];
+      record[nextKey] = createProtectionDraft(protectionDrafts[sourceKey]);
+      return record;
+    }, {});
+
+    setCollectionPrimaryStake(primaryStake);
+    setCollectionPrimaryOdd(primaryOdd);
+    setCollectionPrimarySide(primarySide);
+    setCollectionPrimaryLayOdd(primaryLayOdd);
+    setCollectionPrimaryCommission(primaryCommission);
+    setCollectionPrimaryIncrease(primaryIncrease);
+    setCollectionPrimaryCashback(primaryCashback);
+    setCollectionPrimaryFreebet(primaryFreebet);
+    setCollectionProtectionKeys(nextCollectionKeys);
+    setCollectionProtectionDrafts(nextCollectionDrafts);
+    setCollectionResultSelections([...sportResultSelections]);
+    setCollectionHouses([...selectedHouses]);
+    setCollectionDate((current) => current || operationDate);
+    setCollectionGameValue((current) => current || gameValue);
+    setFreebetCollectionOpen(true);
+    resetSportsCalculationState();
+    setProtectionKeys([]);
+    setSelectedHouses([]);
+  }
+
+  function moveCollectionFieldsToSports() {
+    const nextProtectionKeys = collectionProtectionKeys.map(() =>
+      getNextProtectionKey(),
+    );
+    const nextProtectionDrafts = nextProtectionKeys.reduce<
+      Record<number, ProtectionDraft>
+    >((record, nextKey, index) => {
+      const sourceKey = collectionProtectionKeys[index];
+      record[nextKey] = createProtectionDraft(collectionProtectionDrafts[sourceKey]);
+      return record;
+    }, {});
+
+    setPrimaryStake(collectionPrimaryStake);
+    setPrimaryOdd(collectionPrimaryOdd);
+    setPrimarySide(collectionPrimarySide);
+    setPrimaryLayOdd(collectionPrimaryLayOdd);
+    setPrimaryCommission(collectionPrimaryCommission);
+    setPrimaryIncrease(collectionPrimaryIncrease);
+    setPrimaryCashback(collectionPrimaryCashback);
+    setPrimaryFreebet(collectionPrimaryFreebet);
+    setProtectionKeys(nextProtectionKeys);
+    setProtectionDrafts(nextProtectionDrafts);
+    setSportResultSelections([...collectionResultSelections]);
+    setSelectedHouses([...collectionHouses]);
+    setGameValue((current) => current || collectionGameValue);
+  }
+
   function selectProcedureGroup(group: ProcedureGroup) {
+    if (group === selectedGroup) {
+      return;
+    }
+
     const nextOptions = getDefaultProcedureOptions(group, typeOptions);
     const nextType = nextOptions[0]?.value ?? selectedType;
+    const nextIsFreebet = isFreebetProcedureType(nextType);
+    const currentIsFreebet = isFreebetProcedureType(selectedType);
 
     setSelectedGroup(group);
     setSelectedType(nextType);
-    setFreebetCollectionOpen(false);
-    setFreebetConversionOpen(false);
-    resetSportsCalculationState();
-    resetCollectionCalculationState();
-    if (isFreebetProcedureType(nextType)) {
-      setPrimaryStake(freebetValueInput);
-      setCollectionPrimaryStake(freebetValueInput);
+
+    if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
+      moveSportsFieldsToCollection();
+    } else if (nextIsFreebet) {
+      setFreebetCollectionOpen(true);
     }
-    setProtectionKeys(
-      group === "sports" && nextType !== "Apostas Normais"
-        ? [getNextProtectionKey()]
-        : [],
-    );
-    setCollectionProtectionKeys(
-      group === "sports" && isFreebetProcedureType(nextType)
-        ? [getNextCollectionProtectionKey()]
-        : [],
-    );
+
+    if (currentIsFreebet && !nextIsFreebet && !hasSportsCalculationInput) {
+      moveCollectionFieldsToSports();
+    }
+
+    if (!nextIsFreebet) {
+      setFreebetCollectionOpen(false);
+      setFreebetConversionOpen(false);
+    }
+
+    if (group === "sports" && nextType !== "Apostas Normais" && protectionKeys.length === 0) {
+      setProtectionKeys([getNextProtectionKey()]);
+    }
+
+    if (group === "sports" && nextIsFreebet && collectionProtectionKeys.length === 0) {
+      setCollectionProtectionKeys([getNextCollectionProtectionKey()]);
+    }
   }
 
   function selectProcedureType(type: string) {
+    if (
+      type === selectedType ||
+      (isFreebetProcedureType(type) && isFreebetProcedureType(selectedType))
+    ) {
+      return;
+    }
+
+    const currentIsFreebet = isFreebetProcedureType(selectedType);
+    const nextIsFreebet = isFreebetProcedureType(type);
+
     setSelectedType(type);
-    setFreebetCollectionOpen(false);
-    setFreebetConversionOpen(false);
-    resetSportsCalculationState();
-    resetCollectionCalculationState();
-    if (isFreebetProcedureType(type)) {
-      setPrimaryStake(freebetValueInput);
-      setCollectionPrimaryStake(freebetValueInput);
+
+    if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
+      moveSportsFieldsToCollection();
+    } else if (nextIsFreebet) {
+      setFreebetCollectionOpen(true);
+    }
+
+    if (currentIsFreebet && !nextIsFreebet && !hasSportsCalculationInput) {
+      moveCollectionFieldsToSports();
+    }
+
+    if (!nextIsFreebet) {
+      setFreebetCollectionOpen(false);
+      setFreebetConversionOpen(false);
     }
 
     if (type === "Apostas Normais" || selectedGroup !== "sports") {
-      setProtectionKeys([]);
-      setCollectionProtectionKeys([]);
       return;
     }
 
@@ -1243,6 +1917,11 @@ export function ProcedureModal({
     setSelectedHouses((current) =>
       current.filter((_, houseIndex) => houseIndex !== protectionIndex + 1),
     );
+    setSportsConfigOpen((current) => {
+      const next = { ...current };
+      delete next[`sports-protection-${key}`];
+      return next;
+    });
   }
 
   function removeCollectionProtection(key: number, protectionIndex: number) {
@@ -1260,6 +1939,11 @@ export function ProcedureModal({
     setCollectionHouses((current) =>
       current.filter((_, houseIndex) => houseIndex !== protectionIndex + 1),
     );
+    setSportsConfigOpen((current) => {
+      const next = { ...current };
+      delete next[`collection-protection-${key}`];
+      return next;
+    });
   }
 
   function setProtectionDraftValue<K extends keyof ProtectionDraft>(
@@ -1287,6 +1971,13 @@ export function ProcedureModal({
         ...createProtectionDraft(current[key]),
         [field]: value,
       },
+    }));
+  }
+
+  function toggleSportsConfig(key: string) {
+    setSportsConfigOpen((current) => ({
+      ...current,
+      [key]: !current[key],
     }));
   }
 
@@ -1344,17 +2035,49 @@ export function ProcedureModal({
       defaultValues?.freebetValue === undefined
         ? ""
         : String(defaultValues.freebetValue);
+    const nextFreebetCondition =
+      defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "";
+    const nextFreebetCollectionBlocked =
+      nextFreebetCondition === FREEBET_CONDITION_CONVERSION_ONLY;
     const shouldSeedFreebetValue = isFreebetProcedureType(nextType);
     const nextProtectionKeys = getInitialProtectionKeys(defaultValues, nextType);
     const nextCollectionProtectionKeys = getInitialCollectionProtectionKeys(
       defaultValues,
       nextType,
     );
+    const nextSelectedHouses =
+      defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses);
+    const nextCollectionHouses =
+      defaultValues?.collectionHouses ??
+      (isFreebetProcedureType(nextType) ? nextSelectedHouses : []);
 
     setSelectedGroup(nextGroup);
     setSelectedType(nextType);
     setOperationDate(defaultValues?.operationDate ?? getTodayInputValue());
+    setCollectionDate(
+      defaultValues?.collectionDate ??
+        (isFreebetProcedureType(nextType) ? (defaultValues?.operationDate ?? "") : ""),
+    );
+    setConversionDate(
+      defaultValues?.conversionDate ??
+        (nextType === FREEBET_CONVERSION_TYPE
+          ? (defaultValues?.operationDate ?? "")
+          : ""),
+    );
     setGameValue(defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""));
+    setCollectionGameValue(
+      defaultValues?.collectionGame ??
+        (isFreebetProcedureType(nextType)
+          ? (defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""))
+          : ""),
+    );
+    setConversionGameValue(
+      defaultValues?.conversionGame ??
+        (isFreebetProcedureType(nextType) &&
+        defaultValues?.freebetVisibleScope === "conversion"
+          ? (defaultValues?.game === "-" ? "" : (defaultValues?.game ?? ""))
+          : ""),
+    );
     setProtectionKeys(nextProtectionKeys);
     setCollectionProtectionKeys(nextCollectionProtectionKeys);
     setProcedureStatus(defaultValues?.procedureStatus ?? "Pendente");
@@ -1369,6 +2092,9 @@ export function ProcedureModal({
     setPrimarySide(getInitialBetSide(defaultValues?.primarySide));
     setPrimaryLayOdd(defaultValues?.primaryLayOdd ?? "");
     setPrimaryCommission(defaultValues?.primaryCommission ?? "");
+    setPrimaryIncrease(defaultValues?.primaryIncrease ?? "");
+    setPrimaryCashback(defaultValues?.primaryCashback ?? "");
+    setPrimaryFreebet(Boolean(defaultValues?.primaryFreebet));
     setCollectionPrimaryStake(
       defaultValues?.collectionPrimaryStake ??
         (shouldSeedFreebetValue ? nextFreebetValue : ""),
@@ -1379,6 +2105,9 @@ export function ProcedureModal({
     setCollectionPrimaryCommission(
       defaultValues?.collectionPrimaryCommission ?? "",
     );
+    setCollectionPrimaryIncrease(defaultValues?.collectionPrimaryIncrease ?? "");
+    setCollectionPrimaryCashback(defaultValues?.collectionPrimaryCashback ?? "");
+    setCollectionPrimaryFreebet(Boolean(defaultValues?.collectionPrimaryFreebet));
     setProtectionDrafts(
       createProtectionDraftRecord(
         nextProtectionKeys,
@@ -1388,7 +2117,7 @@ export function ProcedureModal({
     setCollectionProtectionDrafts(
       createProtectionDraftRecord(
         nextCollectionProtectionKeys,
-        defaultValues?.collectionProtections,
+        getInitialCollectionProtectionDrafts(defaultValues, nextType),
       ),
     );
     setSportResultSelections(
@@ -1399,17 +2128,18 @@ export function ProcedureModal({
     );
     setNoteExpanded(Boolean(defaultValues?.note));
     setNoteValue(defaultValues?.note ?? "");
-    setSelectedHouses(defaultValues?.selectedHouses ?? parseHouseList(defaultValues?.houses));
-    setCollectionHouses(defaultValues?.collectionHouses ?? []);
+    setSelectedHouses(nextSelectedHouses);
+    setCollectionHouses(nextCollectionHouses);
     setSelectedFreebetHouse(
       defaultValues?.selectedFreebetHouse ?? defaultValues?.freebetHouse ?? "",
     );
     setFreebetValueInput(nextFreebetValue);
-    setFreebetConditionValue(
-      defaultValues?.freebetCondition ?? FREEBET_CONDITIONS[0] ?? "",
+    setFreebetConditionValue(nextFreebetCondition);
+    setFreebetCollectionOpen(
+      Boolean(defaultValues?.freebetCollectionOpen) && !nextFreebetCollectionBlocked,
     );
-    setFreebetCollectionOpen(Boolean(defaultValues?.freebetCollectionOpen));
     setFreebetConversionOpen(Boolean(defaultValues?.freebetConversionOpen));
+    setSportsConfigOpen({});
     setHousePickerTarget(null);
     setFreebetHousePickerOpen(false);
   }
@@ -1466,6 +2196,7 @@ export function ProcedureModal({
             <form
               action={mode === "edit" ? updateProcedureAction : saveProcedureAction}
               className="space-y-6 px-6 py-6"
+              onSubmit={handleSubmit}
             >
               <input name="returnTo" type="hidden" value={returnTo} />
               <input
@@ -1495,6 +2226,11 @@ export function ProcedureModal({
                 type="hidden"
                 value={isFreebetType ? freebetConditionValue : ""}
               />
+              <input
+                name="procedureDetails"
+                type="hidden"
+                value={procedureDetailsValue}
+              />
 
               {mode === "edit" && procedureId ? (
                 <input name="procedureId" type="hidden" value={procedureId} />
@@ -1503,69 +2239,100 @@ export function ProcedureModal({
                 <input key={originId} name="originIds" type="hidden" value={originId} />
               ))}
 
-              <div className="space-y-4">
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {visibleGroups.map((group) => {
-                    const active = selectedGroup === group.id;
-
-                    return (
-                      <button
-                        className={`rounded-[22px] px-4 py-3 text-sm font-semibold transition ${
-                          active ? "lz-button-primary" : "lz-button-secondary"
-                        }`}
-                        key={group.id}
-                        onClick={() => selectProcedureGroup(group.id)}
-                        type="button"
-                      >
-                        {group.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-white">Tipo de procedimento</p>
-                  <div className="flex flex-wrap gap-2">
-                    {visibleProcedureOptions.map((option) => {
-                      const active = isFreebetProcedureType(option.value)
-                        ? isFreebetType
-                        : selectedType === option.value;
+              {!hideTypeSelector ? (
+                <div className="space-y-4">
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {visibleGroups.map((group) => {
+                      const active = selectedGroup === group.id;
 
                       return (
                         <button
-                          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                          className={`rounded-[22px] px-4 py-3 text-sm font-semibold transition ${
                             active ? "lz-button-primary" : "lz-button-secondary"
                           }`}
-                          key={option.value}
-                          onClick={() => {
-                            if (active && isFreebetProcedureType(option.value)) {
-                              return;
-                            }
-
-                            selectProcedureType(option.value);
-                          }}
+                          key={group.id}
+                          onClick={() => selectProcedureGroup(group.id)}
                           type="button"
                         >
-                          {option.label}
+                          {group.label}
                         </button>
                       );
                     })}
                   </div>
-                  <input name="procedureType" type="hidden" value={selectedType} />
+
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-white">Tipo de procedimento</p>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleProcedureOptions.map((option) => {
+                        const active = isFreebetProcedureType(option.value)
+                          ? isFreebetType
+                          : selectedType === option.value;
+
+                        return (
+                          <button
+                            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                              active ? "lz-button-primary" : "lz-button-secondary"
+                            }`}
+                            key={option.value}
+                            onClick={() => {
+                              if (active && isFreebetProcedureType(option.value)) {
+                                return;
+                              }
+
+                              selectProcedureType(option.value);
+                            }}
+                            type="button"
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input name="procedureType" type="hidden" value={selectedType} />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <input name="procedureType" type="hidden" value={selectedType} />
+              )}
 
-              <div className={`grid gap-4 ${supportsGame ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
-                <label className="space-y-2 text-sm">
-                  <span className="font-medium text-white">Data</span>
-                  <DatePickerField
-                    name="operationDate"
-                    onChange={setOperationDate}
-                    value={operationDate}
+              <input name="operationDate" type="hidden" value={operationDateForSubmit} />
+              {isFreebetType ? (
+                <>
+                  <input name="game" type="hidden" value={freebetGameForSubmit} />
+                  <input
+                    name="collectionGame"
+                    type="hidden"
+                    value={collectionGameValue}
                   />
-                </label>
+                  <input
+                    name="conversionGame"
+                    type="hidden"
+                    value={conversionGameValue}
+                  />
+                  <input
+                    name="conversionBatchId"
+                    type="hidden"
+                    value={defaultValues?.conversionBatchId ?? ""}
+                  />
+                </>
+              ) : null}
 
-                {supportsGame ? (
+              <div
+                className={`grid gap-4 ${
+                  supportsGame && !isFreebetType ? "md:grid-cols-2" : "md:grid-cols-1"
+                }`}
+              >
+                {!isFreebetType ? (
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-white">Data</span>
+                    <DatePickerField
+                      onChange={setOperationDate}
+                      value={operationDate}
+                    />
+                  </label>
+                ) : null}
+
+                {supportsGame && !isFreebetType ? (
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-white">Jogo</span>
                     <input
@@ -1618,7 +2385,7 @@ export function ProcedureModal({
                     </span>
                     <LzSelect
                       className="w-full rounded-2xl px-3 py-3 text-sm"
-                      onValueChange={setFreebetConditionValue}
+                      onValueChange={handleFreebetConditionChange}
                       options={FREEBET_CONDITIONS.map((condition) => ({
                         value: condition,
                         label: condition,
@@ -1662,23 +2429,57 @@ export function ProcedureModal({
                 </button>
               )}
 
-              {showFreebetBeforeHouses ? (
+              {showFreebetCollectionSection ? (
                 <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-4">
                   <button
                     aria-label={
-                      freebetCollectionOpen ? "Fechar coleta" : "Abrir coleta"
+                      freebetCollectionExpanded ? "Fechar coleta" : "Abrir coleta"
                     }
-                    aria-expanded={freebetCollectionOpen}
-                    className="group flex w-full items-center justify-between gap-3 text-left"
-                    onClick={() => setFreebetCollectionOpen((current) => !current)}
+                    aria-expanded={freebetCollectionExpanded}
+                    className={`group flex w-full items-center justify-between gap-3 text-left transition ${
+                      freebetCollectionBlocked
+                        ? "cursor-not-allowed opacity-50"
+                        : ""
+                    }`}
+                    disabled={freebetCollectionBlocked}
+                    onClick={() => {
+                      if (freebetCollectionBlocked) {
+                        return;
+                      }
+
+                      setFreebetCollectionOpen((current) => !current);
+                    }}
                     type="button"
                   >
                     <span className="text-sm font-semibold text-white">Coleta</span>
-                    <DisclosureIcon open={freebetCollectionOpen} />
+                    <DisclosureIcon open={freebetCollectionExpanded} />
                   </button>
 
-                  {freebetCollectionOpen ? (
+                  {freebetCollectionExpanded ? (
                     <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="space-y-2 text-sm">
+                          <span className="font-medium text-white">Data da coleta</span>
+                          <DatePickerField
+                            onChange={setCollectionDate}
+                            value={collectionDate}
+                          />
+                        </label>
+
+                        <label className="space-y-2 text-sm">
+                          <span className="font-medium text-white">Jogo</span>
+                          <input
+                            className="lz-input w-full rounded-2xl px-3 py-3"
+                            onChange={(event) =>
+                              setCollectionGameValue(event.target.value)
+                            }
+                            placeholder="Ex.: Barcelona x Real Madrid"
+                            type="text"
+                            value={collectionGameValue}
+                          />
+                        </label>
+                      </div>
+
                       <div className="grid gap-4 xl:grid-cols-2">
                         <div
                           className={getSportCardClass(
@@ -1700,6 +2501,12 @@ export function ProcedureModal({
                               side: collectionPrimarySide,
                               layOddValue: collectionPrimaryLayOdd,
                               commissionValue: collectionPrimaryCommission,
+                              increaseValue: collectionPrimaryIncrease,
+                              cashbackValue: collectionPrimaryCashback,
+                              freebetChecked: collectionPrimaryFreebet,
+                              configOpen: Boolean(
+                                sportsConfigOpen["collection-primary"],
+                              ),
                               onStakeChange: setCollectionPrimaryStake,
                               onOddChange: setCollectionPrimaryOdd,
                               onToggleSide: () =>
@@ -1708,6 +2515,11 @@ export function ProcedureModal({
                                 ),
                               onLayOddChange: setCollectionPrimaryLayOdd,
                               onCommissionChange: setCollectionPrimaryCommission,
+                              onIncreaseChange: setCollectionPrimaryIncrease,
+                              onCashbackChange: setCollectionPrimaryCashback,
+                              onFreebetChange: setCollectionPrimaryFreebet,
+                              onToggleConfig: () =>
+                                toggleSportsConfig("collection-primary"),
                             })}
                           </div>
                         </div>
@@ -1769,6 +2581,16 @@ export function ProcedureModal({
                                     collectionProtectionDrafts[key]?.layOdd ?? "",
                                   commissionValue:
                                     collectionProtectionDrafts[key]?.commission ?? "",
+                                  increaseValue:
+                                    collectionProtectionDrafts[key]?.increase ?? "",
+                                  cashbackValue:
+                                    collectionProtectionDrafts[key]?.cashback ?? "",
+                                  freebetChecked: Boolean(
+                                    collectionProtectionDrafts[key]?.freebet,
+                                  ),
+                                  configOpen: Boolean(
+                                    sportsConfigOpen[`collection-protection-${key}`],
+                                  ),
                                   onStakeChange: (value) =>
                                     setCollectionProtectionDraftValue(
                                       key,
@@ -1801,6 +2623,28 @@ export function ProcedureModal({
                                       key,
                                       "commission",
                                       value,
+                                    ),
+                                  onIncreaseChange: (value) =>
+                                    setCollectionProtectionDraftValue(
+                                      key,
+                                      "increase",
+                                      value,
+                                    ),
+                                  onCashbackChange: (value) =>
+                                    setCollectionProtectionDraftValue(
+                                      key,
+                                      "cashback",
+                                      value,
+                                    ),
+                                  onFreebetChange: (checked) =>
+                                    setCollectionProtectionDraftValue(
+                                      key,
+                                      "freebet",
+                                      checked,
+                                    ),
+                                  onToggleConfig: () =>
+                                    toggleSportsConfig(
+                                      `collection-protection-${key}`,
                                     ),
                                 })}
                               </div>
@@ -1858,7 +2702,7 @@ export function ProcedureModal({
                 </div>
               ) : null}
 
-              {supportsProfitDistribution ? (
+              {supportsProfitDistribution && showFreebetConversionSection ? (
                 <div
                   className={
                     isFreebetType
@@ -1876,26 +2720,60 @@ export function ProcedureModal({
                   {isFreebetType ? (
                     <button
                       aria-label={
-                        freebetConversionOpen
+                        freebetConversionExpanded
                           ? "Fechar conversão"
                           : "Abrir conversão"
                       }
-                      aria-expanded={freebetConversionOpen}
-                      className="group flex w-full items-center justify-between gap-3 text-left"
-                      onClick={() =>
-                        setFreebetConversionOpen((current) => !current)
-                      }
+                      aria-expanded={freebetConversionExpanded}
+                      className={`group flex w-full items-center justify-between gap-3 text-left transition ${
+                        freebetConversionBlocked
+                          ? "cursor-not-allowed opacity-50"
+                          : ""
+                      }`}
+                      disabled={freebetConversionBlocked}
+                      onClick={() => {
+                        if (freebetConversionBlocked) {
+                          return;
+                        }
+
+                        setFreebetConversionOpen((current) => !current);
+                      }}
                       type="button"
                     >
                       <span className="text-sm font-semibold text-white">
                         Conversão
                       </span>
-                      <DisclosureIcon open={freebetConversionOpen} />
+                      <DisclosureIcon open={freebetConversionExpanded} />
                     </button>
                   ) : null}
 
-                  {!isFreebetType || freebetConversionOpen ? (
+                  {!isFreebetType || freebetConversionExpanded ? (
                     <>
+                  {isFreebetType ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-white">Data da conversão</span>
+                        <DatePickerField
+                          onChange={setConversionDate}
+                          value={conversionDate}
+                        />
+                      </label>
+
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-white">Jogo</span>
+                        <input
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          onChange={(event) =>
+                            setConversionGameValue(event.target.value)
+                          }
+                          placeholder="Ex.: Barcelona x Real Madrid"
+                          type="text"
+                          value={conversionGameValue}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-4 xl:grid-cols-2">
                     <div
                       className={getSportCardClass(
@@ -1930,6 +2808,10 @@ export function ProcedureModal({
                           side: primarySide,
                           layOddValue: primaryLayOdd,
                           commissionValue: primaryCommission,
+                          increaseValue: primaryIncrease,
+                          cashbackValue: primaryCashback,
+                          freebetChecked: primaryFreebet,
+                          configOpen: Boolean(sportsConfigOpen["sports-primary"]),
                           onStakeChange: setPrimaryStake,
                           onOddChange: setPrimaryOdd,
                           onToggleSide: () =>
@@ -1938,6 +2820,11 @@ export function ProcedureModal({
                             ),
                           onLayOddChange: setPrimaryLayOdd,
                           onCommissionChange: setPrimaryCommission,
+                          onIncreaseChange: setPrimaryIncrease,
+                          onCashbackChange: setPrimaryCashback,
+                          onFreebetChange: setPrimaryFreebet,
+                          onToggleConfig: () =>
+                            toggleSportsConfig("sports-primary"),
                         })}
                       </div>
                     </div>
@@ -1996,6 +2883,16 @@ export function ProcedureModal({
                                     protectionDrafts[key]?.layOdd ?? "",
                                   commissionValue:
                                     protectionDrafts[key]?.commission ?? "",
+                                  increaseValue:
+                                    protectionDrafts[key]?.increase ?? "",
+                                  cashbackValue:
+                                    protectionDrafts[key]?.cashback ?? "",
+                                  freebetChecked: Boolean(
+                                    protectionDrafts[key]?.freebet,
+                                  ),
+                                  configOpen: Boolean(
+                                    sportsConfigOpen[`sports-protection-${key}`],
+                                  ),
                                   onStakeChange: (value) =>
                                     setProtectionDraftValue(key, "stake", value),
                                   onOddChange: (value) =>
@@ -2016,6 +2913,28 @@ export function ProcedureModal({
                                       key,
                                       "commission",
                                       value,
+                                    ),
+                                  onIncreaseChange: (value) =>
+                                    setProtectionDraftValue(
+                                      key,
+                                      "increase",
+                                      value,
+                                    ),
+                                  onCashbackChange: (value) =>
+                                    setProtectionDraftValue(
+                                      key,
+                                      "cashback",
+                                      value,
+                                    ),
+                                  onFreebetChange: (checked) =>
+                                    setProtectionDraftValue(
+                                      key,
+                                      "freebet",
+                                      checked,
+                                    ),
+                                  onToggleConfig: () =>
+                                    toggleSportsConfig(
+                                      `sports-protection-${key}`,
                                     ),
                                 })}
                               </div>
@@ -2129,45 +3048,57 @@ export function ProcedureModal({
 
                   {isFreebetType ? (
                     <div className="space-y-4 rounded-[26px] border border-white/10 bg-white/4 p-4">
-                      <div className="grid gap-3 lg:grid-cols-3">
-                        <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
-                          <p className="text-xs font-semibold text-[var(--text-muted)]">
-                            {freebetCollectionResultLabel}
-                          </p>
-                          <p
-                            className={`mt-2 text-xl font-semibold ${getResultAmountClass(
-                              freebetCollectionResultAmount,
-                            )}`}
-                          >
-                            {formatProcedureCurrency(freebetCollectionResultAmount)}
-                          </p>
-                        </div>
+                      <div
+                        className={`grid gap-3 ${
+                          freebetVisibleScope === "all"
+                            ? "lg:grid-cols-3"
+                            : "lg:grid-cols-1"
+                        }`}
+                      >
+                        {freebetVisibleScope !== "conversion" ? (
+                          <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
+                            <p className="text-xs font-semibold text-[var(--text-muted)]">
+                              {freebetCollectionResultLabel}
+                            </p>
+                            <p
+                              className={`mt-2 text-xl font-semibold ${getResultAmountClass(
+                                freebetCollectionResultAmount,
+                              )}`}
+                            >
+                              {formatProcedureCurrency(freebetCollectionResultAmount)}
+                            </p>
+                          </div>
+                        ) : null}
 
-                        <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
-                          <p className="text-xs font-semibold text-[var(--text-muted)]">
-                            {freebetConversionResultLabel}
-                          </p>
-                          <p
-                            className={`mt-2 text-xl font-semibold ${getResultAmountClass(
-                              freebetConversionResultAmount,
-                            )}`}
-                          >
-                            {formatProcedureCurrency(freebetConversionResultAmount)}
-                          </p>
-                        </div>
+                        {freebetVisibleScope !== "collection" ? (
+                          <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
+                            <p className="text-xs font-semibold text-[var(--text-muted)]">
+                              {freebetConversionResultLabel}
+                            </p>
+                            <p
+                              className={`mt-2 text-xl font-semibold ${getResultAmountClass(
+                                freebetConversionResultAmount,
+                              )}`}
+                            >
+                              {formatProcedureCurrency(freebetConversionResultAmount)}
+                            </p>
+                          </div>
+                        ) : null}
 
-                        <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
-                          <p className="text-xs font-semibold text-[var(--text-muted)]">
-                            {freebetResultLabel}
-                          </p>
-                          <p
-                            className={`mt-2 text-xl font-semibold ${getResultAmountClass(
-                              freebetResultAmount,
-                            )}`}
-                          >
-                            {formatProcedureCurrency(freebetResultAmount)}
-                          </p>
-                        </div>
+                        {freebetVisibleScope === "all" ? (
+                          <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
+                            <p className="text-xs font-semibold text-[var(--text-muted)]">
+                              {freebetResultLabel}
+                            </p>
+                            <p
+                              className={`mt-2 text-xl font-semibold ${getResultAmountClass(
+                                freebetResultAmount,
+                              )}`}
+                            >
+                              {formatProcedureCurrency(freebetResultAmount)}
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

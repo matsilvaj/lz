@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS procedimentos_entradas
+  ADD COLUMN IF NOT EXISTS freebet_somente_lucro BOOLEAN NOT NULL DEFAULT FALSE;

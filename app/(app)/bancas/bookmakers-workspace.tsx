@@ -26,9 +26,17 @@ type BookmakersWorkspaceProps = {
 };
 
 function parseBalanceInput(value: string) {
-  const normalized = value.trim().replace(",", ".");
-  const parsed = Number(normalized);
+  const parsed = Number(sanitizeBalanceInput(value));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sanitizeBalanceInput(value: string) {
+  return value.replace(/\D/gu, "").slice(0, 7);
+}
+
+function formatBalanceInput(value: number) {
+  const normalized = Math.min(Math.max(Math.trunc(value), 0), 9_999_999);
+  return normalized === 0 ? "" : String(normalized);
 }
 
 export function BookmakersWorkspace({
@@ -40,6 +48,7 @@ export function BookmakersWorkspace({
   const { showToast } = useToast();
   const autocompleteRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("");
+  const [initialBalance, setInitialBalance] = useState("");
   const [setBalance, setSetBalance] = useState(true);
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
   const [notes, setNotes] = useState(initialNotes);
@@ -47,7 +56,8 @@ export function BookmakersWorkspace({
   const [isPending, startTransition] = useTransition();
 
   const selectedBookmakers = useMemo(
-    () => new Set(bookmakers.map((bookmaker) => bookmaker.nome.toLowerCase())),
+    () =>
+      new Set(bookmakers.map((bookmaker) => bookmaker.nome.toLowerCase())),
     [bookmakers],
   );
 
@@ -80,15 +90,30 @@ export function BookmakersWorkspace({
     };
   }, []);
 
-  async function submitBookmaker(bookmakerName: string) {
-    await saveBookmakerAction({ name: bookmakerName });
+  async function submitBookmaker(bookmakerName: string, balance: number) {
+    await saveBookmakerAction({ name: bookmakerName, balance });
     setName("");
+    setInitialBalance("");
     setAutocompleteOpen(false);
     showToast({
       title: "Casa adicionada com sucesso.",
       tone: "success",
     });
     router.refresh();
+  }
+
+  async function addBookmakerWithBalance(bookmakerName: string) {
+    const nextInitialBalance = parseBalanceInput(initialBalance);
+
+    if (nextInitialBalance <= 0) {
+      showToast({
+        title: "Informe um saldo maior que zero.",
+        tone: "error",
+      });
+      return;
+    }
+
+    await submitBookmaker(bookmakerName, nextInitialBalance);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -109,7 +134,7 @@ export function BookmakersWorkspace({
 
     startTransition(async () => {
       try {
-        await submitBookmaker(normalizedName);
+        await addBookmakerWithBalance(normalizedName);
       } catch {
         showToast({
           title: "Não foi possível adicionar a casa.",
@@ -122,7 +147,26 @@ export function BookmakersWorkspace({
   function handleDelete(bookmakerName: string) {
     startTransition(async () => {
       try {
-        await deleteBookmakerAction(bookmakerName);
+        const result = await deleteBookmakerAction(bookmakerName);
+
+        if (result?.blockedByPending) {
+          showToast({
+            title: "Tem procedimentos pendentes nesta casa.",
+            description: "Conclua e tente novamente.",
+            tone: "error",
+          });
+          return;
+        }
+
+        if (!result?.deleted) {
+          showToast({
+            title: "Nao foi possivel remover a casa.",
+            tone: "error",
+          });
+          router.refresh();
+          return;
+        }
+
         showToast({
           title: "Casa removida.",
           tone: "success",
@@ -218,7 +262,7 @@ export function BookmakersWorkspace({
                           onClick={() => {
                             startTransition(async () => {
                               try {
-                                await submitBookmaker(bookmaker);
+                                await addBookmakerWithBalance(bookmaker);
                               } catch {
                                 showToast({
                                   title: "Não foi possível adicionar a casa.",
@@ -238,10 +282,27 @@ export function BookmakersWorkspace({
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="flex min-w-[10rem] items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2.5 text-sm text-[var(--text-secondary)]">
+                  <span className="shrink-0 font-semibold">R$</span>
+                  <input
+                    className="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)]"
+                    disabled={isPending}
+                    inputMode="numeric"
+                    maxLength={7}
+                    onChange={(event) =>
+                      setInitialBalance(sanitizeBalanceInput(event.target.value))
+                    }
+                    pattern="[0-9]*"
+                    placeholder="Saldo"
+                    type="text"
+                    value={initialBalance}
+                  />
+                </label>
+
                 <label className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/4 px-4 py-3 text-sm text-[var(--text-secondary)]">
                   <input
                     checked={setBalance}
-                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                    className="lz-checkbox"
                     onChange={(event) => setSetBalance(event.target.checked)}
                     type="checkbox"
                   />
@@ -277,18 +338,19 @@ export function BookmakersWorkspace({
 
                 return (
                   <div
-                    className="rounded-[28px] border border-white/10 bg-white/5 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                    className="rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.16)]"
                     key={bookmaker.nome}
                   >
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex-1">
-                        <p className="text-base font-semibold text-white">{bookmaker.nome}</p>
+                        <p className="text-sm font-semibold text-white">{bookmaker.nome}</p>
                       </div>
                       <button
                         aria-label={`Remover ${bookmaker.nome}`}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
                         disabled={isPending}
                         onClick={() => handleDelete(bookmaker.nome)}
+                        title="Remover casa"
                         type="button"
                       >
                         <svg
@@ -309,31 +371,35 @@ export function BookmakersWorkspace({
                     </div>
 
                     {setBalance ? (
-                      <div className="mt-3 space-y-2">
+                      <div className="mt-3 flex items-center gap-2">
                         <label
-                          className="block text-sm font-medium text-[var(--text-secondary)]"
+                          className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]"
                           htmlFor={balanceInputId}
                         >
                           Saldo
                         </label>
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-white">
+                        <div className="flex min-w-0 flex-1 items-center justify-end gap-1 rounded-[16px] border border-white/10 bg-[rgba(255,255,255,0.055)] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-[rgba(216,31,89,0.55)] focus-within:bg-[rgba(216,31,89,0.08)]">
+                          <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">
                             R$
                           </span>
                           <input
-                            className="lz-input w-full rounded-2xl py-3 pl-11 pr-4 text-center text-sm"
+                            className="w-auto min-w-0 max-w-[7rem] flex-1 border-0 bg-transparent py-1 text-right text-base font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:cursor-not-allowed"
                             defaultValue={
-                              bookmaker.saldo === 0
-                                ? ""
-                                : String(bookmaker.saldo).replace(".", ",")
+                              formatBalanceInput(bookmaker.saldo)
                             }
                             disabled={isPending}
                             id={balanceInputId}
-                            inputMode="decimal"
+                            inputMode="numeric"
                             key={`${bookmaker.nome}-${bookmaker.saldo}`}
+                            maxLength={7}
                             onBlur={(event) =>
                               commitBalance(bookmaker.nome, event.target.value)
                             }
+                            onChange={(event) => {
+                              event.currentTarget.value = sanitizeBalanceInput(
+                                event.currentTarget.value,
+                              );
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
                                 event.preventDefault();
@@ -343,7 +409,8 @@ export function BookmakersWorkspace({
                                 );
                               }
                             }}
-                            placeholder="0,00"
+                            pattern="[0-9]*"
+                            placeholder="0"
                             type="text"
                           />
                         </div>

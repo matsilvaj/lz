@@ -117,6 +117,50 @@ textarea:disabled {
   cursor: not-allowed;
 }
 
+.lz-checkbox {
+  appearance: none;
+  display: inline-grid;
+  height: 16px;
+  width: 16px;
+  flex: 0 0 auto;
+  place-content: center;
+  border: 1px solid rgba(245, 199, 214, 0.42);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.lz-checkbox::before {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #fff4f8;
+  border-bottom: 2px solid #fff4f8;
+  opacity: 0;
+  transform: rotate(-45deg) translateY(-1px) scale(0.72);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.lz-checkbox:checked {
+  border-color: rgba(216, 31, 89, 0.86);
+  background: linear-gradient(135deg, var(--accent), #a90f43);
+  box-shadow:
+    0 10px 24px rgba(216, 31, 89, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.lz-checkbox:checked::before {
+  opacity: 1;
+  transform: rotate(-45deg) translateY(-1px) scale(1);
+}
+
+.lz-checkbox:focus-visible {
+  outline: 2px solid rgba(255, 119, 163, 0.58);
+  outline-offset: 3px;
+}
+
 .lz-shell {
   position: relative;
   isolation: isolate;

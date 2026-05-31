@@ -11,8 +11,8 @@ function parseText(value: string | FormDataEntryValue | null) {
   return normalizeText(value, 120);
 }
 
-function parseNumber(value: string | number | FormDataEntryValue | null) {
-  return parseLimitedNumber(value);
+function parseBalance(value: string | number | FormDataEntryValue | null) {
+  return parseLimitedNumber(value, { min: 0, max: 9_999_999 });
 }
 
 async function canWriteBookmakers(userId: string) {
@@ -36,8 +36,10 @@ function revalidateBookmakerScreens() {
 
 export async function saveBookmakerAction({
   name,
+  balance = 0,
 }: {
   name: string;
+  balance?: number;
 }) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
@@ -47,7 +49,12 @@ export async function saveBookmakerAction({
     return;
   }
 
-  await repository.addBookmaker(normalizedName, user.id, activeWorkspace.id);
+  await repository.addBookmaker(
+    normalizedName,
+    user.id,
+    activeWorkspace.id,
+    parseBalance(balance),
+  );
 
   revalidateBookmakerScreens();
 }
@@ -69,7 +76,7 @@ export async function updateBookmakerBalanceAction({
 
   await repository.updateBookmakerBalance(
     normalizedName,
-    parseNumber(balance),
+    parseBalance(balance),
     user.id,
     activeWorkspace.id,
   );
@@ -82,11 +89,20 @@ export async function deleteBookmakerAction(name: string) {
   const normalizedName = parseText(name);
 
   if (!normalizedName || !(await canWriteBookmakers(user.id))) {
-    return;
+    return { deleted: false, blockedByPending: false };
   }
 
-  await repository.deleteBookmaker(normalizedName, user.id, activeWorkspace.id);
-  revalidateBookmakerScreens();
+  const result = await repository.deleteBookmaker(
+    normalizedName,
+    user.id,
+    activeWorkspace.id,
+  );
+
+  if (result?.deleted) {
+    revalidateBookmakerScreens();
+  }
+
+  return result;
 }
 
 export async function updateBookmakersNotesAction(notes: string) {

@@ -1,12 +1,14 @@
 import "server-only";
 import {
+  CASINO_PROCEDURE_TYPES,
+  FREEBET_CONDITION_CONVERSION_ONLY,
   FREEBET_RESULT_NO,
-  FREEBET_RESULT_YES,
   FREEBET_STATUS_FINISHED,
   FREEBET_STATUS_NA,
   FREEBET_STATUS_PENDING,
   FREEBET_STATUS_USED,
   PROCEDURE_STATUS_DONE,
+  PROCEDURE_STATUS_PENDING,
   PROCEDURE_STATUSES,
 } from "../../domain/shared/constants.js";
 import {
@@ -19,6 +21,7 @@ import {
 } from "../../domain/shared/normalizers.js";
 import {
   buildConvertedFreebetsHistory,
+  collectionFinishedWithoutFreebet,
   groupActiveFreebets,
 } from "../../domain/freebets/freebets.service.js";
 import {
@@ -64,12 +67,23 @@ function normalizeIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? text : "";
 }
 
+function createFreebetConversionBatchId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `conversion-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function normalizeDatabaseData(data = {}) {
   return {
     data_operacao: formatOperationDate(data.data_operacao),
     tipo_procedimento: parseText(data.tipo_procedimento),
     casas_envolvidas: normalizeHouses(data.casas_envolvidas),
     jogo_time_pa: parseText(data.jogo_time_pa),
+    jogo_coleta_freebet: parseText(data.jogo_coleta_freebet),
+    jogo_conversao_freebet: parseText(data.jogo_conversao_freebet),
+    lote_conversao_freebet: parseText(data.lote_conversao_freebet),
     lucro_final: parseNumber(data.lucro_final),
     bateu_duplo: parseBoolean(data.bateu_duplo),
     condicao_freebet: parseText(data.condicao_freebet),
@@ -98,6 +112,341 @@ function normalizeUserId(userId) {
   return parseText(userId).trim();
 }
 
+function isUndefinedTableError(error) {
+  return error && typeof error === "object" && error.code === "42P01";
+}
+
+const PROCEDURE_DETAIL_SCOPES = new Set([
+  "sports",
+  "freebet_collection",
+  "freebet_conversion",
+]);
+const PROCEDURE_DETAIL_ROLES = new Set(["principal", "protecao"]);
+
+function normalizeProcedureDetailScope(value) {
+  const scope = parseText(value).trim();
+  return PROCEDURE_DETAIL_SCOPES.has(scope) ? scope : "sports";
+}
+
+function normalizeProcedureDetailRole(value) {
+  const role = parseText(value).trim();
+  return PROCEDURE_DETAIL_ROLES.has(role) ? role : "principal";
+}
+
+function normalizeProcedureDetailSide(value) {
+  return parseText(value).trim() === "lay" ? "lay" : "back";
+}
+
+function normalizeProcedureResultKey(value, fallback = "principal") {
+  const key = parseText(value).trim();
+
+  if (key === "principal" || key === "defeat" || /^protection-\d+$/u.test(key)) {
+    return key;
+  }
+
+  return fallback;
+}
+
+function normalizeSelectedProcedureResultKey(value) {
+  return normalizeProcedureResultKey(value, "");
+}
+
+function normalizeProcedureDetailEntries(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .slice(0, 80)
+    .map((entry, index) => ({
+      scope: normalizeProcedureDetailScope(entry?.scope),
+      role: normalizeProcedureDetailRole(entry?.role),
+      order: clamp(Math.trunc(parseNumber(entry?.order)), 0, 50),
+      resultKey: normalizeProcedureResultKey(entry?.resultKey, `protection-${index}`),
+      house: parseText(entry?.house).trim(),
+      value: parseNumber(entry?.value),
+      odd: parseNumber(entry?.odd),
+      side: normalizeProcedureDetailSide(entry?.side),
+      layOdd: parseNumber(entry?.layOdd),
+      commission: parseNumber(entry?.commission),
+      increase: parseNumber(entry?.increase ?? entry?.aumento_percentual),
+      cashback: parseNumber(entry?.cashback ?? entry?.cashback_percentual),
+      freebet: parseBoolean(entry?.freebet ?? entry?.freebet_somente_lucro),
+      operationDate: parseText(entry?.operationDate ?? entry?.data_operacao).trim(),
+    }))
+    .filter((entry) => entry.resultKey !== "defeat");
+}
+
+function calculateAdjustedOdd(odd, increase) {
+  if (odd <= 1) {
+    return odd;
+  }
+
+  return 1 + (odd - 1) * (1 + increase / 100);
+}
+
+function calculateProcedureEntryPayout(entry, selectedKeys) {
+  if (entry.side === "lay" && !selectedKeys.has(entry.resultKey)) {
+    const baseOdd = entry.layOdd > 1 ? entry.layOdd : entry.odd;
+    const effectiveOdd = calculateAdjustedOdd(baseOdd, entry.increase);
+
+    if (effectiveOdd <= 1) {
+      return 0;
+    }
+
+    const layStake = entry.value / (effectiveOdd - 1);
+    const commissionMultiplier = 1 - Math.max(entry.commission, 0) / 100;
+    const cashbackRate = Math.max(entry.cashback, 0) / 100;
+
+    return (
+      layStake *
+      (effectiveOdd - 1 + commissionMultiplier - (effectiveOdd - 1) * cashbackRate)
+    );
+  }
+
+  if (entry.side !== "lay" && selectedKeys.has(entry.resultKey)) {
+    const effectiveOdd = calculateAdjustedOdd(entry.odd, entry.increase);
+    const commissionMultiplier = 1 - Math.max(entry.commission, 0) / 100;
+    const cashbackRate = Math.max(entry.cashback, 0) / 100;
+
+    if (entry.freebet) {
+      return entry.value * ((effectiveOdd - 1) * commissionMultiplier);
+    }
+
+    return (
+      entry.value *
+      (1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate)
+    );
+  }
+
+  return 0;
+}
+
+function normalizeProcedureDetailResults(results) {
+  return (Array.isArray(results) ? results : [])
+    .slice(0, 80)
+    .map((result) => {
+      const resultKey = normalizeSelectedProcedureResultKey(result?.resultKey);
+
+      if (!resultKey) {
+        return null;
+      }
+
+      return {
+        scope: normalizeProcedureDetailScope(result?.scope),
+        resultKey,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildProcedureBookmakerBalanceCte() {
+  return `
+    procedure_result_summary AS (
+      SELECT
+        procedimento_id,
+        escopo,
+        BOOL_OR(resultado_chave = 'defeat') AS defeat_selected,
+        COUNT(*) FILTER (WHERE resultado_chave <> 'defeat') AS selected_count,
+        ARRAY_AGG(resultado_chave) FILTER (WHERE resultado_chave <> 'defeat') AS selected_keys
+      FROM procedimentos_resultados
+      WHERE user_id = $1
+        AND base_id = $2
+      GROUP BY procedimento_id, escopo
+    ),
+    procedure_entry_values AS (
+      SELECT
+        ca.id AS bookmaker_id,
+        ca.nome,
+        CASE
+          WHEN COALESCE(rs.defeat_selected, false)
+            OR COALESCE(rs.selected_count, 0) > 0
+            OR COALESCE(e.freebet_somente_lucro, false)
+          THEN 0
+          ELSE e.valor
+        END AS pending_required,
+        COALESCE(rs.selected_count, 0) AS selected_count
+      FROM procedimentos_entradas e
+      INNER JOIN casas_de_apostas ca
+        ON lower(ca.nome) = lower(btrim(e.casa))
+      LEFT JOIN procedure_result_summary rs
+        ON rs.procedimento_id = e.procedimento_id
+       AND rs.escopo = e.escopo
+      WHERE e.user_id = $1
+        AND e.base_id = $2
+        AND btrim(e.casa) <> ''
+    ),
+    procedure_balances AS (
+      SELECT
+        bookmaker_id,
+        nome,
+        SUM(pending_required) AS pending_required
+      FROM procedure_entry_values
+      GROUP BY bookmaker_id, nome
+      HAVING ABS(SUM(pending_required)) >= 0.005
+    )
+  `;
+}
+
+function buildProcedureBookmakerSettlements(details) {
+  const entries = normalizeProcedureDetailEntries(details?.entries);
+  const results = normalizeProcedureDetailResults(details?.results);
+  const resultsByScope = new Map();
+
+  for (const result of results) {
+    const scopeResults = resultsByScope.get(result.scope) ?? {
+      defeatSelected: false,
+      selectedKeys: new Set(),
+    };
+
+    if (result.resultKey === "defeat") {
+      scopeResults.defeatSelected = true;
+      scopeResults.selectedKeys.clear();
+    } else if (!scopeResults.defeatSelected) {
+      scopeResults.selectedKeys.add(result.resultKey);
+    }
+
+    resultsByScope.set(result.scope, scopeResults);
+  }
+
+  const settlementsByHouse = new Map();
+
+  for (const entry of entries) {
+    const house = parseText(entry.house).trim();
+    const scopeResults = resultsByScope.get(entry.scope);
+
+    if (
+      !house ||
+      !scopeResults ||
+      (!scopeResults.defeatSelected && scopeResults.selectedKeys.size === 0)
+    ) {
+      continue;
+    }
+
+    const current = settlementsByHouse.get(house.toLowerCase()) ?? {
+      house,
+      stake: 0,
+      payout: 0,
+    };
+    current.stake += entry.freebet ? 0 : Math.max(entry.value, 0);
+
+    if (!scopeResults.defeatSelected) {
+      current.payout += calculateProcedureEntryPayout(
+        entry,
+        scopeResults.selectedKeys,
+      );
+    }
+
+    settlementsByHouse.set(house.toLowerCase(), current);
+  }
+
+  return [...settlementsByHouse.values()].filter(
+    (settlement) =>
+      Math.abs(settlement.stake) >= 0.005 || Math.abs(settlement.payout) >= 0.005,
+  );
+}
+
+function toDetailInput(entry) {
+  return {
+    scope: parseText(entry?.escopo ?? entry?.scope),
+    role: parseText(entry?.tipo_entrada ?? entry?.role),
+    order: parseNumber(entry?.ordem ?? entry?.order),
+    resultKey: parseText(entry?.resultado_chave ?? entry?.resultKey),
+    house: parseText(entry?.casa ?? entry?.house),
+    value: parseNumber(entry?.valor ?? entry?.value),
+    odd: parseNumber(entry?.odd),
+    side: parseText(entry?.lado ?? entry?.side),
+    layOdd: parseNumber(entry?.odd_lay ?? entry?.layOdd),
+    commission: parseNumber(entry?.comissao_percentual ?? entry?.commission),
+    increase: parseNumber(entry?.aumento_percentual ?? entry?.increase),
+    cashback: parseNumber(entry?.cashback_percentual ?? entry?.cashback),
+    freebet: parseBoolean(entry?.freebet_somente_lucro ?? entry?.freebet),
+    operationDate: parseText(entry?.data_operacao ?? entry?.operationDate).trim(),
+  };
+}
+
+function toResultInput(result) {
+  return {
+    scope: parseText(result?.escopo ?? result?.scope),
+    resultKey: parseText(result?.resultado_chave ?? result?.resultKey),
+  };
+}
+
+function scaleDetailInput(entry, ratio) {
+  return {
+    ...entry,
+    value: Number((parseNumber(entry.value) * ratio).toFixed(2)),
+  };
+}
+
+function calculateScopeProfit(entries, results, scope) {
+  const normalizedEntries = normalizeProcedureDetailEntries(entries)
+    .filter((entry) => entry.scope === scope);
+  const scopeResults = normalizeProcedureDetailResults(results)
+    .filter((result) => result.scope === scope);
+
+  if (scopeResults.length === 0) {
+    return 0;
+  }
+
+  const defeatSelected = scopeResults.some((result) => result.resultKey === "defeat");
+  const selectedKeys = new Set(
+    defeatSelected
+      ? []
+      : scopeResults
+          .map((result) => result.resultKey)
+          .filter((resultKey) => resultKey !== "defeat"),
+  );
+  const stake = normalizedEntries.reduce(
+    (sum, entry) => sum + (entry.freebet ? 0 : Math.max(entry.value, 0)),
+    0,
+  );
+  const payout = defeatSelected
+    ? 0
+    : normalizedEntries.reduce(
+        (sum, entry) => sum + calculateProcedureEntryPayout(entry, selectedKeys),
+        0,
+      );
+
+  return Number((payout - stake).toFixed(2));
+}
+
+function getProcedureScopeEntries(procedure, scope) {
+  return (Array.isArray(procedure?.entradas) ? procedure.entradas : []).filter(
+    (entry) => parseText(entry?.escopo ?? entry?.scope) === scope,
+  );
+}
+
+function getProcedureScopeResults(procedure, scope) {
+  return (Array.isArray(procedure?.resultados) ? procedure.resultados : []).filter(
+    (result) => parseText(result?.escopo ?? result?.scope) === scope,
+  );
+}
+
+function hasProcedureScopeEntries(procedure, scope) {
+  return getProcedureScopeEntries(procedure, scope).length > 0;
+}
+
+function hasProcedureScopeResults(procedure, scope) {
+  return getProcedureScopeResults(procedure, scope).length > 0;
+}
+
+function getProcedureScopeDate(procedure, scope, fallback = "") {
+  const entryDate = getProcedureScopeEntries(procedure, scope)
+    .map((entry) => parseText(entry?.data_operacao ?? entry?.operationDate).trim())
+    .find(Boolean);
+
+  return entryDate || parseText(fallback).trim();
+}
+
+function getProcedureScopeProfit(procedure, scope, fallback = 0) {
+  if (!hasProcedureScopeResults(procedure, scope)) {
+    return parseNumber(fallback);
+  }
+
+  return calculateScopeProfit(
+    (procedure?.entradas ?? []).map(toDetailInput),
+    (procedure?.resultados ?? []).map(toResultInput),
+    scope,
+  );
+}
+
 export class ProceduresPostgresRepository {
   constructor(db) {
     if (!db || typeof db.query !== "function") {
@@ -109,36 +458,119 @@ export class ProceduresPostgresRepository {
 
   async initialize() {}
 
-  async addBookmaker(name, userId, workspaceId, executor = this.db) {
+  async addBookmaker(name, userId, workspaceId, balance = 0, executor = this.db) {
     const normalizedName = parseText(name).trim();
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedBalance = Math.min(Math.max(parseNumber(balance), 0), 9_999_999);
 
     if (!normalizedName || !normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
-    await executor.query(
+    if (executor === this.db && typeof this.db.connect === "function") {
+      return this.runInTransaction((transaction) =>
+        this.addBookmaker(
+          normalizedName,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          normalizedBalance,
+          transaction,
+        ),
+      );
+    }
+
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    const { rows } = await executor.query(
       `
-        INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id)
-        SELECT $1, $2, id
+        INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id, saldo)
+        SELECT $1, $2, id, $4
         FROM casas_de_apostas
         WHERE lower(nome) = lower($3)
-        ON CONFLICT (base_id, bookmaker_id) DO NOTHING
+        ON CONFLICT (base_id, bookmaker_id)
+        DO UPDATE SET saldo = EXCLUDED.saldo
+        WHERE usuarios_bancas.user_id = EXCLUDED.user_id
+        RETURNING bookmaker_id
       `,
-      [normalizedUserId, normalizedWorkspaceId, normalizedName],
+      [normalizedUserId, normalizedWorkspaceId, normalizedName, normalizedBalance],
     );
+
+    const bookmakerId = parseNumber(rows[0]?.bookmaker_id);
+    if (bookmakerId > 0) {
+      await this.rebaseBookmakerApplications(
+        bookmakerId,
+        normalizedBalance,
+        normalizedUserId,
+        normalizedWorkspaceId,
+        executor,
+      );
+    }
   }
 
   async deleteBookmaker(name, userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedName = parseText(name).trim();
 
-    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
-      return;
+    if (!normalizedName || !normalizedUserId || normalizedWorkspaceId <= 0) {
+      return { deleted: false, blockedByPending: false };
     }
 
-    await executor.query(
+    if (executor === this.db && typeof this.db.connect === "function") {
+      return this.runInTransaction((transaction) =>
+        this.deleteBookmaker(
+          normalizedName,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          transaction,
+        ),
+      );
+    }
+
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    const hasPendingProcedures = await this.bookmakerHasPendingProcedures(
+      normalizedName,
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    if (hasPendingProcedures) {
+      return { deleted: false, blockedByPending: true };
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT id
+        FROM casas_de_apostas
+        WHERE lower(nome) = lower($1)
+        LIMIT 1
+      `,
+      [normalizedName],
+    );
+    const bookmakerId = parseNumber(rows[0]?.id);
+
+    if (bookmakerId > 0) {
+      await this.rebaseBookmakerApplications(
+        bookmakerId,
+        0,
+        normalizedUserId,
+        normalizedWorkspaceId,
+        executor,
+      );
+    }
+
+    const result = await executor.query(
       `
         DELETE FROM usuarios_bancas ub
         USING casas_de_apostas ca
@@ -147,8 +579,10 @@ export class ProceduresPostgresRepository {
           AND ub.base_id = $2
           AND lower(ca.nome) = lower($3)
       `,
-      [normalizedUserId, normalizedWorkspaceId, name],
+      [normalizedUserId, normalizedWorkspaceId, normalizedName],
     );
+
+    return { deleted: result.rowCount > 0, blockedByPending: false };
   }
 
   async listBookmakers(executor = this.db) {
@@ -167,18 +601,78 @@ export class ProceduresPostgresRepository {
       return [];
     }
 
-    const { rows } = await executor.query(
-      `
-        SELECT ca.nome, ub.saldo
-        FROM usuarios_bancas ub
-        INNER JOIN casas_de_apostas ca
-          ON ca.id = ub.bookmaker_id
-        WHERE ub.user_id = $1
-          AND ub.base_id = $2
-        ORDER BY ca.nome ASC
-      `,
-      [normalizedUserId, normalizedWorkspaceId],
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
     );
+
+    let rows;
+
+    try {
+      const procedureBalanceCte = buildProcedureBookmakerBalanceCte();
+      const result = await executor.query(
+        `
+          WITH manual_balances AS (
+            SELECT ca.id AS bookmaker_id, ca.nome, ub.saldo
+            FROM usuarios_bancas ub
+            INNER JOIN casas_de_apostas ca
+              ON ca.id = ub.bookmaker_id
+            WHERE ub.user_id = $1
+              AND ub.base_id = $2
+          ),
+          ${procedureBalanceCte},
+          bookmaker_ids AS (
+            SELECT bookmaker_id FROM manual_balances
+            UNION
+            SELECT bookmaker_id FROM procedure_balances
+          ),
+          bookmaker_totals AS (
+            SELECT
+              COALESCE(mb.nome, pb.nome) AS nome,
+              GREATEST(
+                COALESCE(mb.saldo, 0),
+                COALESCE(pb.pending_required, 0),
+                0
+              ) AS saldo
+            FROM bookmaker_ids bi
+            LEFT JOIN manual_balances mb
+              ON mb.bookmaker_id = bi.bookmaker_id
+            LEFT JOIN procedure_balances pb
+              ON pb.bookmaker_id = bi.bookmaker_id
+          )
+          SELECT
+            nome,
+            saldo
+          FROM bookmaker_totals
+          WHERE saldo > 0.005
+          ORDER BY lower(nome) ASC
+        `,
+        [normalizedUserId, normalizedWorkspaceId],
+      );
+      rows = result.rows;
+    } catch (error) {
+      if (!isUndefinedTableError(error)) {
+        throw error;
+      }
+
+      const result = await executor.query(
+        `
+          SELECT
+            ca.nome,
+            ub.saldo
+          FROM usuarios_bancas ub
+          INNER JOIN casas_de_apostas ca
+            ON ca.id = ub.bookmaker_id
+          WHERE ub.user_id = $1
+            AND ub.base_id = $2
+            AND ub.saldo > 0.005
+          ORDER BY ca.nome ASC
+        `,
+        [normalizedUserId, normalizedWorkspaceId],
+      );
+      rows = result.rows;
+    }
 
     return rows.map((row) => ({
       nome: row.nome,
@@ -189,23 +683,228 @@ export class ProceduresPostgresRepository {
   async updateBookmakerBalance(name, balance, userId, workspaceId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedName = parseText(name).trim();
+    const normalizedBalance = Math.min(Math.max(parseNumber(balance), 0), 9_999_999);
 
-    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
+    if (!normalizedName || !normalizedUserId || normalizedWorkspaceId <= 0) {
       return;
     }
 
-    await executor.query(
-      `
-        UPDATE usuarios_bancas ub
-        SET saldo = $1
-        FROM casas_de_apostas ca
-        WHERE ub.bookmaker_id = ca.id
-          AND ub.user_id = $2
-          AND ub.base_id = $3
-          AND lower(ca.nome) = lower($4)
-      `,
-      [parseNumber(balance), normalizedUserId, normalizedWorkspaceId, name],
+    if (executor === this.db && typeof this.db.connect === "function") {
+      return this.runInTransaction((transaction) =>
+        this.updateBookmakerBalance(
+          normalizedName,
+          normalizedBalance,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          transaction,
+        ),
+      );
+    }
+
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
     );
+
+    try {
+      const { rows } = await executor.query(
+        `
+          INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id, saldo)
+          SELECT $1, $2, ca.id, $3
+          FROM casas_de_apostas ca
+          WHERE lower(ca.nome) = lower($4)
+          ON CONFLICT (base_id, bookmaker_id)
+          DO UPDATE SET saldo = EXCLUDED.saldo
+          WHERE usuarios_bancas.user_id = EXCLUDED.user_id
+          RETURNING bookmaker_id
+        `,
+        [normalizedUserId, normalizedWorkspaceId, normalizedBalance, normalizedName],
+      );
+
+      const bookmakerId = parseNumber(rows[0]?.bookmaker_id);
+      if (bookmakerId > 0) {
+        await this.rebaseBookmakerApplications(
+          bookmakerId,
+          normalizedBalance,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          executor,
+        );
+      }
+    } catch (error) {
+      if (!isUndefinedTableError(error)) {
+        throw error;
+      }
+
+      await executor.query(
+        `
+          INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id, saldo)
+          SELECT $1, $2, ca.id, $3
+          FROM casas_de_apostas ca
+          WHERE lower(ca.nome) = lower($4)
+          ON CONFLICT (base_id, bookmaker_id)
+          DO UPDATE SET saldo = EXCLUDED.saldo
+          WHERE usuarios_bancas.user_id = EXCLUDED.user_id
+        `,
+        [normalizedUserId, normalizedWorkspaceId, normalizedBalance, normalizedName],
+      );
+    }
+  }
+
+  async rebaseBookmakerApplications(
+    bookmakerId,
+    balance,
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedBookmakerId = parseNumber(bookmakerId);
+    const normalizedBalance = Math.min(Math.max(parseNumber(balance), 0), 9_999_999);
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (
+      normalizedBookmakerId <= 0 ||
+      !normalizedUserId ||
+      normalizedWorkspaceId <= 0
+    ) {
+      return;
+    }
+
+    try {
+      await executor.query(
+        `
+          WITH target_bookmaker AS (
+            SELECT id, nome
+            FROM casas_de_apostas
+            WHERE id = $3
+          ),
+          settled_procedures AS (
+            SELECT DISTINCT
+              e.procedimento_id,
+              e.user_id,
+              e.base_id,
+              tb.id AS bookmaker_id
+            FROM procedimentos_entradas e
+            INNER JOIN target_bookmaker tb
+              ON lower(tb.nome) = lower(btrim(e.casa))
+            WHERE e.user_id = $1
+              AND e.base_id = $2
+              AND btrim(e.casa) <> ''
+              AND EXISTS (
+                SELECT 1
+                FROM procedimentos_resultados r
+                WHERE r.procedimento_id = e.procedimento_id
+                  AND r.user_id = e.user_id
+                  AND r.base_id = e.base_id
+                  AND r.escopo = e.escopo
+              )
+          )
+          INSERT INTO procedimentos_bancas_aplicacoes (
+            procedimento_id,
+            user_id,
+            base_id,
+            bookmaker_id,
+            saldo_delta,
+            saldo_anterior,
+            saldo_resultante
+          )
+          SELECT
+            procedimento_id,
+            user_id,
+            base_id,
+            bookmaker_id,
+            0,
+            $4,
+            $4
+          FROM settled_procedures
+          ON CONFLICT (procedimento_id, bookmaker_id)
+          DO UPDATE SET
+            saldo_delta = 0,
+            saldo_anterior = EXCLUDED.saldo_anterior,
+            saldo_resultante = EXCLUDED.saldo_resultante,
+            atualizado_em = now()
+          WHERE procedimentos_bancas_aplicacoes.user_id = EXCLUDED.user_id
+            AND procedimentos_bancas_aplicacoes.base_id = EXCLUDED.base_id
+        `,
+        [
+          normalizedUserId,
+          normalizedWorkspaceId,
+          normalizedBookmakerId,
+          normalizedBalance,
+        ],
+      );
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async bookmakerHasPendingProcedures(
+    name,
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedName = parseText(name).trim();
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (!normalizedName || !normalizedUserId || normalizedWorkspaceId <= 0) {
+      return false;
+    }
+
+    try {
+      const { rows } = await executor.query(
+        `
+          SELECT EXISTS (
+            SELECT 1
+            FROM procedimentos_entradas e
+            INNER JOIN procedimentos_historico p
+              ON p.id = e.procedimento_id
+             AND p.user_id = e.user_id
+             AND p.base_id = e.base_id
+            INNER JOIN casas_de_apostas ca
+              ON lower(ca.nome) = lower(btrim(e.casa))
+            WHERE e.user_id = $1
+              AND e.base_id = $2
+              AND lower(ca.nome) = lower($3)
+              AND btrim(e.casa) <> ''
+              AND (
+                p.status_procedimento = $4
+                OR NOT EXISTS (
+                  SELECT 1
+                  FROM procedimentos_resultados r
+                  WHERE r.procedimento_id = e.procedimento_id
+                    AND r.user_id = e.user_id
+                    AND r.base_id = e.base_id
+                    AND r.escopo = e.escopo
+                )
+              )
+            LIMIT 1
+          ) AS has_pending
+        `,
+        [
+          normalizedUserId,
+          normalizedWorkspaceId,
+          normalizedName,
+          PROCEDURE_STATUS_PENDING,
+        ],
+      );
+
+      return parseBoolean(rows[0]?.has_pending);
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   async getBookmakersNotes(userId, workspaceId, executor = this.db) {
@@ -438,6 +1137,9 @@ export class ProceduresPostgresRepository {
           tipo_procedimento,
           casas_envolvidas,
           jogo_time_pa,
+          jogo_coleta_freebet,
+          jogo_conversao_freebet,
+          lote_conversao_freebet,
           lucro_final,
           bateu_duplo,
           condicao_freebet,
@@ -451,7 +1153,7 @@ export class ProceduresPostgresRepository {
           valor_da_freebet,
           ganhou_freebet
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
         )
         RETURNING id
       `,
@@ -462,6 +1164,9 @@ export class ProceduresPostgresRepository {
         normalized.tipo_procedimento,
         normalized.casas_envolvidas,
         normalized.jogo_time_pa,
+        normalized.jogo_coleta_freebet,
+        normalized.jogo_conversao_freebet,
+        normalized.lote_conversao_freebet,
         normalized.lucro_final,
         normalized.bateu_duplo,
         normalized.condicao_freebet,
@@ -480,42 +1185,758 @@ export class ProceduresPostgresRepository {
     return Number(rows[0]?.id);
   }
 
-  async saveFreebetConversion(data, originIds, userId, workspaceId) {
+  async saveProcedureWithDetails(data, details, userId, workspaceId) {
+    let procedureId = null;
+
+    await this.runInTransaction(async (executor) => {
+      procedureId = await this.saveProcedure(data, userId, workspaceId, executor);
+      await this.replaceProcedureDetails(
+        procedureId,
+        details,
+        userId,
+        workspaceId,
+        executor,
+      );
+      await this.applyProcedureBookmakerApplications(
+        procedureId,
+        details,
+        userId,
+        workspaceId,
+        executor,
+      );
+    });
+
+    return procedureId;
+  }
+
+  async replaceProcedureDetails(
+    procedureId,
+    details,
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedProcedureId = parseNumber(procedureId);
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (
+      !Number.isInteger(normalizedProcedureId) ||
+      normalizedProcedureId <= 0 ||
+      !normalizedUserId ||
+      normalizedWorkspaceId <= 0
+    ) {
+      return;
+    }
+
+    const entries = normalizeProcedureDetailEntries(details?.entries);
+    const results = normalizeProcedureDetailResults(details?.results);
+
+    await executor.query(
+      `
+        DELETE FROM procedimentos_resultados
+        WHERE procedimento_id = $1
+          AND user_id = $2
+          AND base_id = $3
+      `,
+      [normalizedProcedureId, normalizedUserId, normalizedWorkspaceId],
+    );
+    await executor.query(
+      `
+        DELETE FROM procedimentos_entradas
+        WHERE procedimento_id = $1
+          AND user_id = $2
+          AND base_id = $3
+      `,
+      [normalizedProcedureId, normalizedUserId, normalizedWorkspaceId],
+    );
+
+    if (entries.length > 0) {
+      await executor.query(
+        `
+          INSERT INTO procedimentos_entradas (
+            procedimento_id,
+            user_id,
+            base_id,
+            escopo,
+            tipo_entrada,
+            ordem,
+            resultado_chave,
+            casa,
+            valor,
+            odd,
+            lado,
+            odd_lay,
+            comissao_percentual,
+            aumento_percentual,
+            cashback_percentual,
+            freebet_somente_lucro,
+            data_operacao
+          )
+          SELECT
+            $1,
+            $2,
+            $3,
+            entry.escopo,
+            entry.tipo_entrada,
+            entry.ordem,
+            entry.resultado_chave,
+            entry.casa,
+            entry.valor,
+            entry.odd,
+            entry.lado,
+            entry.odd_lay,
+            entry.comissao_percentual,
+            entry.aumento_percentual,
+            entry.cashback_percentual,
+            entry.freebet_somente_lucro,
+            entry.data_operacao
+          FROM unnest(
+            $4::text[],
+            $5::text[],
+            $6::integer[],
+            $7::text[],
+            $8::text[],
+            $9::double precision[],
+            $10::double precision[],
+            $11::text[],
+            $12::double precision[],
+            $13::double precision[],
+            $14::double precision[],
+            $15::double precision[],
+            $16::boolean[],
+            $17::text[]
+          ) AS entry(
+            escopo,
+            tipo_entrada,
+            ordem,
+            resultado_chave,
+            casa,
+            valor,
+            odd,
+            lado,
+            odd_lay,
+            comissao_percentual,
+            aumento_percentual,
+            cashback_percentual,
+            freebet_somente_lucro,
+            data_operacao
+          )
+        `,
+        [
+          normalizedProcedureId,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          entries.map((entry) => entry.scope),
+          entries.map((entry) => entry.role),
+          entries.map((entry) => entry.order),
+          entries.map((entry) => entry.resultKey),
+          entries.map((entry) => entry.house),
+          entries.map((entry) => entry.value),
+          entries.map((entry) => entry.odd),
+          entries.map((entry) => entry.side),
+          entries.map((entry) => entry.layOdd),
+          entries.map((entry) => entry.commission),
+          entries.map((entry) => entry.increase),
+          entries.map((entry) => entry.cashback),
+          entries.map((entry) => entry.freebet),
+          entries.map((entry) => entry.operationDate),
+        ],
+      );
+    }
+
+    if (results.length > 0) {
+      await executor.query(
+        `
+          INSERT INTO procedimentos_resultados (
+            procedimento_id,
+            user_id,
+            base_id,
+            escopo,
+            resultado_chave
+          )
+          SELECT
+            $1,
+            $2,
+            $3,
+            result.escopo,
+            result.resultado_chave
+          FROM unnest(
+            $4::text[],
+            $5::text[]
+          ) AS result(escopo, resultado_chave)
+          ON CONFLICT (procedimento_id, escopo, resultado_chave) DO NOTHING
+        `,
+        [
+          normalizedProcedureId,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          results.map((result) => result.scope),
+          results.map((result) => result.resultKey),
+        ],
+      );
+    }
+  }
+
+  async reverseProcedureBookmakerApplications(
+    procedureId,
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedProcedureId = parseNumber(procedureId);
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (
+      !Number.isInteger(normalizedProcedureId) ||
+      normalizedProcedureId <= 0 ||
+      !normalizedUserId ||
+      normalizedWorkspaceId <= 0
+    ) {
+      return false;
+    }
+
+    try {
+      const { rows } = await executor.query(
+        `
+          SELECT bookmaker_id, SUM(saldo_delta) AS saldo_delta
+          FROM procedimentos_bancas_aplicacoes
+          WHERE procedimento_id = $1
+            AND user_id = $2
+            AND base_id = $3
+          GROUP BY bookmaker_id
+        `,
+        [normalizedProcedureId, normalizedUserId, normalizedWorkspaceId],
+      );
+
+      if (rows.length > 0) {
+        await executor.query(
+          `
+            UPDATE usuarios_bancas AS ub
+            SET saldo = GREATEST(ub.saldo - applied.saldo_delta, 0)
+            FROM (
+              SELECT *
+              FROM unnest($3::bigint[], $4::double precision[])
+                AS item(bookmaker_id, saldo_delta)
+            ) AS applied
+            WHERE ub.user_id = $1
+              AND ub.base_id = $2
+              AND ub.bookmaker_id = applied.bookmaker_id
+          `,
+          [
+            normalizedUserId,
+            normalizedWorkspaceId,
+            rows.map((row) => parseNumber(row.bookmaker_id)),
+            rows.map((row) => parseNumber(row.saldo_delta)),
+          ],
+        );
+      }
+
+      await executor.query(
+        `
+          DELETE FROM procedimentos_bancas_aplicacoes
+          WHERE procedimento_id = $1
+            AND user_id = $2
+            AND base_id = $3
+        `,
+        [normalizedProcedureId, normalizedUserId, normalizedWorkspaceId],
+      );
+
+      return true;
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  async applyProcedureBookmakerApplications(
+    procedureId,
+    details,
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedProcedureId = parseNumber(procedureId);
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (
+      !Number.isInteger(normalizedProcedureId) ||
+      normalizedProcedureId <= 0 ||
+      !normalizedUserId ||
+      normalizedWorkspaceId <= 0
+    ) {
+      return;
+    }
+
+    const settlements = buildProcedureBookmakerSettlements(details);
+    if (settlements.length === 0) {
+      return;
+    }
+
+    try {
+      const bookmakerResult = await executor.query(
+        `
+          SELECT id, lower(nome) AS chave
+          FROM casas_de_apostas
+          WHERE lower(nome) = ANY($1::text[])
+        `,
+        [settlements.map((settlement) => settlement.house.toLowerCase())],
+      );
+      const bookmakerIdsByHouse = new Map(
+        bookmakerResult.rows.map((row) => [
+          parseText(row.chave),
+          parseNumber(row.id),
+        ]),
+      );
+
+      for (const settlement of settlements) {
+        const bookmakerId = bookmakerIdsByHouse.get(settlement.house.toLowerCase());
+
+        if (!bookmakerId) {
+          continue;
+        }
+
+        const applicationResult = await executor.query(
+          `
+            SELECT 1
+            FROM procedimentos_bancas_aplicacoes
+            WHERE procedimento_id = $1
+              AND user_id = $2
+              AND base_id = $3
+              AND bookmaker_id = $4
+            FOR UPDATE
+          `,
+          [
+            normalizedProcedureId,
+            normalizedUserId,
+            normalizedWorkspaceId,
+            bookmakerId,
+          ],
+        );
+
+        if (applicationResult.rows.length > 0) {
+          continue;
+        }
+
+        const balanceResult = await executor.query(
+          `
+            SELECT saldo
+            FROM usuarios_bancas
+            WHERE user_id = $1
+              AND base_id = $2
+              AND bookmaker_id = $3
+            FOR UPDATE
+          `,
+          [normalizedUserId, normalizedWorkspaceId, bookmakerId],
+        );
+        const previousBalance = parseNumber(balanceResult.rows[0]?.saldo);
+        const nextBalance = Math.max(
+          Math.max(previousBalance, settlement.stake) -
+            settlement.stake +
+            settlement.payout,
+          0,
+        );
+        const delta = nextBalance - previousBalance;
+
+        if (Math.abs(delta) >= 0.005) {
+          await executor.query(
+            `
+              INSERT INTO usuarios_bancas (user_id, base_id, bookmaker_id, saldo)
+              VALUES ($1, $2, $3, $4)
+              ON CONFLICT (base_id, bookmaker_id)
+              DO UPDATE SET saldo = EXCLUDED.saldo
+              WHERE usuarios_bancas.user_id = EXCLUDED.user_id
+            `,
+            [normalizedUserId, normalizedWorkspaceId, bookmakerId, nextBalance],
+          );
+        }
+
+        await executor.query(
+          `
+            INSERT INTO procedimentos_bancas_aplicacoes (
+              procedimento_id,
+              user_id,
+              base_id,
+              bookmaker_id,
+              saldo_delta,
+              saldo_anterior,
+              saldo_resultante
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (procedimento_id, bookmaker_id)
+            DO UPDATE SET
+              saldo_delta = EXCLUDED.saldo_delta,
+              saldo_anterior = EXCLUDED.saldo_anterior,
+              saldo_resultante = EXCLUDED.saldo_resultante,
+              atualizado_em = now()
+          `,
+          [
+            normalizedProcedureId,
+            normalizedUserId,
+            normalizedWorkspaceId,
+            bookmakerId,
+            delta,
+            previousBalance,
+            nextBalance,
+          ],
+        );
+      }
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async reconcileProcedureBookmakerApplications(
+    userId,
+    workspaceId,
+    executor = this.db,
+  ) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
+      return;
+    }
+
+    try {
+      const reconcile = async (transaction) => {
+        const { rows } = await transaction.query(
+          `
+            SELECT p.*
+            FROM procedimentos_historico p
+            WHERE p.user_id = $1
+              AND p.base_id = $2
+              AND EXISTS (
+                SELECT 1
+                FROM procedimentos_entradas e
+                WHERE e.procedimento_id = p.id
+                  AND e.user_id = p.user_id
+                  AND e.base_id = p.base_id
+              )
+              AND EXISTS (
+                SELECT 1
+                FROM procedimentos_resultados r
+                WHERE r.procedimento_id = p.id
+                  AND r.user_id = p.user_id
+                  AND r.base_id = p.base_id
+              )
+              AND EXISTS (
+                SELECT 1
+                FROM procedimentos_entradas e
+                INNER JOIN casas_de_apostas ca
+                  ON lower(ca.nome) = lower(btrim(e.casa))
+                WHERE e.procedimento_id = p.id
+                  AND e.user_id = p.user_id
+                  AND e.base_id = p.base_id
+                  AND btrim(e.casa) <> ''
+                  AND EXISTS (
+                    SELECT 1
+                    FROM procedimentos_resultados r
+                    WHERE r.procedimento_id = e.procedimento_id
+                      AND r.user_id = e.user_id
+                      AND r.base_id = e.base_id
+                      AND r.escopo = e.escopo
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM procedimentos_bancas_aplicacoes a
+                    WHERE a.procedimento_id = e.procedimento_id
+                      AND a.user_id = e.user_id
+                      AND a.base_id = e.base_id
+                      AND a.bookmaker_id = ca.id
+                  )
+              )
+            ORDER BY p.id ASC
+          `,
+          [normalizedUserId, normalizedWorkspaceId],
+        );
+
+        const rowsWithDetails = await this.attachProcedureDetails(rows, transaction);
+
+        for (const procedure of rowsWithDetails) {
+          await this.applyProcedureBookmakerApplications(
+            procedure.id,
+            {
+              entries: (procedure.entradas ?? []).map((entry) => ({
+                scope: entry.escopo,
+                role: entry.tipo_entrada,
+                order: entry.ordem,
+                resultKey: entry.resultado_chave,
+                house: entry.casa,
+                value: entry.valor,
+                odd: entry.odd,
+                side: entry.lado,
+                layOdd: entry.odd_lay,
+                commission: entry.comissao_percentual,
+                increase: entry.aumento_percentual,
+                cashback: entry.cashback_percentual,
+                freebet: entry.freebet_somente_lucro,
+              })),
+              results: (procedure.resultados ?? []).map((result) => ({
+                scope: result.escopo,
+                resultKey: result.resultado_chave,
+              })),
+            },
+            normalizedUserId,
+            normalizedWorkspaceId,
+            transaction,
+          );
+        }
+      };
+
+      if (executor === this.db && typeof this.db.connect === "function") {
+        await this.runInTransaction(reconcile);
+      } else {
+        await reconcile(executor);
+      }
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async saveFreebetConversion(data, originIds, userId, workspaceId, details = null) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
     const ids = (Array.isArray(originIds) ? originIds : [originIds])
       .map((id) => parseNumber(id))
       .filter((id) => Number.isInteger(id) && id > 0);
-    const payload = {
-      ...data,
-      id_freebet_origem: ids[0] ?? null,
-    };
+    const conversionEntries = normalizeProcedureDetailEntries(details?.entries)
+      .filter((entry) => entry.scope === "freebet_conversion");
+    const conversionResults = normalizeProcedureDetailResults(details?.results)
+      .filter((result) => result.scope === "freebet_conversion");
 
-    let conversionId = null;
+    if (ids.length === 0) {
+      return null;
+    }
 
     await this.runInTransaction(async (executor) => {
-      conversionId = await this.saveProcedure(
-        payload,
-        normalizedUserId,
-        normalizedWorkspaceId,
-        executor,
+      const { rows } = await executor.query(
+        `
+          SELECT *
+          FROM procedimentos_historico
+          WHERE id = ANY($1::bigint[])
+            AND tipo_procedimento = 'Coletar Freebet'
+            AND user_id = $2
+            AND base_id = $3
+          ORDER BY id ASC
+        `,
+        [ids, normalizedUserId, normalizedWorkspaceId],
       );
+      const origins = await this.attachProcedureDetails(rows, executor);
 
-      if (ids.length > 0) {
-        await executor.query(
-          `
-            UPDATE procedimentos_historico
-            SET status_freebet = $1
-            WHERE id = ANY($2::bigint[])
-              AND user_id = $3
-              AND base_id = $4
-          `,
-          [FREEBET_STATUS_USED, ids, normalizedUserId, normalizedWorkspaceId],
+      if (origins.length === 0) {
+        return;
+      }
+
+      const totalFreebetValue = origins.reduce(
+        (sum, origin) => sum + Math.max(parseNumber(origin.valor_da_freebet), 0),
+        0,
+      );
+      const hasConversionResult = conversionResults.length > 0;
+      const conversionBatchId =
+        parseText(data.lote_conversao_freebet) ||
+        origins
+          .map((origin) => parseText(origin.lote_conversao_freebet))
+          .find(Boolean) ||
+        createFreebetConversionBatchId();
+
+      for (const origin of origins) {
+        const originId = parseNumber(origin.id);
+        const originFreebetValue = Math.max(parseNumber(origin.valor_da_freebet), 0);
+        const ratio = totalFreebetValue > 0
+          ? originFreebetValue / totalFreebetValue
+          : 1 / origins.length;
+        const preservedEntries = (origin.entradas ?? [])
+          .map(toDetailInput)
+          .filter((entry) => entry.scope !== "freebet_conversion");
+        const preservedResults = (origin.resultados ?? [])
+          .map(toResultInput)
+          .filter((result) => result.scope !== "freebet_conversion");
+        const scaledConversionEntries = conversionEntries.map((entry) =>
+          scaleDetailInput(entry, ratio),
+        );
+        const nextDetails = {
+          entries: [...preservedEntries, ...scaledConversionEntries],
+          results: [...preservedResults, ...conversionResults],
+        };
+        const hasCollectionResult = preservedResults.some(
+          (result) => result.scope === "freebet_collection",
+        );
+        const collectionProfit = hasCollectionResult
+          ? calculateScopeProfit(nextDetails.entries, nextDetails.results, "freebet_collection")
+          : parseNumber(origin.lucro_final);
+        const conversionProfit = hasConversionResult
+          ? calculateScopeProfit(nextDetails.entries, nextDetails.results, "freebet_conversion")
+          : 0;
+        const nextPayload = {
+          ...origin,
+          data_operacao: parseText(data.data_operacao) || origin.data_operacao,
+          casas_envolvidas: parseText(data.casas_envolvidas) || origin.casas_envolvidas,
+          jogo_time_pa: origin.jogo_time_pa,
+          jogo_coleta_freebet:
+            parseText(origin.jogo_coleta_freebet) ||
+            parseText(data.jogo_coleta_freebet) ||
+            origin.jogo_time_pa,
+          jogo_conversao_freebet:
+            parseText(data.jogo_conversao_freebet) ||
+            parseText(data.jogo_time_pa) ||
+            parseText(origin.jogo_conversao_freebet),
+          lote_conversao_freebet: conversionBatchId,
+          observacao: parseText(data.observacao) || origin.observacao,
+          condicao_freebet: parseText(data.condicao_freebet) || origin.condicao_freebet,
+          lucro_final: Number((collectionProfit + conversionProfit).toFixed(2)),
+          status_freebet: hasConversionResult
+            ? FREEBET_STATUS_FINISHED
+            : FREEBET_STATUS_USED,
+          status_procedimento: hasConversionResult
+            ? PROCEDURE_STATUS_DONE
+            : PROCEDURE_STATUS_PENDING,
+        };
+
+        await this.reverseProcedureBookmakerApplications(
+          originId,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          executor,
+        );
+        await this.updateProcedure(
+          originId,
+          nextPayload,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          executor,
+        );
+        await this.replaceProcedureDetails(
+          originId,
+          nextDetails,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          executor,
+        );
+        await this.applyProcedureBookmakerApplications(
+          originId,
+          nextDetails,
+          normalizedUserId,
+          normalizedWorkspaceId,
+          executor,
         );
       }
     });
 
-    return conversionId;
+    return ids[0] ?? null;
+  }
+
+  async attachProcedureDetails(rows, executor = this.db) {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const procedureIds = sourceRows
+      .map((row) => parseNumber(row?.id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (procedureIds.length === 0) {
+      return sourceRows;
+    }
+
+    let entriesResult;
+    let resultsResult;
+
+    try {
+      entriesResult = await executor.query(
+        `
+          SELECT
+            procedimento_id,
+            escopo,
+            tipo_entrada,
+            ordem,
+            resultado_chave,
+            casa,
+            valor,
+            odd,
+            lado,
+            odd_lay,
+            comissao_percentual,
+            aumento_percentual,
+            cashback_percentual,
+            freebet_somente_lucro,
+            data_operacao
+          FROM procedimentos_entradas
+          WHERE procedimento_id = ANY($1::bigint[])
+          ORDER BY procedimento_id ASC, escopo ASC, ordem ASC, id ASC
+        `,
+        [procedureIds],
+      );
+      resultsResult = await executor.query(
+        `
+          SELECT procedimento_id, escopo, resultado_chave
+          FROM procedimentos_resultados
+          WHERE procedimento_id = ANY($1::bigint[])
+          ORDER BY procedimento_id ASC, escopo ASC, id ASC
+        `,
+        [procedureIds],
+      );
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return sourceRows;
+      }
+
+      throw error;
+    }
+
+    const entriesByProcedure = new Map();
+    const resultsByProcedure = new Map();
+
+    for (const entry of entriesResult.rows) {
+      const procedureId = parseNumber(entry.procedimento_id);
+      const current = entriesByProcedure.get(procedureId) ?? [];
+      current.push({
+        escopo: parseText(entry.escopo),
+        tipo_entrada: parseText(entry.tipo_entrada),
+        ordem: parseNumber(entry.ordem),
+        resultado_chave: parseText(entry.resultado_chave),
+        casa: parseText(entry.casa),
+        valor: parseNumber(entry.valor),
+        odd: parseNumber(entry.odd),
+        lado: normalizeProcedureDetailSide(entry.lado),
+        odd_lay: parseNumber(entry.odd_lay),
+        comissao_percentual: parseNumber(entry.comissao_percentual),
+        aumento_percentual: parseNumber(entry.aumento_percentual),
+        cashback_percentual: parseNumber(entry.cashback_percentual),
+        freebet_somente_lucro: parseBoolean(entry.freebet_somente_lucro),
+        data_operacao: parseText(entry.data_operacao).trim(),
+      });
+      entriesByProcedure.set(procedureId, current);
+    }
+
+    for (const result of resultsResult.rows) {
+      const procedureId = parseNumber(result.procedimento_id);
+      const current = resultsByProcedure.get(procedureId) ?? [];
+      current.push({
+        escopo: parseText(result.escopo),
+        resultado_chave: parseText(result.resultado_chave),
+      });
+      resultsByProcedure.set(procedureId, current);
+    }
+
+    return sourceRows.map((row) => {
+      const procedureId = parseNumber(row?.id);
+
+      return {
+        ...row,
+        entradas: entriesByProcedure.get(procedureId) ?? [],
+        resultados: resultsByProcedure.get(procedureId) ?? [],
+      };
+    });
   }
 
   async getProcedureById(procedureId, userId, workspaceId, executor = this.db) {
@@ -526,7 +1947,7 @@ export class ProceduresPostgresRepository {
       [procedureId, normalizedUserId, normalizedWorkspaceId],
     );
 
-    const row = rows[0];
+    const row = (await this.attachProcedureDetails(rows, executor))[0];
     return row ? { ...row } : null;
   }
 
@@ -543,7 +1964,8 @@ export class ProceduresPostgresRepository {
       [normalizedUserId, normalizedWorkspaceId],
     );
 
-    return rows.map((row) => enrichProcedure(row));
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+    return rowsWithDetails.map((row) => enrichProcedure(row));
   }
 
   async listFilteredProcedures(userId, workspaceId, filters = {}, executor = this.db) {
@@ -561,7 +1983,13 @@ export class ProceduresPostgresRepository {
     }
 
     const searchText = parseText(filters.searchText).trim();
-    const types = normalizeTextArray(filters.types);
+    const types = [
+      ...new Set(
+        normalizeTextArray(filters.types).flatMap((type) =>
+          type === "Cassino" ? CASINO_PROCEDURE_TYPES : [type],
+        ),
+      ),
+    ];
     const houses = normalizeTextArray(filters.houses);
     const statuses = normalizeTextArray(filters.statuses).filter((status) =>
       PROCEDURE_STATUSES.includes(status),
@@ -576,6 +2004,23 @@ export class ProceduresPostgresRepository {
       params.push(value);
       return `$${params.length}`;
     };
+    const buildDateCondition = (operator, placeholder) => `
+      (
+        (
+          data_operacao ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+          AND to_date(data_operacao, 'DD/MM/YYYY') ${operator} ${placeholder}::date
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM procedimentos_entradas pe
+          WHERE pe.procedimento_id = procedimentos_historico.id
+            AND pe.user_id = $1
+            AND pe.base_id = $2
+            AND pe.data_operacao ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+            AND to_date(pe.data_operacao, 'DD/MM/YYYY') ${operator} ${placeholder}::date
+        )
+      )
+    `;
 
     if (searchText) {
       const placeholder = addParam(`%${searchText}%`);
@@ -583,6 +2028,8 @@ export class ProceduresPostgresRepository {
         (
           tipo_procedimento ILIKE ${placeholder}
           OR jogo_time_pa ILIKE ${placeholder}
+          OR jogo_coleta_freebet ILIKE ${placeholder}
+          OR jogo_conversao_freebet ILIKE ${placeholder}
           OR casas_envolvidas ILIKE ${placeholder}
         )
       `);
@@ -603,11 +2050,11 @@ export class ProceduresPostgresRepository {
     }
 
     if (dateFrom) {
-      conditions.push(`to_date(data_operacao, 'DD/MM/YYYY') >= ${addParam(dateFrom)}::date`);
+      conditions.push(buildDateCondition(">=", addParam(dateFrom)));
     }
 
     if (dateTo) {
-      conditions.push(`to_date(data_operacao, 'DD/MM/YYYY') <= ${addParam(dateTo)}::date`);
+      conditions.push(buildDateCondition("<=", addParam(dateTo)));
     }
 
     const whereClause = conditions.join(" AND ");
@@ -637,8 +2084,10 @@ export class ProceduresPostgresRepository {
       rowParams,
     );
 
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+
     return {
-      items: rows.map((row) => enrichProcedure(row)),
+      items: rowsWithDetails.map((row) => enrichProcedure(row)),
       page,
       pageSize,
       pageCount,
@@ -664,27 +2113,33 @@ export class ProceduresPostgresRepository {
           tipo_procedimento = $2,
           casas_envolvidas = $3,
           jogo_time_pa = $4,
-          lucro_final = $5,
-          bateu_duplo = $6,
-          condicao_freebet = $7,
-          valor_freebet_coletada = $8,
-          observacao = $9,
-          mes_referencia = $10,
-          casa_destino_freebet = $11,
-          status_freebet = $12,
-          status_procedimento = $13,
-          id_freebet_origem = $14,
-          valor_da_freebet = $15,
-          ganhou_freebet = $16
-        WHERE id = $17
-          AND user_id = $18
-          AND base_id = $19
+          jogo_coleta_freebet = $5,
+          jogo_conversao_freebet = $6,
+          lote_conversao_freebet = $7,
+          lucro_final = $8,
+          bateu_duplo = $9,
+          condicao_freebet = $10,
+          valor_freebet_coletada = $11,
+          observacao = $12,
+          mes_referencia = $13,
+          casa_destino_freebet = $14,
+          status_freebet = $15,
+          status_procedimento = $16,
+          id_freebet_origem = $17,
+          valor_da_freebet = $18,
+          ganhou_freebet = $19
+        WHERE id = $20
+          AND user_id = $21
+          AND base_id = $22
       `,
       [
         normalized.data_operacao,
         normalized.tipo_procedimento,
         normalized.casas_envolvidas,
         normalized.jogo_time_pa,
+        normalized.jogo_coleta_freebet,
+        normalized.jogo_conversao_freebet,
+        normalized.lote_conversao_freebet,
         normalized.lucro_final,
         normalized.bateu_duplo,
         normalized.condicao_freebet,
@@ -704,7 +2159,39 @@ export class ProceduresPostgresRepository {
     );
   }
 
+  async updateProcedureWithDetails(procedureId, data, details, userId, workspaceId) {
+    await this.runInTransaction(async (executor) => {
+      await this.reverseProcedureBookmakerApplications(
+        procedureId,
+        userId,
+        workspaceId,
+        executor,
+      );
+      await this.updateProcedure(procedureId, data, userId, workspaceId, executor);
+      await this.replaceProcedureDetails(
+        procedureId,
+        details,
+        userId,
+        workspaceId,
+        executor,
+      );
+      await this.applyProcedureBookmakerApplications(
+        procedureId,
+        details,
+        userId,
+        workspaceId,
+        executor,
+      );
+    });
+  }
+
   async deleteProcedure(procedureId, userId, workspaceId, executor = this.db) {
+    await this.reverseProcedureBookmakerApplications(
+      procedureId,
+      userId,
+      workspaceId,
+      executor,
+    );
     await executor.query(
       "DELETE FROM procedimentos_historico WHERE id = $1 AND user_id = $2 AND base_id = $3",
       [procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
@@ -734,24 +2221,6 @@ export class ProceduresPostgresRepository {
           AND base_id = $4
       `,
       [parseBoolean(hitDouble), procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
-    );
-  }
-
-  async updateFreebetResult(procedureId, result, userId, workspaceId, executor = this.db) {
-    const status =
-      result === FREEBET_RESULT_NO
-        ? FREEBET_STATUS_FINISHED
-        : FREEBET_STATUS_PENDING;
-
-    await executor.query(
-      `
-        UPDATE procedimentos_historico
-        SET ganhou_freebet = $1, status_freebet = $2
-        WHERE id = $3
-          AND user_id = $4
-          AND base_id = $5
-      `,
-      [result, status, procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
   }
 
@@ -890,7 +2359,8 @@ export class ProceduresPostgresRepository {
       [referenceMonth, normalizeUserId(userId), parseNumber(workspaceId)],
     );
 
-    return rows.map((row) => enrichProcedure(row));
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+    return rowsWithDetails.map((row) => enrichProcedure(row));
   }
 
   async listHistoryMonths(userId, workspaceId, executor = this.db) {
@@ -966,7 +2436,8 @@ export class ProceduresPostgresRepository {
       [normalizedUserId, normalizedWorkspaceId, normalizedReferenceMonth],
     );
 
-    return rows.map((row) => enrichProcedure(row));
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+    return rowsWithDetails.map((row) => enrichProcedure(row));
   }
 
   async getDashboardProcedureStats(referenceMonth, todayLabel, userId, workspaceId, executor = this.db) {
@@ -1107,49 +2578,79 @@ export class ProceduresPostgresRepository {
           WHERE user_id = $1
             AND base_id = $2
         ),
+        collection_state AS (
+          SELECT
+            scoped.*,
+            EXISTS (
+              SELECT 1
+              FROM procedimentos_resultados r
+              WHERE r.procedimento_id = scoped.id
+                AND r.escopo = 'freebet_collection'
+            ) AS coleta_resolvida,
+            EXISTS (
+              SELECT 1
+              FROM procedimentos_resultados r
+              WHERE r.procedimento_id = scoped.id
+                AND r.escopo = 'freebet_collection'
+                AND r.resultado_chave = 'principal'
+            ) AS coleta_principal
+          FROM scoped
+        ),
         converted AS (
           SELECT
             c.id,
             c.lucro_real_calculado + COALESCE(v.lucro_real_calculado, 0) AS lucro_total
-          FROM scoped c
-          LEFT JOIN scoped v
+          FROM collection_state c
+          LEFT JOIN collection_state v
             ON v.id_freebet_origem = c.id
            AND v.tipo_procedimento = 'Converter Freebet'
           WHERE c.tipo_procedimento = 'Coletar Freebet'
-            AND c.status_freebet IN ('Usada', 'Finalizada')
+            AND (
+              c.status_freebet IN ('Usada', 'Finalizada')
+              OR (
+                c.status_freebet = 'Pendente'
+                AND c.condicao_freebet = 'Apenas se perder a aposta'
+                AND c.coleta_principal
+              )
+            )
         )
         SELECT
           (COUNT(*) FILTER (
             WHERE tipo_procedimento = 'Coletar Freebet'
               AND status_freebet = 'Pendente'
-              AND condicao_freebet = 'Apenas se perder a aposta'
-              AND ganhou_freebet NOT IN ($3, $4)
+              AND NOT coleta_resolvida
           ))::integer AS pending_confirmation_count,
           (COUNT(*) FILTER (
             WHERE tipo_procedimento = 'Coletar Freebet'
               AND status_freebet = 'Pendente'
-              AND (
-                condicao_freebet <> 'Apenas se perder a aposta'
-                OR ganhou_freebet IN ($3, $4)
+              AND coleta_resolvida
+              AND NOT (
+                condicao_freebet = 'Apenas se perder a aposta'
+                AND coleta_principal
               )
           ))::integer AS convertible_count,
           COALESCE(SUM(valor_da_freebet) FILTER (
             WHERE tipo_procedimento = 'Coletar Freebet'
               AND status_freebet = 'Pendente'
-              AND (
-                condicao_freebet <> 'Apenas se perder a aposta'
-                OR ganhou_freebet IN ($3, $4)
+              AND coleta_resolvida
+              AND NOT (
+                condicao_freebet = 'Apenas se perder a aposta'
+                AND coleta_principal
               )
           ), 0) AS convertible_value,
           COALESCE(SUM(lucro_real_calculado) FILTER (
             WHERE tipo_procedimento = 'Coletar Freebet'
               AND status_freebet = 'Pendente'
+              AND NOT (
+                condicao_freebet = 'Apenas se perder a aposta'
+                AND coleta_principal
+              )
           ), 0) AS active_profit,
           (SELECT COUNT(*)::integer FROM converted) AS converted_count,
           (SELECT COALESCE(SUM(lucro_total), 0) FROM converted) AS converted_profit
-        FROM scoped
+        FROM collection_state
       `,
-      [normalizedUserId, normalizedWorkspaceId, FREEBET_RESULT_YES, FREEBET_RESULT_NO],
+      [normalizedUserId, normalizedWorkspaceId],
     );
 
     const row = rows[0] ?? {};
@@ -1168,18 +2669,10 @@ export class ProceduresPostgresRepository {
     const { rows } = await executor.query(
       `
         SELECT
-          id,
-          data_operacao,
-          casa_destino_freebet,
-          valor_da_freebet,
-          lucro_final,
-          bateu_duplo,
-          valor_freebet_coletada,
-          condicao_freebet,
-          ganhou_freebet
+          *
         FROM procedimentos_historico
         WHERE tipo_procedimento = 'Coletar Freebet'
-          AND status_freebet = 'Pendente'
+          AND status_freebet IN ('Pendente', 'Usada')
           AND user_id = $1
           AND base_id = $2
         ORDER BY id DESC
@@ -1187,7 +2680,8 @@ export class ProceduresPostgresRepository {
       [normalizeUserId(userId), parseNumber(workspaceId)],
     );
 
-    return groupActiveFreebets(rows);
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+    return groupActiveFreebets(rowsWithDetails);
   }
 
   async listConvertedFreebets(userId, workspaceId, options = {}, executor = this.db) {
@@ -1200,39 +2694,131 @@ export class ProceduresPostgresRepository {
     const normalizedWorkspaceId = parseNumber(workspaceId);
     const params = [normalizedUserId, normalizedWorkspaceId];
     const limit = normalizePositiveInteger(options?.limit, 0);
-    const limitClause = limit > 0 ? `LIMIT $${params.push(limit)}` : "";
     const { rows } = await executor.query(
       `
-        SELECT
-          c.data_operacao AS data_coleta,
-          v.data_operacao AS data_conversao,
-          c.casa_destino_freebet AS casa,
-          c.valor_da_freebet AS valor_freebet,
-          c.lucro_final AS lucro_base_coleta,
-          c.bateu_duplo AS bateu_duplo_coleta,
-          c.valor_freebet_coletada AS valor_duplo_coleta,
-          v.lucro_final AS lucro_base_conversao,
-          v.bateu_duplo AS bateu_duplo_conversao,
-          v.valor_freebet_coletada AS valor_duplo_conversao,
-          c.status_freebet,
-          c.ganhou_freebet
+        SELECT *
         FROM procedimentos_historico c
-        LEFT JOIN procedimentos_historico v
-          ON v.id_freebet_origem = c.id
-         AND v.tipo_procedimento = 'Converter Freebet'
-         AND v.user_id = c.user_id
-         AND v.base_id = c.base_id
         WHERE c.tipo_procedimento = 'Coletar Freebet'
-          AND c.status_freebet IN ('Usada', 'Finalizada')
+          AND c.status_freebet IN ('Pendente', 'Usada', 'Finalizada')
           AND c.user_id = $1
           AND c.base_id = $2
         ORDER BY c.id DESC
-        ${limitClause}
       `,
       params,
     );
 
-    return buildConvertedFreebetsHistory(rows);
+    const collections = await this.attachProcedureDetails(rows, executor);
+    const collectionIds = collections
+      .map((collection) => parseNumber(collection.id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    let legacyConversions = [];
+
+    if (collectionIds.length > 0) {
+      const legacyResult = await executor.query(
+        `
+          SELECT *
+          FROM procedimentos_historico
+          WHERE id_freebet_origem = ANY($1::bigint[])
+            AND tipo_procedimento = 'Converter Freebet'
+            AND user_id = $2
+            AND base_id = $3
+          ORDER BY id DESC
+        `,
+        [collectionIds, normalizedUserId, normalizedWorkspaceId],
+      );
+      legacyConversions = await this.attachProcedureDetails(legacyResult.rows, executor);
+    }
+
+    const legacyByOrigin = new Map();
+    for (const conversion of legacyConversions) {
+      const originId = parseNumber(conversion.id_freebet_origem);
+      if (!legacyByOrigin.has(originId)) {
+        legacyByOrigin.set(originId, conversion);
+      }
+    }
+
+    const historyRows = [];
+    for (const collection of collections) {
+      const collectionId = parseNumber(collection.id);
+      const legacyConversion = legacyByOrigin.get(collectionId);
+      const conversionOnly =
+        parseText(collection.condicao_freebet) ===
+        FREEBET_CONDITION_CONVERSION_ONLY;
+      const hasSyncedConversion =
+        hasProcedureScopeEntries(collection, "freebet_conversion") ||
+        hasProcedureScopeResults(collection, "freebet_conversion");
+      const conversionResolved = hasProcedureScopeResults(
+        collection,
+        "freebet_conversion",
+      );
+      const finishedWithoutFreebet =
+        !conversionOnly &&
+        ((
+          parseText(collection.status_freebet) === FREEBET_STATUS_FINISHED &&
+          parseText(collection.ganhou_freebet) === FREEBET_RESULT_NO
+        ) ||
+          collectionFinishedWithoutFreebet(collection));
+      const onlyCollectionFinished =
+        finishedWithoutFreebet &&
+        !hasSyncedConversion &&
+        !legacyConversion;
+
+      if (!onlyCollectionFinished && !legacyConversion && !conversionResolved) {
+        continue;
+      }
+
+      const hasCollectionDetails = hasProcedureScopeResults(
+        collection,
+        "freebet_collection",
+      );
+      const collectionProfit = conversionOnly
+        ? 0
+        : hasCollectionDetails
+          ? getProcedureScopeProfit(collection, "freebet_collection")
+          : parseNumber(collection.lucro_final);
+      const conversionProfit = hasSyncedConversion
+        ? getProcedureScopeProfit(collection, "freebet_conversion")
+        : parseNumber(legacyConversion?.lucro_final);
+
+      historyRows.push({
+        procedimento_id: collectionId,
+        data_coleta: conversionOnly
+          ? ""
+          : getProcedureScopeDate(
+              collection,
+              "freebet_collection",
+              collection.data_operacao,
+            ),
+        data_conversao: hasSyncedConversion
+          ? getProcedureScopeDate(collection, "freebet_conversion")
+          : parseText(legacyConversion?.data_operacao),
+        casa: parseText(collection.casa_destino_freebet, "Desconhecida") || "Desconhecida",
+        valor_freebet: parseNumber(collection.valor_da_freebet),
+        lucro_base_coleta: collectionProfit,
+        bateu_duplo_coleta: hasCollectionDetails
+          ? false
+          : parseBoolean(collection.bateu_duplo),
+        valor_duplo_coleta: hasCollectionDetails
+          ? 0
+          : parseNumber(collection.valor_freebet_coletada),
+        lucro_base_conversao: conversionProfit,
+        bateu_duplo_conversao: hasSyncedConversion
+          ? false
+          : parseBoolean(legacyConversion?.bateu_duplo),
+        valor_duplo_conversao: hasSyncedConversion
+          ? 0
+          : parseNumber(legacyConversion?.valor_freebet_coletada),
+        status_freebet: parseText(collection.status_freebet),
+        condicao_freebet: parseText(collection.condicao_freebet),
+        ganhou_freebet: finishedWithoutFreebet
+          ? FREEBET_RESULT_NO
+          : parseText(collection.ganhou_freebet),
+        procedimento: collection,
+      });
+    }
+
+    const history = buildConvertedFreebetsHistory(historyRows);
+    return limit > 0 ? history.slice(0, limit) : history;
   }
 
   async runInTransaction(callback) {

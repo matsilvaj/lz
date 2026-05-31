@@ -10,7 +10,10 @@ import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { copyTextToClipboard } from "../_components/clipboard";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { buildProcedureShareUrl } from "../_components/procedure-share";
-import { type ProcedureShareValues } from "../_components/procedure-share-types";
+import {
+  type ProcedureShareProtectionDraft,
+  type ProcedureShareValues,
+} from "../_components/procedure-share-types";
 import { CloseIcon } from "../_components/ui";
 import { deleteProcedureAction } from "../procedure-actions";
 
@@ -19,11 +22,15 @@ const PROCEDURE_MENU_EVENT = "lz:procedure-menu";
 
 type ProcedureRowActionsProps = {
   bookmakers: string[];
+  onViewDetails?: () => void;
   procedure: {
     id: number;
     tipo_procedimento: string;
     data_operacao: string;
     jogo_time_pa: string;
+    jogo_coleta_freebet?: string;
+    jogo_conversao_freebet?: string;
+    lote_conversao_freebet?: string;
     casas_envolvidas: string;
     lucro_final: number;
     lucro_real: number;
@@ -34,7 +41,28 @@ type ProcedureRowActionsProps = {
     condicao_freebet: string;
     bateu_duplo: boolean;
     status_procedimento: string;
+    entradas?: Array<{
+      escopo: string;
+      tipo_entrada: string;
+      ordem: number;
+      resultado_chave: string;
+      casa: string;
+      valor: number;
+      odd: number;
+      lado: string;
+      odd_lay: number;
+      comissao_percentual: number;
+      aumento_percentual: number;
+      cashback_percentual: number;
+      freebet_somente_lucro: boolean;
+      data_operacao: string;
+    }>;
+    resultados?: Array<{
+      escopo: string;
+      resultado_chave: string;
+    }>;
   };
+  returnTo?: string;
 };
 
 type ProcedureMenuEventDetail = {
@@ -42,6 +70,10 @@ type ProcedureMenuEventDetail = {
   procedureId: number;
   top: number;
 };
+
+type ProcedureEntryDetail = NonNullable<
+  ProcedureRowActionsProps["procedure"]["entradas"]
+>[number];
 
 export function requestProcedureEdit(procedureId: number) {
   if (typeof window === "undefined") {
@@ -80,23 +112,190 @@ function toDateInputValue(value: string) {
 
 function toHousesInputValue(value: string) {
   return String(value ?? "")
-    .split("|")
+    .split(/[,|]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .join(", ");
 }
 
-function getMenuHeight(hasObservation: boolean) {
-  return hasObservation ? 236 : 192;
+function isFreebetProcedure(type: string) {
+  return type === "Coletar Freebet" || type === "Converter Freebet";
 }
 
-function getMenuPosition(left: number, top: number, hasObservation: boolean) {
+function formatDraftNumber(value: number | null | undefined) {
+  if (!Number.isFinite(Number(value)) || Math.abs(Number(value)) < 0.005) {
+    return "";
+  }
+
+  return String(Number(value));
+}
+
+function toProtectionDraft(entry: ProcedureEntryDetail): ProcedureShareProtectionDraft {
+  return {
+    stake: formatDraftNumber(entry.valor),
+    odd: formatDraftNumber(entry.odd),
+    side: entry.lado === "lay" ? "lay" : "back",
+    layOdd: formatDraftNumber(entry.odd_lay),
+    commission: formatDraftNumber(entry.comissao_percentual),
+    increase: formatDraftNumber(entry.aumento_percentual),
+    cashback: formatDraftNumber(entry.cashback_percentual),
+    freebet: Boolean(entry.freebet_somente_lucro),
+  };
+}
+
+function getEntriesByScope(
+  procedure: ProcedureRowActionsProps["procedure"],
+  scope: string,
+) {
+  return (procedure.entradas ?? [])
+    .filter((entry) => entry.escopo === scope)
+    .sort((a, b) => a.ordem - b.ordem);
+}
+
+function getResultsByScope(
+  procedure: ProcedureRowActionsProps["procedure"],
+  scope: string,
+) {
+  return (procedure.resultados ?? [])
+    .filter((result) => result.escopo === scope)
+    .map((result) => result.resultado_chave)
+    .filter(Boolean);
+}
+
+function hasResultsByScope(
+  procedure: ProcedureRowActionsProps["procedure"],
+  scope: string,
+) {
+  return getResultsByScope(procedure, scope).length > 0;
+}
+
+function getDateInputByScope(
+  procedure: ProcedureRowActionsProps["procedure"],
+  scope: string,
+) {
+  const scopeEntries = getEntriesByScope(procedure, scope);
+  const entryDate = scopeEntries
+    .map((entry) => entry.data_operacao)
+    .find((date) => String(date ?? "").trim());
+
+  if (entryDate) {
+    return toDateInputValue(entryDate);
+  }
+
+  if (scopeEntries.length > 0 && hasResultsByScope(procedure, scope)) {
+    return toDateInputValue(procedure.data_operacao);
+  }
+
+  if (scopeEntries.length > 0) {
+    return "";
+  }
+
+  if (
+    (scope === "freebet_collection" &&
+      procedure.tipo_procedimento === "Coletar Freebet") ||
+    (scope === "freebet_conversion" &&
+      procedure.tipo_procedimento === "Converter Freebet")
+  ) {
+    return toDateInputValue(procedure.data_operacao);
+  }
+
+  return "";
+}
+
+function buildDetailedDefaultValues(
+  procedure: ProcedureRowActionsProps["procedure"],
+): Partial<ProcedureShareValues> {
+  if (!procedure.entradas?.length) {
+    return {};
+  }
+
+  const conversionScope = isFreebetProcedure(procedure.tipo_procedimento)
+    ? "freebet_conversion"
+    : "sports";
+  const conversionEntries = getEntriesByScope(procedure, conversionScope);
+  const conversionPrimary =
+    conversionEntries.find((entry) => entry.tipo_entrada === "principal") ??
+    conversionEntries[0];
+  const conversionProtections = conversionEntries.filter(
+    (entry) => entry.tipo_entrada === "protecao",
+  );
+  const baseDefaults: Partial<ProcedureShareValues> = {
+    selectedHouses: [
+      conversionPrimary?.casa ?? "",
+      ...conversionProtections.map((entry) => entry.casa),
+    ],
+    primaryStake: formatDraftNumber(conversionPrimary?.valor),
+    primaryOdd: formatDraftNumber(conversionPrimary?.odd),
+    primarySide: conversionPrimary?.lado === "lay" ? "lay" : "back",
+    primaryLayOdd: formatDraftNumber(conversionPrimary?.odd_lay),
+    primaryCommission: formatDraftNumber(
+      conversionPrimary?.comissao_percentual,
+    ),
+    primaryIncrease: formatDraftNumber(conversionPrimary?.aumento_percentual),
+    primaryCashback: formatDraftNumber(conversionPrimary?.cashback_percentual),
+    primaryFreebet: Boolean(conversionPrimary?.freebet_somente_lucro),
+    sportProtections: conversionProtections.map(toProtectionDraft),
+    sportResultSelections: getResultsByScope(procedure, conversionScope),
+  };
+
+  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
+    return baseDefaults;
+  }
+
+  const collectionEntries = getEntriesByScope(procedure, "freebet_collection");
+  const collectionPrimary =
+    collectionEntries.find((entry) => entry.tipo_entrada === "principal") ??
+    collectionEntries[0];
+  const collectionProtections = collectionEntries.filter(
+    (entry) => entry.tipo_entrada === "protecao",
+  );
+
+  return {
+    ...baseDefaults,
+    collectionDate: getDateInputByScope(procedure, "freebet_collection"),
+    conversionDate: getDateInputByScope(procedure, "freebet_conversion"),
+    collectionHouses: [
+      collectionPrimary?.casa ?? "",
+      ...collectionProtections.map((entry) => entry.casa),
+    ],
+    collectionPrimaryStake: formatDraftNumber(collectionPrimary?.valor),
+    collectionPrimaryOdd: formatDraftNumber(collectionPrimary?.odd),
+    collectionPrimarySide: collectionPrimary?.lado === "lay" ? "lay" : "back",
+    collectionPrimaryLayOdd: formatDraftNumber(collectionPrimary?.odd_lay),
+    collectionPrimaryCommission: formatDraftNumber(
+      collectionPrimary?.comissao_percentual,
+    ),
+    collectionPrimaryIncrease: formatDraftNumber(
+      collectionPrimary?.aumento_percentual,
+    ),
+    collectionPrimaryCashback: formatDraftNumber(
+      collectionPrimary?.cashback_percentual,
+    ),
+    collectionPrimaryFreebet: Boolean(collectionPrimary?.freebet_somente_lucro),
+    collectionProtections: collectionProtections.map(toProtectionDraft),
+    collectionResultSelections: getResultsByScope(
+      procedure,
+      "freebet_collection",
+    ),
+  };
+}
+
+function getMenuHeight(hasObservation: boolean, hasDetails: boolean) {
+  return 192 + (hasObservation ? 44 : 0) + (hasDetails ? 44 : 0);
+}
+
+function getMenuPosition(
+  left: number,
+  top: number,
+  hasObservation: boolean,
+  hasDetails: boolean,
+) {
   if (typeof window === "undefined") {
     return { left, top };
   }
 
   const menuWidth = 176;
-  const menuHeight = getMenuHeight(hasObservation);
+  const menuHeight = getMenuHeight(hasObservation, hasDetails);
   const padding = 12;
 
   return {
@@ -113,7 +312,9 @@ function getMenuPosition(left: number, top: number, hasObservation: boolean) {
 
 export function ProcedureRowActions({
   bookmakers,
+  onViewDetails,
   procedure,
+  returnTo = "/procedimentos",
 }: ProcedureRowActionsProps) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -128,8 +329,10 @@ export function ProcedureRowActions({
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [isPending, startTransition] = useTransition();
   const hasObservation = procedure.observacao.trim().length > 0;
-  const procedureDefaultStatus: "Pendente" | "Concluído" =
-    procedure.status_procedimento === "Concluído" ? "Concluído" : "Pendente";
+  const hasDetails = typeof onViewDetails === "function";
+  const procedureDefaultStatus: ProcedureShareValues["procedureStatus"] =
+    procedure.status_procedimento === "Conclu\u00eddo" ? "Conclu\u00eddo" : "Pendente";
+  const detailedDefaultValues = buildDetailedDefaultValues(procedure);
   const procedureDefaultValues: ProcedureShareValues = {
     version: 1,
     procedureType: procedure.tipo_procedimento as
@@ -140,6 +343,11 @@ export function ProcedureRowActions({
       | "Cassino",
     operationDate: toDateInputValue(procedure.data_operacao),
     game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
+    collectionGame:
+      procedure.jogo_coleta_freebet ??
+      (procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa),
+    conversionGame: procedure.jogo_conversao_freebet ?? "",
+    conversionBatchId: procedure.lote_conversao_freebet ?? "",
     houses: toHousesInputValue(procedure.casas_envolvidas),
     entryValue: Number(procedure.lucro_real ?? procedure.lucro_final ?? 0),
     note: procedure.observacao,
@@ -149,6 +357,7 @@ export function ProcedureRowActions({
     freebetValue: procedure.valor_da_freebet,
     freebetCondition: procedure.condicao_freebet,
     procedureStatus: procedureDefaultStatus,
+    ...detailedDefaultValues,
   };
 
   const getButtonMenuPosition = useCallback(() => {
@@ -158,7 +367,7 @@ export function ProcedureRowActions({
 
     const rect = buttonRef.current.getBoundingClientRect();
     const menuWidth = 176;
-    const menuHeight = getMenuHeight(hasObservation);
+    const menuHeight = getMenuHeight(hasObservation, hasDetails);
     const spacing = 8;
     const openUp = rect.bottom + menuHeight > window.innerHeight - 16;
 
@@ -166,8 +375,9 @@ export function ProcedureRowActions({
       rect.right - menuWidth,
       openUp ? rect.top - menuHeight - spacing : rect.bottom + spacing,
       hasObservation,
+      hasDetails,
     );
-  }, [hasObservation]);
+  }, [hasDetails, hasObservation]);
 
   function openMenuFromButton() {
     if (menuOpen && menuAnchor === "button") {
@@ -182,9 +392,9 @@ export function ProcedureRowActions({
 
   const openMenuAt = useCallback((left: number, top: number) => {
     setMenuAnchor("pointer");
-    setMenuPosition(getMenuPosition(left, top, hasObservation));
+    setMenuPosition(getMenuPosition(left, top, hasObservation, hasDetails));
     setMenuOpen(true);
-  }, [hasObservation]);
+  }, [hasDetails, hasObservation]);
 
   useEffect(() => {
     if (!menuOpen || menuAnchor !== "button") {
@@ -304,33 +514,13 @@ export function ProcedureRowActions({
     <>
       <ProcedureModal
         bookmakers={bookmakers}
-        defaultValues={{
-          procedureType: procedure.tipo_procedimento as
-            | "SureBet"
-            | "Tentativa de Duplo"
-            | "Coletar Freebet"
-            | "Converter Freebet"
-            | "Cassino",
-          operationDate: toDateInputValue(procedure.data_operacao),
-          game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
-          houses: toHousesInputValue(procedure.casas_envolvidas),
-          entryValue: procedure.lucro_final,
-          equalProfit: true,
-          note: procedure.observacao,
-          doubleValue: procedure.valor_freebet_coletada,
-          hitDouble: procedure.bateu_duplo,
-          freebetHouse: procedure.casa_destino_freebet,
-          freebetValue: procedure.valor_da_freebet,
-          freebetCondition: procedure.condicao_freebet,
-          procedureStatus:
-            procedure.status_procedimento === "Concluído" ? "Concluído" : "Pendente",
-        }}
+        defaultValues={procedureDefaultValues}
         hideTrigger
         mode="edit"
         onOpenChange={setEditOpen}
         open={editOpen}
         procedureId={procedure.id}
-        returnTo="/procedimentos"
+        returnTo={returnTo}
         submitLabel="Salvar alterações"
         title="Editar procedimento"
       />
@@ -342,7 +532,7 @@ export function ProcedureRowActions({
         mode="create"
         onOpenChange={setDuplicateOpen}
         open={duplicateOpen}
-        returnTo="/procedimentos"
+        returnTo={returnTo}
         submitLabel="Criar cópia"
         title="Duplicar procedimento"
       />
@@ -375,6 +565,19 @@ export function ProcedureRowActions({
               ref={menuRef}
               style={{ left: menuPosition.left, top: menuPosition.top }}
             >
+              {onViewDetails ? (
+                <button
+                  className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onViewDetails();
+                  }}
+                  type="button"
+                >
+                  Ver detalhes
+                </button>
+              ) : null}
+
               <button
                 className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                 onClick={() => {

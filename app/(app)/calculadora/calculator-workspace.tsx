@@ -1,18 +1,24 @@
 "use client";
 
-import { calculateSurebet, suggestProcedureFromCalculator } from "@/core";
+import { calculateSurebet } from "@/core";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { ProcedureShareValues } from "../_components/procedure-share-types";
 
 import { useToast } from "@/app/_components/toast-provider";
 
+import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { LzSelect } from "../_components/lz-select";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { formatCurrency } from "../_components/ui";
 
 type CalculatorWorkspaceProps = {
   bookmakers: string[];
+};
+
+type CalculatorProcedureDefaults = ProcedureShareValues & {
+  originIds?: number[];
 };
 
 type CalculatorLine = {
@@ -27,6 +33,26 @@ type CalculatorLine = {
   comissao_percentual: string;
   cashback_percentual: string;
   freebet: boolean;
+};
+
+type CalculatorResultLine = {
+  stake?: number;
+  responsabilidade?: number;
+  lucro_liquido?: number;
+  custo?: number;
+  cashback?: number;
+  retorno_bruto?: number;
+  math?: {
+    M?: number;
+  };
+};
+
+type CalculatorResult = {
+  linhas?: CalculatorResultLine[];
+  investimento_efetivo?: number;
+  lucro_liquido: number;
+  lucro_percentual: number;
+  duplo_calculado_final: number;
 };
 
 type SharedCalculatorLine = Partial<Record<keyof CalculatorLine, unknown>>;
@@ -224,6 +250,15 @@ function formatCalculatedValue(value: unknown) {
 function formatRealOddValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed.toFixed(3) : "0.000";
+}
+
+function formatProcedureNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed) || Math.abs(parsed) < 0.005) {
+    return "";
+  }
+
+  return String(Math.round(parsed * 100) / 100);
 }
 
 function calculateEffectiveOdd(line: CalculatorLine) {
@@ -439,6 +474,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     const house = searchParams.get("house") ?? "";
     const freebetValue = Number(searchParams.get("freebetValue") ?? 0);
     const entryValue = Number(searchParams.get("entryValue") ?? 0);
+    const conversionBatchId = searchParams.get("conversionBatchId") ?? "";
     const originIds = searchParams
       .getAll("originIds")
       .map((value) => Number.parseInt(value, 10))
@@ -447,6 +483,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       house,
       freebetValue,
       entryValue,
+      conversionBatchId,
       originIds,
     });
 
@@ -455,6 +492,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       house,
       freebetValue: Number.isFinite(freebetValue) ? freebetValue : 0,
       entryValue: Number.isFinite(entryValue) ? entryValue : 0,
+      conversionBatchId,
       originIds,
     };
   }, [searchParams]);
@@ -513,6 +551,11 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       ? [createConversionLine(conversionPreset.house, conversionPreset.freebetValue), createInitialLine()]
       : [createInitialLine(), createInitialLine()],
   );
+  const [procedureModalOpen, setProcedureModalOpen] = useState(false);
+  const [procedureModalKey, setProcedureModalKey] = useState(0);
+  const [procedureChoiceOpen, setProcedureChoiceOpen] = useState(false);
+  const [activeProcedureDefaults, setActiveProcedureDefaults] =
+    useState<CalculatorProcedureDefaults | null>(null);
 
   useEffect(() => {
     if (sharedPreset) {
@@ -592,9 +635,6 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         }
 
         const nextType = line.tipo === "B" ? "L" : "B";
-        if (nextType === "L") {
-          setConfigExpanded(true);
-        }
 
         return {
           ...line,
@@ -720,7 +760,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   }
 
   let calculationError = "";
-  let calculation = null;
+  let calculation: CalculatorResult | null = null;
 
   try {
     calculation = calculateSurebet(
@@ -736,7 +776,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         freebet: line.freebet,
       })),
       workspaceIndex,
-    );
+    ) as CalculatorResult;
   } catch (error) {
     calculationError =
       error instanceof Error ? error.message : "Não foi possível calcular.";
@@ -745,20 +785,133 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
   const stakeTotal =
     calculation?.linhas?.reduce((total, line) => total + Number(line.stake ?? 0), 0) ?? 0;
   const hasLayLine = lines.some((line) => line.tipo === "L");
-  const housesText = lines
-    .map((line) => line.house.trim())
-    .filter(Boolean)
-    .join(", ");
-
-  const suggestedProcedure = calculation
-    ? suggestProcedureFromCalculator({
-        baseProfit: calculation.lucro_liquido,
-        useDouble: conversionPreset ? false : calculation.duplo_calculado_final > 0,
-        doubleValue: calculation.duplo_calculado_final,
-        freebetHouse: conversionPreset?.house ?? "",
-      })
-    : null;
   const columnsPerRow = Math.min(lineCount, maxCalculatorColumnsPerRow);
+  const procedureLineOrder = [
+    workspaceIndex,
+    ...Array.from({ length: lineCount }, (_, index) => index).filter(
+      (index) => index !== workspaceIndex,
+    ),
+  ];
+  const procedureEntries = procedureLineOrder.map((lineIndex) => {
+    const line = lines[lineIndex] ?? createInitialLine();
+    const resultLine = calculation?.linhas?.[lineIndex];
+    const stake = resultLine?.stake ?? toNumber(line.stake);
+    const responsibility =
+      resultLine?.responsabilidade ?? toNumber(line.responsabilidade);
+    const side: "lay" | "back" = line.tipo === "L" ? "lay" : "back";
+    const procedureStake = side === "lay" && responsibility > 0
+      ? responsibility
+      : stake;
+
+    return {
+      house: line.house.trim(),
+      odd: formatProcedureNumber(line.odd),
+      stake: formatProcedureNumber(procedureStake),
+      side,
+      layOdd: side === "lay" ? formatProcedureNumber(line.odd) : "",
+      commission: formatProcedureNumber(line.comissao_percentual),
+      increase: formatProcedureNumber(line.aumento_percentual),
+      cashback: formatProcedureNumber(line.cashback_percentual),
+      freebet: line.freebet,
+    };
+  });
+  const procedurePrimary = procedureEntries[0] ?? {
+    house: "",
+    odd: "",
+    stake: "",
+    side: "back" as const,
+    layOdd: "",
+    commission: "",
+    increase: "",
+    cashback: "",
+    freebet: false,
+  };
+  const procedureProtections = procedureEntries.slice(1);
+  const procedureSelectedHouses = procedureEntries.map((entry) => entry.house);
+  const firstFreebetEntry = procedureEntries.find((entry) => entry.freebet);
+  const hasFreebetEntry = Boolean(firstFreebetEntry);
+
+  function buildProcedureDefaultValues(asFreebetConversion: boolean) {
+    const freebetHouse = conversionPreset?.house ?? procedurePrimary.house;
+    const freebetValue = conversionPreset?.freebetValue;
+
+    return {
+      version: 1,
+      procedureType:
+        asFreebetConversion || conversionPreset ? "Converter Freebet" : "SureBet",
+      houses: procedureSelectedHouses.filter(Boolean).join(", "),
+      entryValue: calculation?.lucro_liquido ?? 0,
+      doubleValue:
+        asFreebetConversion || conversionPreset
+          ? 0
+          : calculation?.duplo_calculado_final ?? 0,
+      hitDouble: false,
+      freebetHouse,
+      freebetValue,
+      conversionBatchId: conversionPreset?.conversionBatchId ?? "",
+      originIds: conversionPreset?.originIds ?? [],
+      selectedHouses: procedureSelectedHouses,
+      selectedFreebetHouse: freebetHouse,
+      primaryStake: procedurePrimary.stake,
+      primaryOdd: procedurePrimary.odd,
+      primarySide: procedurePrimary.side,
+      primaryLayOdd: procedurePrimary.layOdd,
+      primaryCommission: procedurePrimary.commission,
+      primaryIncrease: procedurePrimary.increase,
+      primaryCashback: procedurePrimary.cashback,
+      primaryFreebet: procedurePrimary.freebet,
+      sportProtections: procedureProtections.map((entry) => ({
+        stake: entry.stake,
+        odd: entry.odd,
+        side: entry.side,
+        layOdd: entry.layOdd,
+        commission: entry.commission,
+        increase: entry.increase,
+        cashback: entry.cashback,
+        freebet: entry.freebet,
+      })),
+      sportResultSelections: [],
+      collectionHouses: procedureSelectedHouses,
+      collectionPrimaryStake: procedurePrimary.stake,
+      collectionPrimaryOdd: procedurePrimary.odd,
+      collectionPrimarySide: procedurePrimary.side,
+      collectionPrimaryLayOdd: procedurePrimary.layOdd,
+      collectionPrimaryCommission: procedurePrimary.commission,
+      collectionPrimaryIncrease: procedurePrimary.increase,
+      collectionPrimaryCashback: procedurePrimary.cashback,
+      collectionPrimaryFreebet: procedurePrimary.freebet,
+      collectionProtections: procedureProtections.map((entry) => ({
+        stake: entry.stake,
+        odd: entry.odd,
+        side: entry.side,
+        layOdd: entry.layOdd,
+        commission: entry.commission,
+        increase: entry.increase,
+        cashback: entry.cashback,
+        freebet: entry.freebet,
+      })),
+      collectionResultSelections: [],
+      freebetCollectionOpen: !asFreebetConversion && !conversionPreset,
+      freebetConversionOpen: asFreebetConversion || Boolean(conversionPreset),
+      freebetVisibleScope:
+        asFreebetConversion || conversionPreset ? "conversion" : "all",
+    } satisfies CalculatorProcedureDefaults;
+  }
+
+  function openProcedureModal(asFreebetConversion: boolean) {
+    setActiveProcedureDefaults(buildProcedureDefaultValues(asFreebetConversion));
+    setProcedureModalKey((current) => current + 1);
+    setProcedureModalOpen(true);
+  }
+
+  function handleNewProcedureClick() {
+    if (hasFreebetEntry && !conversionPreset) {
+      setProcedureChoiceOpen(true);
+      return;
+    }
+
+    openProcedureModal(Boolean(conversionPreset));
+  }
 
   return (
     <div className="space-y-5">
@@ -980,6 +1133,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                     <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
                       <input
                         checked={line.freebet}
+                        className="lz-checkbox"
                         onChange={(event) =>
                           updateLine(index, { freebet: event.target.checked })
                         }
@@ -1057,34 +1211,56 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
               <CopyIcon />
             </button>
 
-            <ProcedureModal
-              bookmakers={bookmakers}
-              defaultValues={{
-                procedureType: conversionPreset
-                  ? "Converter Freebet"
-                  : ((suggestedProcedure?.tipo as
-                      | "SureBet"
-                      | "Tentativa de Duplo"
-                      | "Converter Freebet"
-                      | "Coletar Freebet"
-                      | "Cassino") ?? "SureBet"),
-                houses: housesText,
-                entryValue: conversionPreset
-                  ? calculation.lucro_liquido
-                  : (suggestedProcedure?.lucro_base ?? 0),
-                doubleValue: calculation.duplo_calculado_final,
-                hitDouble: calculation.duplo_calculado_final > 0,
-                freebetHouse: conversionPreset?.house ?? "",
-                freebetValue: conversionPreset?.freebetValue ?? 0,
-                originIds: conversionPreset?.originIds ?? [],
-              }}
-              returnTo="/calculadora"
-              submitLabel="Criar procedimento"
-              title="Novo procedimento"
-              triggerClassName="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
-              triggerLabel="Novo procedimento"
-            />
+            <button
+              className="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
+              onClick={handleNewProcedureClick}
+              type="button"
+            >
+              Novo procedimento
+            </button>
           </div>
+
+          <ProcedureModal
+            bookmakers={bookmakers}
+            defaultValues={activeProcedureDefaults ?? buildProcedureDefaultValues(false)}
+            hideTrigger
+            key={procedureModalKey}
+            onOpenChange={setProcedureModalOpen}
+            open={procedureModalOpen}
+            returnTo="/calculadora"
+            submitLabel="Criar procedimento"
+            title="Novo procedimento"
+          />
+
+          <ConfirmationDialog
+            description="Você marcou Freebet na calculadora. Quer abrir o procedimento como conversão de freebet?"
+            onOpenChange={setProcedureChoiceOpen}
+            open={procedureChoiceOpen}
+            title="Criar como conversão?"
+          >
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+                onClick={() => {
+                  setProcedureChoiceOpen(false);
+                  openProcedureModal(false);
+                }}
+                type="button"
+              >
+                Abrir SureBet
+              </button>
+              <button
+                className="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
+                onClick={() => {
+                  setProcedureChoiceOpen(false);
+                  openProcedureModal(true);
+                }}
+                type="button"
+              >
+                Abrir conversão
+              </button>
+            </div>
+          </ConfirmationDialog>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="lz-panel-subtle rounded-[24px] p-4">

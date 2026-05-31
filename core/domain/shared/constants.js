@@ -13,6 +13,13 @@ export const PROCEDURE_TYPES = Object.freeze([
   "Gastos",
 ]);
 
+export const CASINO_PROCEDURE_TYPES = Object.freeze([
+  "Giros Grátis",
+  "Missões",
+  "Métodos",
+  "Cassino",
+]);
+
 export const PROCEDURE_STATUS_PENDING = "Pendente";
 export const PROCEDURE_STATUS_DONE = "Concluído";
 export const PROCEDURE_STATUSES = Object.freeze([
@@ -20,9 +27,14 @@ export const PROCEDURE_STATUSES = Object.freeze([
   PROCEDURE_STATUS_DONE,
 ]);
 
+export const FREEBET_CONDITION_GUARANTEED = "Freebet Garantida";
+export const FREEBET_CONDITION_LOSS_ONLY = "Apenas se perder a aposta";
+export const FREEBET_CONDITION_CONVERSION_ONLY = "Converter freebet apenas";
+
 export const FREEBET_CONDITIONS = Object.freeze([
-  "Freebet Garantida",
-  "Apenas se perder a aposta",
+  FREEBET_CONDITION_GUARANTEED,
+  FREEBET_CONDITION_LOSS_ONLY,
+  FREEBET_CONDITION_CONVERSION_ONLY,
 ]);
 
 export const SUREBET_MODEL_DEFAULT = "Surebet Padrão";

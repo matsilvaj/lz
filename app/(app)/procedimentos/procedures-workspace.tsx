@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CASINO_PROCEDURE_TYPES,
   PROCEDURE_STATUS_DONE,
   PROCEDURE_STATUSES,
   PROCEDURE_TYPES,
@@ -35,6 +36,9 @@ type ProcedureRow = {
   data_operacao: string;
   tipo_procedimento: string;
   jogo_time_pa: string;
+  jogo_coleta_freebet?: string;
+  jogo_conversao_freebet?: string;
+  lote_conversao_freebet?: string;
   casas_envolvidas: string;
   lucro_final: number;
   bateu_duplo: boolean;
@@ -45,6 +49,26 @@ type ProcedureRow = {
   valor_da_freebet: number;
   condicao_freebet: string;
   status_procedimento: string;
+  entradas?: Array<{
+    escopo: string;
+    tipo_entrada: string;
+    ordem: number;
+    resultado_chave: string;
+    casa: string;
+    valor: number;
+    odd: number;
+    lado: string;
+    odd_lay: number;
+    comissao_percentual: number;
+    aumento_percentual: number;
+    cashback_percentual: number;
+    freebet_somente_lucro: boolean;
+    data_operacao: string;
+  }>;
+  resultados?: Array<{
+    escopo: string;
+    resultado_chave: string;
+  }>;
 };
 
 type ProceduresWorkspaceProps = {
@@ -87,6 +111,15 @@ const PROCEDURE_TYPE_FILTER_OPTIONS = PROCEDURE_TYPES.reduce<
     return options;
   }
 
+  if (type === "Cassino") {
+    options.push({
+      key: "casino",
+      label: "Cassino",
+      values: [...CASINO_PROCEDURE_TYPES],
+    });
+    return options;
+  }
+
   options.push({
     key: type,
     label: PROCEDURE_TYPE_LABELS[type] ?? type,
@@ -110,6 +143,89 @@ function getProcedureStatusLabel(status: string | null | undefined) {
 
 function getProcedureTypeLabel(type: string) {
   return PROCEDURE_TYPE_LABELS[type] ?? type;
+}
+
+function isFreebetProcedure(type: string) {
+  return type === "Coletar Freebet" || type === "Converter Freebet";
+}
+
+function hasProcedureScopeResult(procedure: ProcedureRow, scope: string) {
+  return (procedure.resultados ?? []).some((result) => result.escopo === scope);
+}
+
+function getProcedureScopeDate(procedure: ProcedureRow, scope: string) {
+  const scopeEntries = (procedure.entradas ?? []).filter(
+    (entry) => entry.escopo === scope,
+  );
+  const entryDate = scopeEntries
+    .map((entry) => entry.data_operacao)
+    .find((date) => String(date ?? "").trim());
+
+  if (entryDate) {
+    return entryDate;
+  }
+
+  if (scopeEntries.length > 0 && hasProcedureScopeResult(procedure, scope)) {
+    return procedure.data_operacao;
+  }
+
+  if (scopeEntries.length > 0) {
+    return "";
+  }
+
+  if (
+    (scope === "freebet_collection" &&
+      procedure.tipo_procedimento === "Coletar Freebet") ||
+    (scope === "freebet_conversion" &&
+      procedure.tipo_procedimento === "Converter Freebet")
+  ) {
+    return procedure.data_operacao;
+  }
+
+  return "";
+}
+
+function getProcedureDateItems(procedure: ProcedureRow) {
+  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
+    return [{ label: "", value: procedure.data_operacao }];
+  }
+
+  return [
+    {
+      label: "Coleta",
+      value: getProcedureScopeDate(procedure, "freebet_collection"),
+    },
+    {
+      label: "Conversão",
+      value: getProcedureScopeDate(procedure, "freebet_conversion"),
+    },
+  ].filter((item) => item.value);
+}
+
+function ProcedureDateDisplay({ procedure }: { procedure: ProcedureRow }) {
+  const dateItems = getProcedureDateItems(procedure);
+
+  if (dateItems.length === 0) {
+    return <span className="text-[var(--text-dim)]">-</span>;
+  }
+
+  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
+    return <span>{dateItems[0]?.value ?? "-"}</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      {dateItems.map((item) => (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]"
+          key={item.label}
+        >
+          <span className="text-[var(--text-dim)]">{item.label}</span>
+          <span>{item.value}</span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function normalizeMoney(value: number) {
@@ -481,9 +597,10 @@ export function ProceduresWorkspace({
 
             <div className="flex flex-wrap gap-2">
               {PROCEDURE_TYPE_FILTER_OPTIONS.map((option) => {
-                const active = option.values.some((value) =>
-                  selectedTypes.includes(value),
-                );
+                const active =
+                  option.values.length === 1
+                    ? selectedTypes.includes(option.values[0] ?? "")
+                    : option.values.every((value) => selectedTypes.includes(value));
 
                 return (
                   <button
@@ -734,9 +851,9 @@ export function ProceduresWorkspace({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                        {procedure.data_operacao}
-                      </p>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+                        <ProcedureDateDisplay procedure={procedure} />
+                      </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <StatusTag>
                           {getProcedureTypeLabel(procedure.tipo_procedimento)}
@@ -819,7 +936,7 @@ export function ProceduresWorkspace({
                       }
                     >
                       <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
-                        {procedure.data_operacao}
+                        <ProcedureDateDisplay procedure={procedure} />
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex flex-wrap items-center justify-center gap-2">

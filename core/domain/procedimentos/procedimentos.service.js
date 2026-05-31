@@ -89,6 +89,9 @@ function buildReferenceMonthFromOperationDate(operationDate) {
  *   procedureType: string;
  *   entryValue: number;
  *   game?: string;
+ *   freebetCollectionGame?: string;
+ *   freebetConversionGame?: string;
+ *   freebetConversionBatchId?: string;
  *   houses?: string | string[];
  *   freebetCollectedValue?: number;
  *   freebetValue?: number;
@@ -110,6 +113,9 @@ export function buildProcedureData({
   procedureType,
   entryValue,
   game = "",
+  freebetCollectionGame = "",
+  freebetConversionGame = "",
+  freebetConversionBatchId = "",
   houses = "",
   freebetCollectedValue = 0,
   freebetValue = 0,
@@ -135,13 +141,25 @@ export function buildProcedureData({
 
   let normalizedHouses = normalizeHouses(houses);
   const normalizedFreebetHouse = parseText(freebetHouse).trim();
+  const normalizedGame = parseText(game);
+  const normalizedFreebetCollectionGame = parseText(freebetCollectionGame).trim();
+  const normalizedFreebetConversionGame = parseText(freebetConversionGame).trim();
+  const normalizedFreebetConversionBatchId =
+    parseText(freebetConversionBatchId).trim();
+  const isFreebetProcedure = ["Coletar Freebet", "Converter Freebet"].includes(
+    procedureType,
+  );
+  const fallbackFreebetGame =
+    normalizedFreebetCollectionGame ||
+    normalizedFreebetConversionGame ||
+    normalizedGame;
   const normalizedOperationDate = formatOperationDate(operationDate);
   const normalizedReferenceMonth = formatReferenceMonth(
     referenceMonth || buildReferenceMonthFromOperationDate(normalizedOperationDate),
   );
 
   if (
-    ["Coletar Freebet", "Converter Freebet"].includes(procedureType) &&
+    isFreebetProcedure &&
     !normalizedHouses &&
     normalizedFreebetHouse
   ) {
@@ -152,7 +170,18 @@ export function buildProcedureData({
     data_operacao: normalizedOperationDate,
     tipo_procedimento: procedureType,
     casas_envolvidas: normalizedHouses,
-    jogo_time_pa: procedureType === "Cassino" ? "-" : parseText(game),
+    jogo_time_pa: procedureType === "Cassino" ? "-" : fallbackFreebetGame,
+    jogo_coleta_freebet: isFreebetProcedure
+      ? normalizedFreebetCollectionGame ||
+        (procedureType === "Coletar Freebet" ? normalizedGame : "")
+      : "",
+    jogo_conversao_freebet: isFreebetProcedure
+      ? normalizedFreebetConversionGame ||
+        (procedureType === "Converter Freebet" ? normalizedGame : "")
+      : "",
+    lote_conversao_freebet: isFreebetProcedure
+      ? normalizedFreebetConversionBatchId
+      : "",
     lucro_final: baseProfit,
     bateu_duplo: parseBoolean(hitDouble),
     condicao_freebet: parseText(freebetCondition),
@@ -160,7 +189,7 @@ export function buildProcedureData({
     observacao: parseText(note),
     mes_referencia: normalizedReferenceMonth,
     casa_destino_freebet:
-      ["Coletar Freebet", "Converter Freebet"].includes(procedureType)
+      isFreebetProcedure
         ? normalizedFreebetHouse
         : "",
     status_freebet:
@@ -222,7 +251,11 @@ export function filterProcedures(procedures, searchText = "", types = [], houses
   return (procedures ?? [])
     .map((item) => enrichProcedure(item))
     .filter((procedure) => {
-      const game = parseText(procedure.jogo_time_pa).toLowerCase();
+      const game = [
+        procedure.jogo_time_pa,
+        procedure.jogo_coleta_freebet,
+        procedure.jogo_conversao_freebet,
+      ].map((value) => parseText(value).toLowerCase()).join(" ");
       const involvedHouses = parseText(procedure.casas_envolvidas);
       const involvedHousesLower = involvedHouses.toLowerCase();
       const type = parseText(procedure.tipo_procedimento);
