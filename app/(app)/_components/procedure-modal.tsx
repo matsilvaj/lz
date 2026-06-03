@@ -8,7 +8,14 @@ import {
   PROCEDURE_TYPES,
 } from "@/core";
 import { Plus, RotateCcw, Search, Settings } from "lucide-react";
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type SyntheticEvent,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
@@ -66,6 +73,7 @@ type ProcedureModalProps = {
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
   hideTypeSelector?: boolean;
+  readOnly?: boolean;
   defaultValues?: ProcedureShareValues & {
     procedureType?: ProcedureType;
     operationDate?: string;
@@ -745,10 +753,12 @@ export function ProcedureModal({
   onOpenChange,
   hideTrigger = false,
   hideTypeSelector = false,
+  readOnly = false,
   defaultValues,
 }: ProcedureModalProps) {
   const { showToast } = useToast();
   const [internalOpen, setInternalOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const protectionKeyRef = useRef(1000);
   const collectionProtectionKeyRef = useRef(2000);
   const initialProcedureGroup = getProcedureGroupFromType(defaultValues?.procedureType);
@@ -914,10 +924,29 @@ export function ProcedureModal({
     useState<HousePickerTarget | null>(null);
   const [freebetHousePickerOpen, setFreebetHousePickerOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
-  const visibleGroups = usesDefaultTypeOptions
+  const isReadOnly = readOnly;
+  const visibleGroups = isReadOnly
+    ? PROCEDURE_GROUPS.filter((group) => group.id === selectedGroup)
+    : usesDefaultTypeOptions
     ? PROCEDURE_GROUPS
     : PROCEDURE_GROUPS.filter((group) => group.id === selectedGroup);
-  const visibleProcedureOptions = getDefaultProcedureOptions(selectedGroup, typeOptions);
+  const defaultProcedureOptions = getDefaultProcedureOptions(
+    selectedGroup,
+    typeOptions,
+  );
+  const selectedProcedureOption = defaultProcedureOptions.find((option) =>
+    isFreebetProcedureType(option.value) && isFreebetProcedureType(selectedType)
+      ? true
+      : option.value === selectedType,
+  );
+  const visibleProcedureOptions = isReadOnly
+    ? [
+        {
+          value: selectedType,
+          label: selectedProcedureOption?.label ?? selectedType,
+        },
+      ]
+    : defaultProcedureOptions;
   const isNormalBet = selectedType === "Apostas Normais";
   const isFreebetType = isFreebetProcedureType(selectedType);
   const isConversionOnly =
@@ -1134,7 +1163,52 @@ export function ProcedureModal({
     ? housePickerTarget.section === "collection"
       ? collectionHouses[housePickerTarget.index]
       : selectedHouses[housePickerTarget.index]
-    : "";
+      : "";
+
+  useEffect(() => {
+    if (!isReadOnly || !open) {
+      return;
+    }
+
+    const form = formRef.current;
+
+    if (!form) {
+      return;
+    }
+
+    const controls = Array.from(
+      form.querySelectorAll<
+        HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >("button, input, select, textarea"),
+    );
+    const previousDisabled = new Map<
+      HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+      boolean
+    >();
+
+    controls.forEach((control) => {
+      if (control.closest("[data-readonly-allowed='true']")) {
+        return;
+      }
+
+      previousDisabled.set(control, control.disabled);
+      control.disabled = true;
+    });
+
+    return () => {
+      previousDisabled.forEach((wasDisabled, control) => {
+        control.disabled = wasDisabled;
+      });
+    };
+  }, [
+    collectionProtectionKeys,
+    freebetCollectionExpanded,
+    freebetConversionExpanded,
+    isReadOnly,
+    open,
+    protectionKeys,
+    selectedType,
+  ]);
   const procedureDetailsPayload = getProcedureDetailsPayload();
   const procedureDetailsValue = JSON.stringify(procedureDetailsPayload);
 
@@ -1506,6 +1580,33 @@ export function ProcedureModal({
         tone: "error",
       });
     }
+  }
+
+  function isReadOnlyInteractionAllowed(target: EventTarget | null) {
+    return (
+      target instanceof Element &&
+      Boolean(target.closest("[data-readonly-allowed='true']"))
+    );
+  }
+
+  function handleReadOnlyFormInteraction(
+    event: SyntheticEvent<HTMLFormElement>,
+  ) {
+    if (!isReadOnly || isReadOnlyInteractionAllowed(event.target)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    if (isReadOnly) {
+      event.preventDefault();
+      return;
+    }
+
+    handleSubmit(event);
   }
 
   function renderSportsBetFields({
@@ -2208,7 +2309,12 @@ export function ProcedureModal({
             <form
               action={mode === "edit" ? updateProcedureAction : saveProcedureAction}
               className="space-y-6 px-6 py-6"
-              onSubmit={handleSubmit}
+              onChangeCapture={handleReadOnlyFormInteraction}
+              onClickCapture={handleReadOnlyFormInteraction}
+              onInputCapture={handleReadOnlyFormInteraction}
+              onKeyDownCapture={handleReadOnlyFormInteraction}
+              onSubmit={handleFormSubmit}
+              ref={formRef}
             >
               <input name="returnTo" type="hidden" value={returnTo} />
               <input
@@ -2414,14 +2520,16 @@ export function ProcedureModal({
                 <div className="space-y-3 rounded-[24px] border border-white/10 bg-white/4 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-white">Observações</p>
-                    <button
-                      aria-label="Recolher observações"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-white/20 hover:text-white"
-                      onClick={() => setNoteExpanded(false)}
-                      type="button"
-                    >
-                      <CloseIcon className="h-3.5 w-3.5" />
-                    </button>
+                    {!isReadOnly ? (
+                      <button
+                        aria-label="Recolher observações"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-white/20 hover:text-white"
+                        onClick={() => setNoteExpanded(false)}
+                        type="button"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
 
                   <textarea
@@ -2431,7 +2539,7 @@ export function ProcedureModal({
                     value={noteValue}
                   />
                 </div>
-              ) : (
+              ) : isReadOnly ? null : (
                 <button
                   className="inline-flex items-center gap-1.5 text-left text-sm font-medium text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => setNoteExpanded(true)}
@@ -2551,16 +2659,18 @@ export function ProcedureModal({
                                 <p className="text-sm font-semibold text-white">
                                   Proteção {index + 1}
                                 </p>
-                                <button
-                                  aria-label={`Remover proteção ${index + 1}`}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.28)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
-                                  onClick={() =>
-                                    removeCollectionProtection(key, index)
-                                  }
-                                  type="button"
-                                >
-                                  <CloseIcon className="h-3.5 w-3.5" />
-                                </button>
+                                {!isReadOnly ? (
+                                  <button
+                                    aria-label={`Remover proteção ${index + 1}`}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.28)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
+                                    onClick={() =>
+                                      removeCollectionProtection(key, index)
+                                    }
+                                    type="button"
+                                  >
+                                    <CloseIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : null}
                               </div>
 
                               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2666,7 +2776,8 @@ export function ProcedureModal({
                         })}
                       </div>
 
-                      {collectionProtectionKeys.length < MAX_SPORT_PROTECTIONS ? (
+                      {!isReadOnly &&
+                      collectionProtectionKeys.length < MAX_SPORT_PROTECTIONS ? (
                         <button
                           className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium"
                           onClick={addCollectionProtection}
@@ -2858,14 +2969,16 @@ export function ProcedureModal({
                                 <p className="text-sm font-semibold text-white">
                                   Proteção {index + 1}
                                 </p>
-                                <button
-                                  aria-label={`Remover proteção ${index + 1}`}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.28)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
-                                  onClick={() => removeProtection(key, index)}
-                                  type="button"
-                                >
-                                  <CloseIcon className="h-3.5 w-3.5" />
-                                </button>
+                                {!isReadOnly ? (
+                                  <button
+                                    aria-label={`Remover proteção ${index + 1}`}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.28)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
+                                    onClick={() => removeProtection(key, index)}
+                                    type="button"
+                                  >
+                                    <CloseIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : null}
                               </div>
 
                               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2958,7 +3071,8 @@ export function ProcedureModal({
                       : null}
                   </div>
 
-                  {!isNormalBet &&
+                  {!isReadOnly &&
+                  !isNormalBet &&
                   protectionKeys.length < MAX_SPORT_PROTECTIONS ? (
                     <button
                       className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium"
@@ -3212,28 +3326,33 @@ export function ProcedureModal({
               )}
 
               <div className="flex items-center justify-end gap-3">
-                <button
-                  aria-label="Copiar link do procedimento"
-                  className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
-                  onClick={handleCopyProcedure}
-                  title="Copiar link"
-                  type="button"
-                >
-                  <CopyIcon />
-                </button>
+                {!isReadOnly ? (
+                  <button
+                    aria-label="Copiar link do procedimento"
+                    className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+                    onClick={handleCopyProcedure}
+                    title="Copiar link"
+                    type="button"
+                  >
+                    <CopyIcon />
+                  </button>
+                ) : null}
                 <button
                   className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
+                  data-readonly-allowed="true"
                   onClick={() => setOpen(false)}
                   type="button"
                 >
-                  Cancelar
+                  {isReadOnly ? "Fechar" : "Cancelar"}
                 </button>
-                <FormSubmitButton
-                  className="lz-button-primary rounded-full px-5 py-2.5 text-sm font-semibold"
-                  pendingLabel={mode === "edit" ? "Salvando..." : "Criando..."}
-                >
-                  {submitLabel}
-                </FormSubmitButton>
+                {!isReadOnly ? (
+                  <FormSubmitButton
+                    className="lz-button-primary rounded-full px-5 py-2.5 text-sm font-semibold"
+                    pendingLabel={mode === "edit" ? "Salvando..." : "Criando..."}
+                  >
+                    {submitLabel}
+                  </FormSubmitButton>
+                ) : null}
               </div>
             </form>
           </div>

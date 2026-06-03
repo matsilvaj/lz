@@ -1,11 +1,19 @@
-import { MonitorPlaceholder, MonitorShell } from "../_components/monitor-shell";
+import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
+import { getFreebetsPageData } from "@/lib/server/app-data";
 
-export default function MonitorConverterFreebetPage() {
+import { MonitorShell } from "../_components/monitor-shell";
+import { FreebetConverterMonitorWorkspace } from "./freebet-converter-monitor-workspace";
+
+export const dynamic = "force-dynamic";
+
+export default async function MonitorConverterFreebetPage() {
+  const { activeWorkspace, user } = await requireWorkspaceContext();
+  const data = await getFreebetsPageData(user.id, activeWorkspace.id);
+
   return (
     <MonitorShell activeTab="converter-freebet">
-      <MonitorPlaceholder
-        description="As conversões de freebet vão entrar neste monitor para manter a leitura antes de virar procedimento."
-        title="Converter Freebet"
+      <FreebetConverterMonitorWorkspace
+        convertibleGroups={data.convertibleGroups}
       />
     </MonitorShell>
   );

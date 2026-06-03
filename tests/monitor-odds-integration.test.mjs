@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const oddsRepository = readFileSync(
@@ -30,8 +30,27 @@ const doubleMonitorUi = readFileSync(
   new URL("../app/(app)/monitor/duplo/double-monitor-workspace.tsx", import.meta.url),
   "utf8",
 );
+const freebetConverterPage = readFileSync(
+  new URL("../app/(app)/monitor/converter-freebet/page.tsx", import.meta.url),
+  "utf8",
+);
+const freebetConverterUi = readFileSync(
+  new URL(
+    "../app/(app)/monitor/converter-freebet/freebet-converter-monitor-workspace.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const freebetConversionLib = readFileSync(
+  new URL("../lib/monitor-odds/freebet-conversion.ts", import.meta.url),
+  "utf8",
+);
 const calculatorSelectionDock = readFileSync(
   new URL("../app/_components/calculator-selection-dock.tsx", import.meta.url),
+  "utf8",
+);
+const calculatorPage = readFileSync(
+  new URL("../app/calculadora/page.tsx", import.meta.url),
   "utf8",
 );
 const oddsDisplayNames = readFileSync(
@@ -248,12 +267,33 @@ test("monitor odds UI highlights actual odd price movement", () => {
 test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(calculatorSelectionDock, /encodeCalculatorPayload/);
   assert.match(calculatorSelectionDock, /new URL\("\/calculadora", window\.location\.origin\)/);
+  assert.match(calculatorSelectionDock, /appendConversionContextParams/);
+  assert.match(calculatorSelectionDock, /parseConversionContextParams/);
+  assert.match(calculatorSelectionDock, /params\.set\("mode", "convert-freebet"\)/);
+  assert.match(calculatorSelectionDock, /params\.append\("originIds"/);
+  assert.match(calculatorSelectionDock, /getOrderedCalculatorSelections/);
+  assert.match(calculatorSelectionDock, /getDockProfitPercent/);
+  assert.match(calculatorSelectionDock, /Lucro %/);
+  assert.match(calculatorSelectionDock, /conversionSelectionReady/);
+  assert.match(calculatorSelectionDock, /getConversionSelectionHint/);
+  assert.match(
+    calculatorSelectionDock,
+    /Selecione mais 1 odd para completar a conversão/,
+  );
+  assert.match(calculatorSelectionDock, /Troque uma seleção pela odd da casa/);
   assert.match(calculatorSelectionDock, /window\.open\(\s*calculatorUrl\.toString\(\)/);
-  assert.match(calculatorSelectionDock, /calculatorWindow\.location\.href = calculatorUrl\.toString\(\)/);
+  assert.match(calculatorSelectionDock, /window\.location\.assign\(calculatorUrl\.toString\(\)\)/);
   assert.match(calculatorSelectionDock, /"lz-calculadora"/);
   assert.match(calculatorSelectionDock, /slice\(-3\)/);
   assert.match(calculatorSelectionDock, /dockVisible/);
+  assert.match(calculatorSelectionDock, /freebet: Boolean\(selection\.freebet\)/);
+  assert.match(calculatorSelectionDock, /formatCalculatorStake\(selection\.stake/);
   assert.match(oddsUi, /CalculatorSelectionDock/);
+  assert.match(oddsUi, /parseConversionContextParams/);
+  assert.match(oddsUi, /isConversionFreebetHouse/);
+  assert.match(oddsUi, /isConversionFreebetLine/);
+  assert.match(oddsUi, /Conversao Freebet/);
+  assert.match(oddsUi, /conversionContext=\{conversionContext\}/);
   assert.match(oddsUi, /getOddCalculatorSelection/);
   assert.match(oddsUi, /getOpportunityCalculatorSelections/);
   assert.match(oddsUi, /replaceAll: true/);
@@ -263,10 +303,80 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(doubleMonitorUi, /BookmakerEventLink/);
 });
 
+test("calculator route keeps app chrome without protected workspace lookup", () => {
+  assert.match(calculatorPage, /AppNavigation/);
+  assert.match(calculatorPage, /ThemeToggle/);
+  assert.match(calculatorPage, /UserMenu/);
+  assert.doesNotMatch(calculatorPage, /requireWorkspaceContext/);
+  assert.equal(
+    existsSync(new URL("../app/(app)/calculadora/page.tsx", import.meta.url)),
+    false,
+  );
+});
+
 test("monitor duplo keeps remembered odds while refresh is pending", () => {
   assert.match(doubleMonitorUi, /getRememberedDuploEvents/);
   assert.match(doubleMonitorUi, /hydrateEventsWithRememberedOdds/);
   assert.match(doubleMonitorUi, /rememberDuploEvents/);
   assert.match(doubleMonitorUi, /showSignalSkeleton/);
   assert.match(doubleMonitorUi, /state\.refreshingOdds && !rows\.length/);
+});
+
+test("freebet converter monitor uses available freebets and the calculator engine", () => {
+  assert.match(freebetConverterPage, /getFreebetsPageData/);
+  assert.match(freebetConverterPage, /convertibleGroups/);
+  assert.match(freebetConverterUi, /Prontas para conversão/);
+  assert.match(freebetConverterUi, /FreebetSelectionDialog/);
+  assert.match(freebetConverterUi, /buildSelectedGroup/);
+  assert.match(freebetConverterUi, /selectedConversionStorageKey/);
+  assert.match(freebetConverterUi, /readStoredSelectedConversionIds/);
+  assert.match(freebetConverterUi, /rememberSelectedConversion/);
+  assert.match(freebetConverterUi, /clearRememberedSelectedConversion/);
+  assert.match(freebetConverterUi, /findStoredSelectedConversion/);
+  assert.match(freebetConverterUi, /getConversionBatchIdForIds/);
+  assert.match(freebetConverterUi, /getConversionContext/);
+  assert.match(freebetConverterUi, /selectedConversion/);
+  assert.match(freebetConverterUi, /minOddValue/);
+  assert.match(freebetConverterUi, /maxOddValue/);
+  assert.match(freebetConverterUi, /buildFreebetConversionAnalysis/);
+  assert.match(freebetConverterUi, /\/api\/monitor-odds\/events/);
+  assert.match(freebetConverterUi, /\/api\/monitor-odds\/odds/);
+  assert.doesNotMatch(freebetConverterUi, /type="search"/);
+  assert.doesNotMatch(freebetConverterUi, /Digite um time/);
+  assert.doesNotMatch(freebetConverterUi, /freebet\(s\)/);
+  assert.match(freebetConverterUi, /formatFreebetCount/);
+  assert.match(freebetConverterUi, /getRememberedConverterEvents/);
+  assert.match(freebetConverterUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(freebetConverterUi, /showSignalSkeleton/);
+  assert.match(freebetConversionLib, /calculateSurebet/);
+  assert.match(freebetConversionLib, /calculationLines/);
+  assert.match(freebetConversionLib, /conversionPercent/);
+});
+
+test("freebet converter keeps Sem PA, protects the freebet house, and opens calculator", () => {
+  assert.match(freebetConversionLib, /SEM_PA/);
+  assert.match(freebetConversionLib, /COM_PA/);
+  assert.match(freebetConversionLib, /1X2/);
+  assert.match(freebetConversionLib, /line\.selectionKey !== "DRAW"/);
+  assert.match(freebetConverterUi, /modeFilters/);
+  assert.match(freebetConverterUi, /modeLabels/);
+  assert.match(freebetConverterUi, /SortMenu/);
+  assert.match(freebetConverterUi, /handleBackToSelection/);
+  assert.match(freebetConverterUi, /freebetHouseKey/);
+  assert.match(freebetConverterUi, /key !== freebetHouseKey/);
+  assert.match(freebetConverterUi, /disabled = bookmaker\.key === freebetHouseKey/);
+  assert.match(freebetConverterUi, /BookmakerEventLink/);
+  assert.match(freebetConverterUi, /CalculatorSelectionDock/);
+  assert.match(freebetConverterUi, /conversionContext=\{conversionContext\}/);
+  assert.match(freebetConverterUi, /getEventDetailHref/);
+  assert.match(freebetConverterUi, /appendConversionContextParams/);
+  assert.match(freebetConverterUi, /conversionContext=\{conversionContext\}/);
+  assert.match(freebetConverterUi, /visibleCalculatorSelectionIds/);
+  assert.match(freebetConverterUi, /freebet: line\.role === "freebet"/);
+  assert.match(
+    freebetConverterUi,
+    /stake: line\.role === "freebet" \? opportunity\.freebetValue : undefined/,
+  );
+  assert.match(freebetConverterUi, /replaceAll: true/);
+  assert.match(freebetConverterUi, /createPortal\(/);
 });

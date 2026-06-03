@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, MoreHorizontal, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
@@ -255,6 +255,15 @@ function buildDetailedDefaultValues(
     ...baseDefaults,
     collectionDate: getDateInputByScope(procedure, "freebet_collection"),
     conversionDate: getDateInputByScope(procedure, "freebet_conversion"),
+    freebetCollectionOpen: collectionEntries.length > 0,
+    freebetConversionOpen: conversionEntries.length > 0,
+    freebetVisibleScope:
+      procedure.tipo_procedimento === "Coletar Freebet"
+        ? "collection"
+        : procedure.tipo_procedimento === "Converter Freebet" &&
+            collectionEntries.length === 0
+          ? "conversion"
+          : "all",
     collectionHouses: [
       collectionPrimary?.casa ?? "",
       ...collectionProtections.map((entry) => entry.casa),
@@ -278,6 +287,41 @@ function buildDetailedDefaultValues(
       procedure,
       "freebet_collection",
     ),
+  };
+}
+
+export function buildProcedureDefaultValues(
+  procedure: ProcedureRowActionsProps["procedure"],
+): ProcedureShareValues {
+  const procedureDefaultStatus: ProcedureShareValues["procedureStatus"] =
+    procedure.status_procedimento === "Conclu\u00eddo" ? "Conclu\u00eddo" : "Pendente";
+  const detailedDefaultValues = buildDetailedDefaultValues(procedure);
+
+  return {
+    version: 1,
+    procedureType: procedure.tipo_procedimento as
+      | "SureBet"
+      | "Tentativa de Duplo"
+      | "Coletar Freebet"
+      | "Converter Freebet"
+      | "Cassino",
+    operationDate: toDateInputValue(procedure.data_operacao),
+    game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
+    collectionGame:
+      procedure.jogo_coleta_freebet ??
+      (procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa),
+    conversionGame: procedure.jogo_conversao_freebet ?? "",
+    conversionBatchId: procedure.lote_conversao_freebet ?? "",
+    houses: toHousesInputValue(procedure.casas_envolvidas),
+    entryValue: Number(procedure.lucro_real ?? procedure.lucro_final ?? 0),
+    note: procedure.observacao,
+    doubleValue: procedure.valor_freebet_coletada,
+    hitDouble: procedure.bateu_duplo,
+    freebetHouse: procedure.casa_destino_freebet,
+    freebetValue: procedure.valor_da_freebet,
+    freebetCondition: procedure.condicao_freebet,
+    procedureStatus: procedureDefaultStatus,
+    ...detailedDefaultValues,
   };
 }
 
@@ -331,35 +375,7 @@ export function ProcedureRowActions({
   const [isPending, startTransition] = useTransition();
   const hasObservation = procedure.observacao.trim().length > 0;
   const hasDetails = typeof onViewDetails === "function";
-  const procedureDefaultStatus: ProcedureShareValues["procedureStatus"] =
-    procedure.status_procedimento === "Conclu\u00eddo" ? "Conclu\u00eddo" : "Pendente";
-  const detailedDefaultValues = buildDetailedDefaultValues(procedure);
-  const procedureDefaultValues: ProcedureShareValues = {
-    version: 1,
-    procedureType: procedure.tipo_procedimento as
-      | "SureBet"
-      | "Tentativa de Duplo"
-      | "Coletar Freebet"
-      | "Converter Freebet"
-      | "Cassino",
-    operationDate: toDateInputValue(procedure.data_operacao),
-    game: procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa,
-    collectionGame:
-      procedure.jogo_coleta_freebet ??
-      (procedure.jogo_time_pa === "-" ? "" : procedure.jogo_time_pa),
-    conversionGame: procedure.jogo_conversao_freebet ?? "",
-    conversionBatchId: procedure.lote_conversao_freebet ?? "",
-    houses: toHousesInputValue(procedure.casas_envolvidas),
-    entryValue: Number(procedure.lucro_real ?? procedure.lucro_final ?? 0),
-    note: procedure.observacao,
-    doubleValue: procedure.valor_freebet_coletada,
-    hitDouble: procedure.bateu_duplo,
-    freebetHouse: procedure.casa_destino_freebet,
-    freebetValue: procedure.valor_da_freebet,
-    freebetCondition: procedure.condicao_freebet,
-    procedureStatus: procedureDefaultStatus,
-    ...detailedDefaultValues,
-  };
+  const procedureDefaultValues = buildProcedureDefaultValues(procedure);
 
   const getButtonMenuPosition = useCallback(() => {
     if (!buttonRef.current || typeof window === "undefined") {
@@ -593,12 +609,11 @@ export function ProcedureRowActions({
               </button>
 
               <button
-                className="flex w-full items-center gap-2 rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                 onClick={handleCopyProcedure}
                 type="button"
               >
-                <Copy aria-hidden="true" className="h-4 w-4 shrink-0" />
-                <span>Copiar</span>
+                Copiar
               </button>
 
               {hasObservation ? (

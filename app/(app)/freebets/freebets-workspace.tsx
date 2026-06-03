@@ -14,6 +14,7 @@ import {
   EmptyState,
   StatusTag,
   formatCurrency,
+  formatFreebetCount,
   formatNumber,
 } from "../_components/ui";
 
@@ -1302,7 +1303,7 @@ export function FreebetsWorkspace({
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-white">{detailsGroup.casa}</h2>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                  {formatNumber(detailsGroup.quantidade)} freebet(s) de{" "}
+                  {formatFreebetCount(detailsGroup.quantidade)} de{" "}
                   {formatCurrency(detailsGroup.valor_total)}
                 </p>
               </div>

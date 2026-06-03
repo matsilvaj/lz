@@ -1,7 +1,8 @@
 "use client";
 
+import { calculateSurebet } from "@/core";
 import { ArrowRight, Calculator, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/lib/calculator-share";
 
 export type CalculatorSelectionLine = {
+  freebet?: boolean;
   house: string;
   id: string;
   meta?: string;
@@ -17,6 +19,20 @@ export type CalculatorSelectionLine = {
   pa?: boolean;
   selectionKey: string;
   selectionLabel: string;
+  stake?: number;
+};
+
+export type CalculatorConversionContext = {
+  conversionBatchId?: string;
+  entryValue: number;
+  freebetValue: number;
+  house: string;
+  originIds: number[];
+};
+
+type CalculatorConversionSearchParams = {
+  get(name: string): string | null;
+  getAll(name: string): string[];
 };
 
 export function createCalculatorSelectionId(
@@ -76,10 +92,30 @@ function formatCalculatorOdd(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : "0";
 }
 
-function buildCalculatorPayload(
-  selections: CalculatorSelectionLine[],
-): SharedCalculatorPayload {
+function formatCalculatorStake(value: number | undefined, fallback: string) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : fallback;
+}
+
+function getOrderedCalculatorSelections(selections: CalculatorSelectionLine[]) {
   const lines = selections.slice(0, 3);
+  const freebetLine = lines.find((selection) => selection.freebet);
+
+  if (!freebetLine) {
+    return lines;
+  }
+
+  return [
+    freebetLine,
+    ...lines.filter((selection) => selection.id !== freebetLine.id),
+  ];
+}
+
+function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCalculatorPayload {
+  const lines = getOrderedCalculatorSelections(selections);
   const lineCount = Math.max(2, Math.min(lines.length, 3));
 
   return {
@@ -89,12 +125,12 @@ function buildCalculatorPayload(
       aumento_percentual: "0",
       cashback_percentual: "0",
       comissao_percentual: "0",
-      freebet: false,
+      freebet: Boolean(selection.freebet),
       house: selection.house,
       odd: formatCalculatorOdd(selection.odd),
       responsabilidade: "0",
       responsabilidadeEdited: false,
-      stake: index === 0 ? "100" : "0",
+      stake: formatCalculatorStake(selection.stake, index === 0 ? "100" : "0"),
       stakeEdited: false,
       tipo: "B",
     })),
@@ -103,11 +139,145 @@ function buildCalculatorPayload(
   };
 }
 
+function formatProfitPercent(value: number) {
+  const safeValue = Math.abs(value) < 0.005 ? 0 : value;
+  return `${safeValue.toFixed(2)}%`;
+}
+
+function getProfitClassName(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return "text-white";
+  }
+
+  return value > 0 ? "text-emerald-300" : "text-rose-300";
+}
+
+function getDockProfitPercent(
+  selections: CalculatorSelectionLine[],
+  conversionContext: CalculatorConversionContext | null | undefined,
+) {
+  const lines = getOrderedCalculatorSelections(selections);
+
+  if (lines.length < 2) {
+    return null;
+  }
+
+  try {
+    const calculation = calculateSurebet(
+      lines.map((selection, index) => ({
+        freebet: Boolean(selection.freebet),
+        odd: selection.odd,
+        stake:
+          selection.stake ??
+          (index === 0 ? conversionContext?.freebetValue ?? 100 : 0),
+        tipo: "B",
+      })),
+      0,
+    ) as { lucro_liquido?: number; lucro_percentual?: number };
+    const profitAmount = Number(calculation.lucro_liquido ?? 0);
+    const defaultProfitPercent = Number(calculation.lucro_percentual ?? 0);
+
+    if (conversionContext?.freebetValue) {
+      return (profitAmount / conversionContext.freebetValue) * 100;
+    }
+
+    return Number.isFinite(defaultProfitPercent) ? defaultProfitPercent : null;
+  } catch {
+    return null;
+  }
+}
+
+export function appendConversionContextParams(
+  params: URLSearchParams,
+  conversionContext: CalculatorConversionContext | null | undefined,
+) {
+  if (!conversionContext) {
+    return;
+  }
+
+  params.set("mode", "convert-freebet");
+  params.set("house", conversionContext.house);
+  params.set("freebetValue", String(conversionContext.freebetValue));
+  params.set("entryValue", String(conversionContext.entryValue));
+
+  if (conversionContext.conversionBatchId) {
+    params.set("conversionBatchId", conversionContext.conversionBatchId);
+  }
+
+  for (const originId of conversionContext.originIds) {
+    params.append("originIds", String(originId));
+  }
+}
+
+export function parseConversionContextParams(
+  params: CalculatorConversionSearchParams,
+): CalculatorConversionContext | null {
+  if (params.get("mode") !== "convert-freebet") {
+    return null;
+  }
+
+  const house = params.get("house")?.trim() ?? "";
+  const freebetValue = Number(params.get("freebetValue") ?? 0);
+  const entryValue = Number(params.get("entryValue") ?? 0);
+  const originIds = params
+    .getAll("originIds")
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (!house || !Number.isFinite(freebetValue) || freebetValue <= 0) {
+    return null;
+  }
+
+  return {
+    conversionBatchId: params.get("conversionBatchId") ?? undefined,
+    entryValue: Number.isFinite(entryValue) ? entryValue : 0,
+    freebetValue,
+    house,
+    originIds,
+  };
+}
+
+function getConversionSelectionHint(
+  selections: CalculatorSelectionLine[],
+  conversionContext: CalculatorConversionContext | null | undefined,
+) {
+  if (!conversionContext) {
+    return null;
+  }
+
+  const selectedCount = selections.length;
+  const hasFreebetSelection = selections.some((selection) => selection.freebet);
+
+  if (selectedCount >= 3 && !hasFreebetSelection) {
+    return `Troque uma seleção pela odd da casa ${conversionContext.house}.`;
+  }
+
+  if (selectedCount < 3 && hasFreebetSelection) {
+    const remainingCount = 3 - selectedCount;
+
+    return remainingCount === 1
+      ? "Selecione mais 1 odd para completar a conversão."
+      : `Selecione mais ${remainingCount} odds para completar a conversão.`;
+  }
+
+  if (selectedCount < 3) {
+    const remainingCount = 3 - selectedCount;
+
+    return remainingCount === 1
+      ? `Selecione mais 1 odd, que precisa ser da casa ${conversionContext.house}.`
+      : `Selecione mais ${remainingCount} odds, incluindo a casa ${conversionContext.house}.`;
+  }
+
+  return null;
+}
+
 export function CalculatorSelectionDock({
+  conversionContext,
   onClear,
   onRemove,
   selections,
 }: {
+  conversionContext?: CalculatorConversionContext | null;
   onClear: () => void;
   onRemove: (id: string) => void;
   selections: CalculatorSelectionLine[];
@@ -123,6 +293,26 @@ export function CalculatorSelectionDock({
   const dockTimeoutRef = useRef<number | null>(null);
   const hasSelections = selections.length > 0;
   const visibleSelections = hasSelections ? selections : displaySelections;
+  const orderedVisibleSelections = useMemo(
+    () => getOrderedCalculatorSelections(visibleSelections),
+    [visibleSelections],
+  );
+  const hasFreebetSelection = orderedVisibleSelections.some(
+    (selection) => selection.freebet,
+  );
+  const profitPercent = useMemo(
+    () => getDockProfitPercent(orderedVisibleSelections, conversionContext),
+    [conversionContext, orderedVisibleSelections],
+  );
+  const conversionSelectionReady =
+    !conversionContext ||
+    (orderedVisibleSelections.length === 3 && hasFreebetSelection);
+  const conversionSelectionHint = getConversionSelectionHint(
+    orderedVisibleSelections,
+    conversionContext,
+  );
+  const canOpenCalculator =
+    orderedVisibleSelections.length >= 2 && conversionSelectionReady;
 
   useEffect(() => {
     return () => {
@@ -179,26 +369,33 @@ export function CalculatorSelectionDock({
     };
   }, [hasSelections, selections]);
 
-  if (typeof document === "undefined" || !renderDock || !visibleSelections.length) {
+  if (
+    typeof document === "undefined" ||
+    !renderDock ||
+    !orderedVisibleSelections.length
+  ) {
     return null;
   }
 
   function openCalculator() {
-    const payload = buildCalculatorPayload(visibleSelections);
+    if (!canOpenCalculator) {
+      return;
+    }
+
+    const payload = buildCalculatorPayload(orderedVisibleSelections);
     const params = new URLSearchParams();
+    appendConversionContextParams(params, conversionContext);
     params.set("calc", encodeCalculatorPayload(payload));
     const calculatorUrl = new URL("/calculadora", window.location.origin);
     calculatorUrl.search = params.toString();
-    const calculatorWindow = window.open(
-      calculatorUrl.toString(),
-      "lz-calculadora",
-    );
+    const calculatorWindow = window.open(calculatorUrl.toString(), "lz-calculadora");
 
-    if (calculatorWindow) {
-      calculatorWindow.location.href = calculatorUrl.toString();
+    if (!calculatorWindow) {
+      window.location.assign(calculatorUrl.toString());
+      return;
     }
 
-    calculatorWindow?.focus();
+    calculatorWindow.focus();
   }
 
   function togglePanel() {
@@ -251,7 +448,7 @@ export function CalculatorSelectionDock({
           </div>
 
           <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">
-            {visibleSelections.slice(0, 3).map((selection) => (
+            {orderedVisibleSelections.slice(0, 3).map((selection) => (
               <div
                 className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2"
                 key={selection.id}
@@ -290,8 +487,27 @@ export function CalculatorSelectionDock({
             ))}
           </div>
 
+          {profitPercent !== null || conversionContext ? (
+            <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2">
+              {profitPercent !== null ? (
+                <div className="flex items-center justify-between gap-3 text-xs font-semibold">
+                  <span className="text-[var(--text-muted)]">Lucro %</span>
+                  <span className={`tabular-nums ${getProfitClassName(profitPercent)}`}>
+                    {formatProfitPercent(profitPercent)}
+                  </span>
+                </div>
+              ) : null}
+              {conversionSelectionHint ? (
+                <p className="mt-1 text-[11px] font-medium leading-5 text-[var(--text-dim)]">
+                  {conversionSelectionHint}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
-            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.96),rgba(147,8,58,0.96))] px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.22)] transition hover:brightness-110"
+            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.96),rgba(147,8,58,0.96))] px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.22)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.05] disabled:text-[var(--text-dim)] disabled:shadow-none disabled:hover:brightness-100"
+            disabled={!canOpenCalculator}
             onClick={openCalculator}
             type="button"
           >

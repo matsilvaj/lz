@@ -18,6 +18,12 @@ export function formatNumber(value: number) {
   return numberFormatter.format(value);
 }
 
+export function formatFreebetCount(value: number) {
+  const count = Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+
+  return `${formatNumber(count)} ${count === 1 ? "freebet" : "freebets"}`;
+}
+
 export function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg

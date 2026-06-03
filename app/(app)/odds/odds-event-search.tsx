@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -27,6 +28,8 @@ import {
   CalculatorSelectionDock,
   createCalculatorSelectionId,
   mergeCalculatorSelections,
+  parseConversionContextParams,
+  type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
 import {
@@ -38,6 +41,7 @@ import {
   formatCompetitionName,
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
+import { getFreebetConversionBookmakerKey } from "@/lib/monitor-odds/freebet-conversion";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -1003,6 +1007,13 @@ function formatOdd(value: number | undefined) {
   return value ? value.toFixed(2) : "-";
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    currency: "BRL",
+    style: "currency",
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
 function BookmakerEventLink({
   bookmakerName,
   children,
@@ -1123,15 +1134,60 @@ function getCalculatorMeta(marketLabel: string) {
     : marketLabel;
 }
 
+function isConversionFreebetHouse(
+  bookmaker: Pick<OddsFeedItem, "bookmaker_name" | "bookmaker_slug">,
+  conversionContext: CalculatorConversionContext | null,
+) {
+  if (!conversionContext) {
+    return false;
+  }
+
+  const freebetHouseKey = getFreebetConversionBookmakerKey(
+    conversionContext.house,
+  );
+
+  return (
+    getFreebetConversionBookmakerKey(
+      bookmaker.bookmaker_name,
+      bookmaker.bookmaker_slug,
+    ) === freebetHouseKey ||
+    getFreebetConversionBookmakerKey(bookmaker.bookmaker_name) === freebetHouseKey
+  );
+}
+
+function isConversionFreebetLine(
+  line: Pick<DuploOpportunity["lines"][number], "bookmakerName" | "bookmakerSlug">,
+  conversionContext: CalculatorConversionContext | null,
+) {
+  if (!conversionContext) {
+    return false;
+  }
+
+  const freebetHouseKey = getFreebetConversionBookmakerKey(
+    conversionContext.house,
+  );
+
+  return (
+    getFreebetConversionBookmakerKey(
+      line.bookmakerName,
+      line.bookmakerSlug,
+    ) === freebetHouseKey ||
+    getFreebetConversionBookmakerKey(line.bookmakerName) === freebetHouseKey
+  );
+}
+
 function getOddCalculatorSelection(
   fixtureId: string,
   odd: OddsFeedItem,
+  conversionContext: CalculatorConversionContext | null = null,
 ): CalculatorSelectionLine {
   const house = formatBookmakerName(odd.bookmaker_name);
   const lineSelectionLabel = selectionLabel(odd.selection);
   const marketLabel = odd.market_code || odd.market_name || "Odd";
+  const freebet = isConversionFreebetHouse(odd, conversionContext);
 
   return {
+    freebet,
     house,
     id: createCalculatorSelectionId([
       fixtureId,
@@ -1145,28 +1201,36 @@ function getOddCalculatorSelection(
     pa: odd.pa_category === "COM_PA",
     selectionKey: lineSelectionLabel,
     selectionLabel: lineSelectionLabel,
+    stake: freebet ? conversionContext?.freebetValue : undefined,
   };
 }
 
 function getOpportunityCalculatorSelections(
   fixtureId: string,
   opportunity: DuploOpportunity,
+  conversionContext: CalculatorConversionContext | null = null,
 ): CalculatorSelectionLine[] {
-  return opportunity.lines.map((line) => ({
-    house: line.bookmakerName,
-    id: createCalculatorSelectionId([
-      fixtureId,
-      line.bookmakerSlug || line.bookmakerName,
-      line.marketLabel,
-      line.selectionLabel,
-      line.paCategory,
-    ]),
-    meta: getCalculatorMeta(line.marketLabel),
-    odd: line.odd,
-    pa: line.paCategory === "COM_PA",
-    selectionKey: line.selectionLabel,
-    selectionLabel: line.selectionLabel,
-  }));
+  return opportunity.lines.map((line) => {
+    const freebet = isConversionFreebetLine(line, conversionContext);
+
+    return {
+      freebet,
+      house: line.bookmakerName,
+      id: createCalculatorSelectionId([
+        fixtureId,
+        line.bookmakerSlug || line.bookmakerName,
+        line.marketLabel,
+        line.selectionLabel,
+        line.paCategory,
+      ]),
+      meta: getCalculatorMeta(line.marketLabel),
+      odd: line.odd,
+      pa: line.paCategory === "COM_PA",
+      selectionKey: line.selectionLabel,
+      selectionLabel: line.selectionLabel,
+      stake: freebet ? conversionContext?.freebetValue : undefined,
+    };
+  });
 }
 
 function areCalculatorSelectionsActive(
@@ -2065,12 +2129,14 @@ function DuploLineBadge({
 }
 
 function DuploTopList({
+  conversionContext,
   event,
   onToggleOpportunity,
   opportunities,
   selectedIds,
   title,
 }: {
+  conversionContext: CalculatorConversionContext | null;
   event: OddsEvent;
   onToggleOpportunity: (opportunity: DuploOpportunity) => void;
   opportunities: DuploOpportunity[];
@@ -2088,7 +2154,11 @@ function DuploTopList({
           opportunities.map((opportunity, index) => {
             const selected = areCalculatorSelectionsActive(
               selectedIds,
-              getOpportunityCalculatorSelections(event.fixture_id, opportunity),
+              getOpportunityCalculatorSelections(
+                event.fixture_id,
+                opportunity,
+                conversionContext,
+              ),
             );
 
             return (
@@ -2144,10 +2214,12 @@ function DuploTopList({
 }
 
 function DuploEventAnalysis({
+  conversionContext,
   event,
   onToggleOpportunity,
   selectedIds,
 }: {
+  conversionContext: CalculatorConversionContext | null;
   event: OddsEvent;
   onToggleOpportunity: (opportunity: DuploOpportunity) => void;
   selectedIds: ReadonlySet<string>;
@@ -2166,6 +2238,7 @@ function DuploEventAnalysis({
     <section className="space-y-3">
       <div className="grid gap-3 xl:grid-cols-2">
         <DuploTopList
+          conversionContext={conversionContext}
           event={event}
           onToggleOpportunity={onToggleOpportunity}
           opportunities={analysis.paSingleTop}
@@ -2173,6 +2246,7 @@ function DuploEventAnalysis({
           title="Top 5 - PA Casa ou Fora"
         />
         <DuploTopList
+          conversionContext={conversionContext}
           event={event}
           onToggleOpportunity={onToggleOpportunity}
           opportunities={analysis.paBothTop}
@@ -2191,6 +2265,14 @@ export function OddsEventDetails({
   backHref?: string;
   event: OddsEvent;
 }) {
+  const searchParams = useSearchParams();
+  const conversionContext = useMemo(
+    () => parseConversionContextParams(searchParams),
+    [searchParams],
+  );
+  const effectiveBackHref = conversionContext
+    ? "/monitor/converter-freebet"
+    : backHref;
   const [currentEventState, setCurrentEvent] = useState(() => ({
     event,
     fixtureId: event.fixture_id,
@@ -2339,7 +2421,11 @@ export function OddsEventDetails({
   }
 
   function handleToggleCalculatorOdd(odd: OddsFeedItem) {
-    const selection = getOddCalculatorSelection(currentEvent.fixture_id, odd);
+    const selection = getOddCalculatorSelection(
+      currentEvent.fixture_id,
+      odd,
+      conversionContext,
+    );
 
     setCalculatorSelections((current) =>
       current.some((item) => item.id === selection.id)
@@ -2352,6 +2438,7 @@ export function OddsEventDetails({
     const selections = getOpportunityCalculatorSelections(
       currentEvent.fixture_id,
       opportunity,
+      conversionContext,
     );
 
     setCalculatorSelections((current) => {
@@ -2397,12 +2484,22 @@ export function OddsEventDetails({
                 Odds atualizadas às {lastOddsUpdateLabel}
               </p>
             ) : null}
+            {conversionContext ? (
+              <p className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-semibold text-[var(--text-secondary)]">
+                <span className="truncate">
+                  Conversao Freebet: {conversionContext.house}
+                </span>
+                <span className="shrink-0 text-[var(--text-dim)]">
+                  {formatCurrency(conversionContext.freebetValue)}
+                </span>
+              </p>
+            ) : null}
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Link
               className="lz-button-secondary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition sm:w-auto"
-              href={backHref}
+              href={effectiveBackHref}
             >
               <ArrowLeft aria-hidden="true" className="h-4 w-4" />
               <span>Voltar</span>
@@ -2440,6 +2537,7 @@ export function OddsEventDetails({
       ) : null}
 
       <DuploEventAnalysis
+        conversionContext={conversionContext}
         event={filteredCurrentEvent}
         onToggleOpportunity={handleToggleCalculatorOpportunity}
         selectedIds={selectedCalculatorIds}
@@ -2451,7 +2549,11 @@ export function OddsEventDetails({
           event={filteredCurrentEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
-              getOddCalculatorSelection(currentEvent.fixture_id, odd).id,
+              getOddCalculatorSelection(
+                currentEvent.fixture_id,
+                odd,
+                conversionContext,
+              ).id,
             )
           }
           onOddToggle={handleToggleCalculatorOdd}
@@ -2465,7 +2567,11 @@ export function OddsEventDetails({
           event={filteredCurrentEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
-              getOddCalculatorSelection(currentEvent.fixture_id, odd).id,
+              getOddCalculatorSelection(
+                currentEvent.fixture_id,
+                odd,
+                conversionContext,
+              ).id,
             )
           }
           onOddToggle={handleToggleCalculatorOdd}
@@ -2477,6 +2583,7 @@ export function OddsEventDetails({
       </div>
 
       <CalculatorSelectionDock
+        conversionContext={conversionContext}
         onClear={() => setCalculatorSelections([])}
         onRemove={handleRemoveCalculatorSelection}
         selections={calculatorSelections}

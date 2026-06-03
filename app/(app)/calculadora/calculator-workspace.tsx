@@ -1122,7 +1122,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
                     </span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
-                    <span className="text-[var(--text-secondary)]">ROI</span>
+                    <span className="text-[var(--text-secondary)]">Lucro %</span>
                     <span className="font-semibold text-white">
                       {formatPercent(lineRoi)}
                     </span>
@@ -1242,7 +1242,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             </div>
 
             <div className="lz-panel-subtle rounded-[24px] p-4">
-              <p className="text-sm font-medium text-[var(--text-dim)]">ROI</p>
+              <p className="text-sm font-medium text-[var(--text-dim)]">Lucro %</p>
               <p className="mt-2 text-xl font-semibold text-white md:text-2xl">
                 {calculation.lucro_percentual.toFixed(2)}%
               </p>

@@ -2,18 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type KeyboardEvent } from "react";
 
 import { PROCEDURE_STATUS_DONE } from "@/core";
 
 import { LzSelect } from "../_components/lz-select";
+import { ProcedureModal } from "../_components/procedure-modal";
+import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
 import {
-  CloseIcon,
-  EmptyState,
-  StatusTag,
-  formatCurrency,
-} from "../_components/ui";
-import { ProcedureRowActions } from "../procedimentos/procedure-row-actions";
+  buildProcedureDefaultValues,
+  ProcedureRowActions,
+} from "../procedimentos/procedure-row-actions";
 
 type HistoryMonth = {
   value: string;
@@ -200,95 +199,6 @@ function getDisplayGame(operation: HistoryOperation) {
   return operation.jogo_time_pa?.trim() || "-";
 }
 
-function DetailItem({
-  label,
-  value,
-  valueClassName = "text-white",
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="rounded-[22px] border border-white/10 bg-white/4 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
-        {label}
-      </p>
-      <p className={`mt-2 text-sm font-semibold ${valueClassName}`}>{value}</p>
-    </div>
-  );
-}
-
-function HistoryDetailsModal({
-  onClose,
-  operation,
-}: {
-  onClose: () => void;
-  operation: HistoryOperation;
-}) {
-  const resultValue = normalizeMoney(operation.lucro_real);
-  const statusLabel = getProcedureStatusLabel(operation.status_procedimento);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="lz-panel w-full max-w-3xl rounded-[30px] p-5 md:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-dim)]">
-              Detalhes do histórico
-            </p>
-            <h3 className="mt-2 text-xl font-semibold text-white">
-              {getProcedureTypeLabel(operation.tipo_procedimento)}
-            </h3>
-          </div>
-          <button
-            aria-label="Fechar"
-            className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
-            onClick={onClose}
-            type="button"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <DetailItem label="Data" value={getProcedureDateItems(operation).map((item) =>
-            item.label ? `${item.label} ${item.value}` : item.value,
-          ).join(" • ") || "-"} />
-          <DetailItem label="Status" value={statusLabel} />
-          <DetailItem label="Jogo" value={getDisplayGame(operation)} />
-          <DetailItem label="Casas" value={operation.casas_envolvidas || "-"} />
-          <DetailItem
-            label="Resultado R$"
-            value={formatCurrency(resultValue)}
-            valueClassName={getProfitClass(resultValue)}
-          />
-          <DetailItem
-            label="Referência"
-            value={operation.mes_referencia || selectedMonthFallback(operation.data_operacao)}
-          />
-        </div>
-
-        {operation.observacao?.trim() ? (
-          <div className="mt-4 rounded-[22px] border border-white/10 bg-white/4 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
-              Observação
-            </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
-              {operation.observacao}
-            </p>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function selectedMonthFallback(operationDate: string) {
-  const [, month, year] = String(operationDate ?? "").split("/");
-  return month && year ? `${month}/${year}` : "-";
-}
-
 export function HistoryWorkspace({
   bookmakers,
   months,
@@ -322,6 +232,22 @@ export function HistoryWorkspace({
         scroll: false,
       });
     });
+  }
+
+  function openOperationDetails(operation: HistoryOperation) {
+    setDetailsOperation(operation);
+  }
+
+  function handleOperationKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    operation: HistoryOperation,
+  ) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    openOperationDetails(operation);
   }
 
   return (
@@ -390,8 +316,14 @@ export function HistoryWorkspace({
 
                 return (
                   <article
-                    className="rounded-[26px] border border-white/10 bg-white/5 p-4"
+                    className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(255,107,151,0.55)]"
                     key={operation.id}
+                    onClick={() => openOperationDetails(operation)}
+                    onKeyDown={(event) =>
+                      handleOperationKeyDown(event, operation)
+                    }
+                    role="button"
+                    tabIndex={0}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -408,12 +340,17 @@ export function HistoryWorkspace({
                         </div>
                       </div>
 
-                      <ProcedureRowActions
-                        bookmakers={bookmakers}
-                        onViewDetails={() => setDetailsOperation(operation)}
-                        procedure={operation}
-                        returnTo="/historico"
-                      />
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <ProcedureRowActions
+                          bookmakers={bookmakers}
+                          onViewDetails={() => openOperationDetails(operation)}
+                          procedure={operation}
+                          returnTo="/historico"
+                        />
+                      </div>
                     </div>
 
                     <div className="mt-4 space-y-3 text-sm">
@@ -475,8 +412,9 @@ export function HistoryWorkspace({
 
                     return (
                       <tr
-                        className="border-b border-white/8 transition hover:bg-white/4"
+                        className="cursor-pointer border-b border-white/8 transition hover:bg-white/4"
                         key={operation.id}
+                        onClick={() => openOperationDetails(operation)}
                       >
                         <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
                           <ProcedureDateDisplay procedure={operation} />
@@ -509,10 +447,14 @@ export function HistoryWorkspace({
                           {formatCurrency(resultValue)}
                         </td>
                         <td className="px-3 py-4">
-                          <div className="flex justify-center">
+                          <div
+                            className="flex justify-center"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
                             <ProcedureRowActions
                               bookmakers={bookmakers}
-                              onViewDetails={() => setDetailsOperation(operation)}
+                              onViewDetails={() => openOperationDetails(operation)}
                               procedure={operation}
                               returnTo="/historico"
                             />
@@ -529,9 +471,21 @@ export function HistoryWorkspace({
       </div>
 
       {detailsOperation ? (
-        <HistoryDetailsModal
-          onClose={() => setDetailsOperation(null)}
-          operation={detailsOperation}
+        <ProcedureModal
+          bookmakers={bookmakers}
+          defaultValues={buildProcedureDefaultValues(detailsOperation)}
+          hideTrigger
+          mode="edit"
+          onOpenChange={(open) => {
+            if (!open) {
+              setDetailsOperation(null);
+            }
+          }}
+          open
+          procedureId={detailsOperation.id}
+          readOnly
+          returnTo="/historico"
+          title="Detalhes do procedimento"
         />
       ) : null}
     </div>
