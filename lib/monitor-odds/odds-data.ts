@@ -531,6 +531,50 @@ async function listOddsEventsByDateRangeUncached(
   return events.slice(0, eventLimit);
 }
 
+async function listAvailableOddsEventsUncached(
+  limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+  fixturesVersion = "unknown",
+) {
+  void fixturesVersion;
+
+  const eventLimit = normalizeDateRangeLimit(limit);
+  const supabase = getMonitorSupabaseClient();
+  const events: MonitorOddsEvent[] = [];
+
+  for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
+    const offset = page * DATE_RANGE_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("public_odds_fixtures")
+      .select(FIXTURE_FEED_COLUMNS)
+      .order("starts_at", { ascending: true })
+      .order("league_name", { ascending: true })
+      .order("fixture_name", { ascending: true })
+      .range(offset, offset + DATE_RANGE_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of (data ?? []) as RawOddsFixtureRow[]) {
+      const event = cleanOddsFixtureRow(row);
+
+      if (event) {
+        events.push(event);
+      }
+
+      if (events.length >= eventLimit) {
+        break;
+      }
+    }
+
+    if (events.length >= eventLimit || !data || data.length < DATE_RANGE_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return events.slice(0, eventLimit);
+}
+
 async function getOddsFixtureByFixtureIdUncached(
   fixtureId: string,
   fixturesVersion = "unknown",
@@ -611,6 +655,15 @@ const getCachedOddsEventsByDateRange = unstable_cache(
   },
 );
 
+const getCachedAvailableOddsEvents = unstable_cache(
+  listAvailableOddsEventsUncached,
+  ["monitor-odds-available-events-v1"],
+  {
+    tags: ["monitor-odds-available-events"],
+    revalidate: EVENTS_SHARED_CACHE_TTL_SECONDS,
+  },
+);
+
 const getCachedOddsFixtureByFixtureId = unstable_cache(
   getOddsFixtureByFixtureIdUncached,
   ["monitor-odds-fixture-by-fixture-id-v2"],
@@ -679,6 +732,16 @@ export async function listOddsEventsByDateRange(
     eventLimit,
     version,
   );
+}
+
+export async function listAvailableOddsEvents(
+  limit = DEFAULT_DATE_RANGE_EVENT_LIMIT,
+  fixturesVersion?: string | null,
+) {
+  const eventLimit = normalizeDateRangeLimit(limit);
+  const version = cleanCachePart(getFixturesCacheVersion(fixturesVersion));
+
+  return getCachedAvailableOddsEvents(eventLimit, version);
 }
 
 export async function getOddsSnapshotsByFixtureIds(

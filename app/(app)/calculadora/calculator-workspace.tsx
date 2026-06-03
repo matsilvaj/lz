@@ -1,12 +1,19 @@
 "use client";
 
 import { calculateSurebet } from "@/core";
+import { Plus, RotateCcw } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProcedureShareValues } from "../_components/procedure-share-types";
 
 import { useToast } from "@/app/_components/toast-provider";
+import {
+  decodeCalculatorPayload,
+  encodeCalculatorPayload,
+  type SharedCalculatorLine,
+  type SharedCalculatorPayload,
+} from "@/lib/calculator-share";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { LzSelect } from "../_components/lz-select";
@@ -53,16 +60,6 @@ type CalculatorResult = {
   lucro_liquido: number;
   lucro_percentual: number;
   duplo_calculado_final: number;
-};
-
-type SharedCalculatorLine = Partial<Record<keyof CalculatorLine, unknown>>;
-
-type SharedCalculatorPayload = {
-  version?: number;
-  lineCount?: number;
-  workspaceIndex?: number;
-  configExpanded?: boolean;
-  lines?: SharedCalculatorLine[];
 };
 
 type BookmakerAutocompleteInputProps = {
@@ -150,41 +147,6 @@ function normalizeSharedCalculatorLine(line: SharedCalculatorLine): CalculatorLi
     ),
     freebet: Boolean(line.freebet),
   };
-}
-
-function encodeCalculatorPayload(payload: SharedCalculatorPayload) {
-  const bytes = new TextEncoder().encode(JSON.stringify(payload));
-  let binary = "";
-
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-function decodeCalculatorPayload(value: string): SharedCalculatorPayload | null {
-  try {
-    const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-    const paddedBase64 = base64.padEnd(
-      base64.length + ((4 - (base64.length % 4)) % 4),
-      "=",
-    );
-    const binary = atob(paddedBase64);
-    const bytes = Uint8Array.from(binary, (character) =>
-      character.charCodeAt(0),
-    );
-    const decoded = JSON.parse(new TextDecoder().decode(bytes));
-
-    return decoded && typeof decoded === "object"
-      ? (decoded as SharedCalculatorPayload)
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 function copyTextFallback(text: string) {
@@ -1194,11 +1156,12 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
         <div className="lz-panel space-y-4 rounded-[30px] p-5">
           <div className="flex flex-wrap items-center justify-end gap-3">
             <button
-              className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
+              className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium"
               onClick={resetCalculator}
               type="button"
             >
-              Limpar
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Limpar</span>
             </button>
 
             <button
@@ -1212,11 +1175,12 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
             </button>
 
             <button
-              className="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
+              className="lz-button-primary inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
               onClick={handleNewProcedureClick}
               type="button"
             >
-              Novo procedimento
+              <Plus aria-hidden="true" className="h-4 w-4" />
+              <span>Novo procedimento</span>
             </button>
           </div>
 

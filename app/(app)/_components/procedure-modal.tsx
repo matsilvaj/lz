@@ -7,7 +7,7 @@ import {
   FREEBET_CONDITION_LOSS_ONLY,
   PROCEDURE_TYPES,
 } from "@/core";
-import { Settings } from "lucide-react";
+import { Plus, RotateCcw, Search, Settings } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -655,13 +655,19 @@ function HousePickerDialog({
         </div>
 
         <div className="space-y-4 px-5 py-5">
-          <input
-            className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar casa..."
-            type="search"
-            value={search}
-          />
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
+            />
+            <input
+              className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar casa..."
+              type="search"
+              value={search}
+            />
+          </div>
 
           <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
             {visibleOptions.length === 0 ? (
@@ -696,14 +702,15 @@ function HousePickerDialog({
 
           <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-4">
             <button
-              className="text-sm text-[var(--text-dim)] transition hover:text-white"
+              className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
               onClick={() => {
                 setSearch("");
                 onClear();
               }}
               type="button"
             >
-              Limpar
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Limpar</span>
             </button>
 
             {multiple ? (
@@ -2171,7 +2178,12 @@ export function ProcedureModal({
           }}
           type="button"
         >
-          {triggerLabel}
+          <span className="inline-flex items-center justify-center gap-2">
+            {mode === "create" ? (
+              <Plus aria-hidden="true" className="h-4 w-4" />
+            ) : null}
+            <span>{triggerLabel}</span>
+          </span>
         </button>
       ) : null}
 
@@ -2421,11 +2433,12 @@ export function ProcedureModal({
                 </div>
               ) : (
                 <button
-                  className="text-left text-sm font-medium text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-left text-sm font-medium text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => setNoteExpanded(true)}
                   type="button"
                 >
-                  Adicionar observações
+                  <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Adicionar observações</span>
                 </button>
               )}
 
@@ -2655,11 +2668,12 @@ export function ProcedureModal({
 
                       {collectionProtectionKeys.length < MAX_SPORT_PROTECTIONS ? (
                         <button
-                          className="lz-button-secondary rounded-full px-3 py-2 text-sm font-medium"
+                          className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium"
                           onClick={addCollectionProtection}
                           type="button"
                         >
-                          Adicionar proteção
+                          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                          <span>Adicionar proteção</span>
                         </button>
                       ) : null}
 
@@ -2947,11 +2961,12 @@ export function ProcedureModal({
                   {!isNormalBet &&
                   protectionKeys.length < MAX_SPORT_PROTECTIONS ? (
                     <button
-                      className="lz-button-secondary rounded-full px-3 py-2 text-sm font-medium"
+                      className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium"
                       onClick={addProtection}
                       type="button"
                     >
-                      Adicionar proteção
+                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                      <span>Adicionar proteção</span>
                     </button>
                   ) : null}
 

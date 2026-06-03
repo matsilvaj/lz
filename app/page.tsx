@@ -10,7 +10,7 @@ const features = [
   {
     title: "Monitoramento de odds",
     description: "Acompanhe oportunidades e mantenha a leitura do mercado no mesmo fluxo.",
-    href: "/odds",
+    href: "/monitor",
   },
   {
     title: "Dashboard",

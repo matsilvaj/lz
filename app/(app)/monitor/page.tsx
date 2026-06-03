@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function OddsPage() {
+export default function MonitorPage() {
   redirect("/monitor/odds");
 }

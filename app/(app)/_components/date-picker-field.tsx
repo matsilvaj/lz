@@ -1,5 +1,6 @@
 "use client";
 
+import { Calendar, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -220,21 +221,10 @@ export function DatePickerField({
           {displayValue || placeholder}
         </span>
 
-        <svg
+        <Calendar
           aria-hidden="true"
           className="h-4 w-4 shrink-0 text-[var(--text-muted)]"
-          fill="none"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M8 2V5M16 2V5M3.5 9.5H20.5M6.2 4H17.8C19.5673 4 21 5.43269 21 7.2V18.8C21 20.5673 19.5673 22 17.8 22H6.2C4.43269 22 3 20.5673 3 18.8V7.2C3 5.43269 4.43269 4 6.2 4Z"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.6"
-          />
-        </svg>
+        />
       </button>
 
       {open && typeof document !== "undefined"
@@ -268,21 +258,10 @@ export function DatePickerField({
                     }
                     type="button"
                   >
-                    <svg
+                    <ChevronLeft
                       aria-hidden="true"
                       className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M15 6L9 12L15 18"
-                        stroke="currentColor"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="1.7"
-                      />
-                    </svg>
+                    />
                   </button>
 
                   <button
@@ -299,21 +278,10 @@ export function DatePickerField({
                     }
                     type="button"
                   >
-                    <svg
+                    <ChevronRight
                       aria-hidden="true"
                       className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 6L15 12L9 18"
-                        stroke="currentColor"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="1.7"
-                      />
-                    </svg>
+                    />
                   </button>
                 </div>
               </div>
@@ -352,11 +320,12 @@ export function DatePickerField({
 
               <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
                 <button
-                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={handleClear}
                   type="button"
                 >
-                  Limpar
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
                 </button>
 
                 <button

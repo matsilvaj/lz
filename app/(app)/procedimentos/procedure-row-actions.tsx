@@ -1,5 +1,6 @@
 "use client";
 
+import { Copy, MoreHorizontal, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
@@ -539,22 +540,13 @@ export function ProcedureRowActions({
 
       <button
         data-procedure-row-action
+        aria-label="Abrir ações do procedimento"
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/8 hover:text-white"
         onClick={openMenuFromButton}
         ref={buttonRef}
         type="button"
       >
-        <svg
-          aria-hidden="true"
-          className="h-4 w-4"
-          fill="currentColor"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <circle cx="12" cy="5" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="12" cy="19" r="1.8" />
-        </svg>
+        <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
       </button>
 
       {menuOpen && typeof document !== "undefined"
@@ -601,11 +593,12 @@ export function ProcedureRowActions({
               </button>
 
               <button
-                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
                 onClick={handleCopyProcedure}
                 type="button"
               >
-                Copiar
+                <Copy aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <span>Copiar</span>
               </button>
 
               {hasObservation ? (
@@ -622,7 +615,7 @@ export function ProcedureRowActions({
               ) : null}
 
               <button
-                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ff9bb0] disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ff9bb0] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isPending}
                 onClick={() => {
                   setMenuOpen(false);
@@ -630,7 +623,8 @@ export function ProcedureRowActions({
                 }}
                 type="button"
               >
-                Excluir
+                <Trash2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <span>Excluir</span>
               </button>
             </div>,
             document.body,
@@ -667,20 +661,22 @@ export function ProcedureRowActions({
       >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
-            className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+            className="lz-button-secondary inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
             disabled={isPending}
             onClick={() => setDeleteOpen(false)}
             type="button"
           >
-            Cancelar
+            <X aria-hidden="true" className="h-4 w-4" />
+            <span>Cancelar</span>
           </button>
           <button
-            className="rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isPending}
             onClick={handleDelete}
             type="button"
           >
-            {isPending ? "Excluindo..." : "Confirmar exclusão"}
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+            <span>{isPending ? "Excluindo..." : "Confirmar exclusão"}</span>
           </button>
         </div>
       </ConfirmationDialog>

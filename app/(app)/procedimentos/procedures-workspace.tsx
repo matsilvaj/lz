@@ -6,6 +6,7 @@ import {
   PROCEDURE_STATUSES,
   PROCEDURE_TYPES,
 } from "@/core";
+import { RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -512,23 +513,26 @@ export function ProceduresWorkspace({
 
       <div className="lz-panel flex flex-col gap-3 rounded-[28px] p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          <input
-            className="lz-input w-full rounded-2xl px-4 py-3 text-sm sm:max-w-xl"
-            defaultValue={filters.searchText}
-            key={filters.searchText}
-            onChange={(event) => updateSearchFilter(event.target.value)}
-            placeholder="Buscar jogo, tipo ou casa..."
-            type="search"
-          />
+          <div className="w-full min-w-0 flex-1">
+            <input
+              className="lz-input h-13 w-full rounded-full px-5 text-sm"
+              defaultValue={filters.searchText}
+              key={filters.searchText}
+              onChange={(event) => updateSearchFilter(event.target.value)}
+              placeholder="Buscar jogo, tipo ou casa..."
+              type="search"
+            />
+          </div>
 
           <button
-            className={`rounded-full px-4 py-3 text-sm font-medium transition ${
+            className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-medium transition ${
               filtersOpen || activeFiltersCount > 0 ? "lz-button-primary" : "lz-button-secondary"
             }`}
             onClick={() => setFiltersOpen((current) => !current)}
             type="button"
           >
-            Filtros
+            <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+            <span>Filtros</span>
           </button>
 
           <div className="flex flex-wrap gap-2">
@@ -554,11 +558,12 @@ export function ProceduresWorkspace({
 
           {hasAnyFilter ? (
             <button
-              className="text-sm text-[var(--text-dim)] transition hover:text-white"
+              className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
               onClick={clearFilters}
               type="button"
             >
-              Limpar filtros
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Limpar filtros</span>
             </button>
           ) : null}
         </div>
@@ -586,11 +591,12 @@ export function ProceduresWorkspace({
               <p className="text-sm font-medium text-white">Tipos</p>
               {selectedTypes.length > 0 ? (
                 <button
-                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => updateRepeatedFilter("type", [])}
                   type="button"
                 >
-                  Limpar
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
                 </button>
               ) : null}
             </div>
@@ -640,11 +646,12 @@ export function ProceduresWorkspace({
               <p className="text-sm font-medium text-white">Status</p>
               {selectedStatuses.length > 0 ? (
                 <button
-                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => updateRepeatedFilter("status", [])}
                   type="button"
                 >
-                  Limpar
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
                 </button>
               ) : null}
             </div>
@@ -676,11 +683,12 @@ export function ProceduresWorkspace({
               <p className="text-sm font-medium text-white">Casas</p>
               {selectedHouses.length > 0 ? (
                 <button
-                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => updateRepeatedFilter("house", [])}
                   type="button"
                 >
-                  Limpar
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
                 </button>
               ) : null}
             </div>
@@ -708,13 +716,19 @@ export function ProceduresWorkspace({
                         width: housesPopoverPosition.width,
                       }}
                     >
-                  <input
-                    className="lz-input w-full rounded-2xl px-3 py-3 text-sm"
-                    onChange={(event) => setHouseSearch(event.target.value)}
-                    placeholder="Buscar casa..."
-                    type="search"
-                    value={houseSearch}
-                  />
+                  <div className="relative">
+                    <Search
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
+                    />
+                    <input
+                      className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
+                      onChange={(event) => setHouseSearch(event.target.value)}
+                      placeholder="Buscar casa..."
+                      type="search"
+                      value={houseSearch}
+                    />
+                  </div>
 
                   <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
                     {visibleBookmakers.length > 0 ? (
@@ -770,7 +784,7 @@ export function ProceduresWorkspace({
               <p className="text-sm font-medium text-white">Período</p>
               {dateFrom || dateTo ? (
                 <button
-                  className="text-sm text-[var(--text-dim)] transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
                   onClick={() => {
                     updateParams((params) => {
                       params.delete("from");
@@ -780,7 +794,8 @@ export function ProceduresWorkspace({
                   }}
                   type="button"
                 >
-                  Limpar
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
                 </button>
               ) : null}
             </div>

@@ -1,9 +1,5 @@
-export const comingSoonNavigationItems = [
-  { href: "/odds", label: "Odds" },
-  { href: "/monitor-de-duplos", label: "Monitor de Duplo" },
-] as const;
-
 export const appNavigationItems = [
+  { href: "/monitor", label: "Monitor" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/procedimentos", label: "Procedimentos" },
   { href: "/freebets", label: "Freebets" },

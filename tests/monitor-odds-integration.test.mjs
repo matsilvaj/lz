@@ -26,6 +26,18 @@ const oddsUi = readFileSync(
   new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
   "utf8",
 );
+const doubleMonitorUi = readFileSync(
+  new URL("../app/(app)/monitor/duplo/double-monitor-workspace.tsx", import.meta.url),
+  "utf8",
+);
+const calculatorSelectionDock = readFileSync(
+  new URL("../app/_components/calculator-selection-dock.tsx", import.meta.url),
+  "utf8",
+);
+const oddsDisplayNames = readFileSync(
+  new URL("../lib/monitor-odds/display-names.ts", import.meta.url),
+  "utf8",
+);
 const globalsCss = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
@@ -97,6 +109,21 @@ test("monitor odds date range listing is bounded and filtered by start time", ()
   assert.match(eventsRoute, /listOddsEventsByDateRange\(from, to, undefined, fixturesVersion\)/);
 });
 
+test("duplo monitor loads all available event days by default", () => {
+  assert.match(oddsRepository, /listAvailableOddsEvents/);
+  assert.match(eventsRoute, /listAvailableOddsEvents\(undefined, fixturesVersion\)/);
+  assert.match(doubleMonitorUi, /kind: "available"/);
+  assert.doesNotMatch(doubleMonitorUi, /activeDatePreset/);
+});
+
+test("duplo monitor filters and lists only PA signal classes", () => {
+  assert.match(doubleMonitorUi, /paModeFilters/);
+  assert.match(doubleMonitorUi, /isPaModeFilter/);
+  assert.match(doubleMonitorUi, /createPortal\(/);
+  assert.doesNotMatch(doubleMonitorUi, /sem_pa/);
+  assert.doesNotMatch(doubleMonitorUi, /Sem PA/);
+});
+
 test("monitor odds fixtures cache does not fall back to odds updates", () => {
   assert.match(eventsRoute, /const fixturesVersion = status\.fixtures_version;/);
   assert.doesNotMatch(
@@ -137,6 +164,19 @@ test("monitor odds UI refreshes snapshots without URL-sized fixture queries", ()
   assert.match(oddsUi, /useMonitorOddsStatusFeed/);
   assert.match(oddsUi, /function OddsEventDetails/);
   assert.match(oddsUi, /payload\.complete !== false/);
+});
+
+test("monitor odds UI localizes international competitions and national teams", () => {
+  assert.match(oddsDisplayNames, /"friendlies": "Amistoso Internacional"/);
+  assert.match(oddsDisplayNames, /"world-cup": "Copa do Mundo"/);
+  assert.match(oddsDisplayNames, /wales: "País de Gales"/);
+  assert.match(oddsDisplayNames, /ghana: "Gana"/);
+  assert.match(oddsDisplayNames, /"new-zealand": "Nova Zelândia"/);
+  assert.match(oddsDisplayNames, /"south-korea": "Coreia do Sul"/);
+  assert.match(oddsUi, /formatCompetitionName/);
+  assert.match(oddsUi, /formatNationalTeamName/);
+  assert.match(doubleMonitorUi, /formatCompetitionName/);
+  assert.match(doubleMonitorUi, /formatNationalTeamName/);
 });
 
 test("monitor odds UI keeps retrying incomplete odds versions", () => {
@@ -203,4 +243,30 @@ test("monitor odds UI highlights actual odd price movement", () => {
   assert.match(oddsUi, /pulseId={`table:\$\{row\.key\}:\$\{selection\}`}/);
   assert.match(globalsCss, /odds-price-move-up/);
   assert.match(globalsCss, /odds-price-move-down/);
+});
+
+test("monitor odds and duplo can send selected odds to calculator", () => {
+  assert.match(calculatorSelectionDock, /encodeCalculatorPayload/);
+  assert.match(calculatorSelectionDock, /new URL\("\/calculadora", window\.location\.origin\)/);
+  assert.match(calculatorSelectionDock, /window\.open\(\s*calculatorUrl\.toString\(\)/);
+  assert.match(calculatorSelectionDock, /calculatorWindow\.location\.href = calculatorUrl\.toString\(\)/);
+  assert.match(calculatorSelectionDock, /"lz-calculadora"/);
+  assert.match(calculatorSelectionDock, /slice\(-3\)/);
+  assert.match(calculatorSelectionDock, /dockVisible/);
+  assert.match(oddsUi, /CalculatorSelectionDock/);
+  assert.match(oddsUi, /getOddCalculatorSelection/);
+  assert.match(oddsUi, /getOpportunityCalculatorSelections/);
+  assert.match(oddsUi, /replaceAll: true/);
+  assert.match(doubleMonitorUi, /CalculatorSelectionDock/);
+  assert.match(doubleMonitorUi, /getOpportunityCalculatorSelections/);
+  assert.match(doubleMonitorUi, /replaceAll: true/);
+  assert.match(doubleMonitorUi, /BookmakerEventLink/);
+});
+
+test("monitor duplo keeps remembered odds while refresh is pending", () => {
+  assert.match(doubleMonitorUi, /getRememberedDuploEvents/);
+  assert.match(doubleMonitorUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(doubleMonitorUi, /rememberDuploEvents/);
+  assert.match(doubleMonitorUi, /showSignalSkeleton/);
+  assert.match(doubleMonitorUi, /state\.refreshingOdds && !rows\.length/);
 });

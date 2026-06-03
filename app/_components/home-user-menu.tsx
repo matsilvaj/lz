@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { appNavigationItems, comingSoonNavigationItems } from "../(app)/navigation";
+import { appNavigationItems } from "../(app)/navigation";
 
 type HomeUserMenuProps = {
   firstName: string;
@@ -12,7 +12,7 @@ type HomeUserMenuProps = {
 export function HomeUserMenu({ firstName }: HomeUserMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const navigationItems = [...comingSoonNavigationItems, ...appNavigationItems];
+  const navigationItems = appNavigationItems;
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { appNavigationItems, comingSoonNavigationItems } from "../navigation";
+import { appNavigationItems } from "../navigation";
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -15,28 +15,6 @@ export function AppNavigation() {
   return (
     <nav className="lz-scrollbar-hidden overflow-x-auto">
       <div className="flex min-w-max flex-nowrap items-center gap-2 px-px xl:min-w-0 xl:justify-center">
-        <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
-          {comingSoonNavigationItems.map((item) => {
-            const active = isActivePath(pathname, item.href);
-
-            return (
-              <Link
-                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                  active
-                    ? "lz-button-primary"
-                    : "text-[var(--text-dim)] hover:bg-white/6 hover:text-white"
-                }`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-
-        <div className="h-6 w-px shrink-0 lz-divider" />
-
         <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
           {appNavigationItems.map((item) => {
             const active = isActivePath(pathname, item.href);

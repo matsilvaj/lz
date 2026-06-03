@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 
 import {
   getOddsFeedStatus,
+  listAvailableOddsEvents,
   listOddsEventsByDateRange,
   searchOddsEvents,
 } from "@/lib/monitor-odds/odds-data";
@@ -37,10 +38,13 @@ export async function GET(request: NextRequest) {
   const to = request.nextUrl.searchParams.get("to");
   const status = await getOddsFeedStatus();
   const fixturesVersion = status.fixtures_version;
+  const normalizedQuery = query.trim();
   const events =
     from && to
       ? await listOddsEventsByDateRange(from, to, undefined, fixturesVersion)
-      : await searchOddsEvents(query, undefined, fixturesVersion);
+      : normalizedQuery.length >= 2
+        ? await searchOddsEvents(normalizedQuery, undefined, fixturesVersion)
+        : await listAvailableOddsEvents(undefined, fixturesVersion);
 
   return Response.json(
     {

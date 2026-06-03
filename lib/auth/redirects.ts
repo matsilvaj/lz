@@ -9,6 +9,7 @@ const ALLOWED_APP_PATH_PREFIXES = [
   "/freebets",
   "/historico",
   "/login",
+  "/monitor",
   "/monitor-de-duplos",
   "/odds",
   "/perfil",

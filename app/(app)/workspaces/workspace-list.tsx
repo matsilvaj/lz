@@ -1,5 +1,6 @@
 "use client";
 
+import { MoreHorizontal, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
@@ -109,17 +110,7 @@ export function WorkspaceList({
                   }
                   type="button"
                 >
-                  <svg
-                    aria-hidden="true"
-                    className="h-5 w-5"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <circle cx="12" cy="5" r="1.8" />
-                    <circle cx="12" cy="12" r="1.8" />
-                    <circle cx="12" cy="19" r="1.8" />
-                  </svg>
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
                 </button>
 
                 {openMenuId === workspace.id ? (
@@ -140,14 +131,15 @@ export function WorkspaceList({
 
                     {canRemoveWorkspace ? (
                       <button
-                        className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ffb6c4]"
+                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-3 text-left text-sm text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.12)] hover:text-[#ffb6c4]"
                         onClick={() => {
                           setOpenMenuId(null);
                           setDeleteWorkspaceId(workspace.id);
                         }}
                         type="button"
                       >
-                        Remover
+                        <Trash2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+                        <span>Remover</span>
                       </button>
                     ) : null}
                   </div>
@@ -166,17 +158,19 @@ export function WorkspaceList({
                 className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
               >
                 <button
-                  className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+                  className="lz-button-secondary inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
                   onClick={() => setDeleteWorkspaceId(null)}
                   type="button"
                 >
-                  Cancelar
+                  <X aria-hidden="true" className="h-4 w-4" />
+                  <span>Cancelar</span>
                 </button>
                 <button
-                  className="rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)]"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] px-4 py-2.5 text-sm font-semibold text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.18)]"
                   type="submit"
                 >
-                  Confirmar remoção
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                  <span>Confirmar remoção</span>
                 </button>
               </form>
             </ConfirmationDialog>

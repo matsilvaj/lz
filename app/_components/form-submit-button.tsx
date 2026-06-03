@@ -40,7 +40,7 @@ export function FormSubmitButton({
     >
       <span className="inline-flex items-center justify-center gap-2">
         {pending ? <ButtonSpinner /> : null}
-        <span>{pending ? pendingLabel ?? "Salvando..." : children}</span>
+        {pending ? <span>{pendingLabel ?? "Salvando..."}</span> : children}
       </span>
     </button>
   );

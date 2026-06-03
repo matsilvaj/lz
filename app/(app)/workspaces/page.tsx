@@ -1,5 +1,6 @@
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
+import { Plus } from "lucide-react";
 
 import { createWorkspaceAction } from "./actions";
 import { WorkspaceList } from "./workspace-list";
@@ -21,7 +22,8 @@ export default async function WorkspacesPage() {
             className="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
             pendingLabel="Criando..."
           >
-            Criar workspace
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            <span>Criar workspace</span>
           </FormSubmitButton>
         </form>
       </section>

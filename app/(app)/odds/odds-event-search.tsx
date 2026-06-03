@@ -1,15 +1,43 @@
 "use client";
 
+import {
+  ArrowLeft,
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+
+import {
+  CalculatorSelectionDock,
+  createCalculatorSelectionId,
+  mergeCalculatorSelections,
+  type CalculatorSelectionLine,
+} from "@/app/_components/calculator-selection-dock";
+import {
+  buildDuploAnalysis,
+  formatDuploPercent,
+  type DuploOpportunity,
+} from "@/lib/monitor-odds/duplo";
+import {
+  formatCompetitionName,
+  formatNationalTeamName,
+} from "@/lib/monitor-odds/display-names";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -111,6 +139,7 @@ type OddsRefreshResult = {
 };
 
 type DatePreset = "today" | "tomorrow";
+type EventListSortMode = "league" | "nearest" | "farthest";
 type EventsRequest =
   | {
       kind: "search";
@@ -134,6 +163,10 @@ type OddsTableRow = {
   key: string;
   odds: Partial<Record<Selection, OddsFeedItem>>;
 };
+type BookmakerFilterOption = {
+  key: string;
+  name: string;
+};
 type LeagueGroup = {
   events: OddsEvent[];
   key: string;
@@ -149,6 +182,14 @@ const datePresetLabels: Record<DatePreset, string> = {
   today: "Hoje",
   tomorrow: "Amanhã",
 };
+const eventListSortOptions: Array<{
+  label: string;
+  value: EventListSortMode;
+}> = [
+  { label: "Por campeonato", value: "league" },
+  { label: "Mais próximos", value: "nearest" },
+  { label: "Mais distantes", value: "farthest" },
+];
 const leagueLogoOutlinePositions = [
   "top",
   "top-right",
@@ -169,6 +210,7 @@ const statusLeaderTtlMs = 12_000;
 const statusPollIntervalMs = 4_000;
 const unversionedFixturesRefreshMs = 60_000;
 const oddsSnapshotMemoryLimit = 300;
+const emptyOddsEvents: OddsEvent[] = [];
 const leagueCountryNames: Record<string, string> = {
   albania: "Albânia",
   algeria: "Argélia",
@@ -437,7 +479,10 @@ function formatLeagueCountry(value: string | null) {
 
 function formatLeagueName(value: string, country?: string | null) {
   const normalizedCountry = normalizeLabelKey(country ?? "");
-  let formatted = value.trim().replace(/\bbrasileirao\b/gi, "Brasileirão");
+  let formatted = formatCompetitionName(value, country).replace(
+    /\bbrasileirao\b/gi,
+    "Brasileirão",
+  );
   const isBrazilianLeague =
     normalizedCountry === "brazil" || normalizeLabelKey(formatted).includes("brasileirao");
 
@@ -481,8 +526,19 @@ function formatLeagueLine(event: OddsEvent) {
   return country ? `${leagueName} - ${country}` : leagueName;
 }
 
-function getEventHref(event: OddsEvent) {
-  return `/odds/${encodeURIComponent(event.fixture_id)}`;
+function formatFixtureTeams(event: Pick<OddsEvent, "away_team" | "home_team">) {
+  const homeTeam = formatNationalTeamName(event.home_team);
+  const awayTeam = formatNationalTeamName(event.away_team);
+
+  return {
+    awayTeam,
+    homeTeam,
+    label: `${homeTeam} x ${awayTeam}`,
+  };
+}
+
+function getEventHref(event: OddsEvent, basePath: string) {
+  return `${basePath}/${encodeURIComponent(event.fixture_id)}`;
 }
 
 function getDatePresetRange(preset: DatePreset) {
@@ -911,6 +967,31 @@ function groupEventsByLeague(events: OddsEvent[]) {
     });
 }
 
+function getEventStartTime(event: OddsEvent) {
+  const time = new Date(event.starts_at).getTime();
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+}
+
+function sortEventsForList(events: OddsEvent[], mode: EventListSortMode) {
+  if (mode === "league") {
+    return events;
+  }
+
+  return [...events].sort((left, right) => {
+    const startOrder = getEventStartTime(left) - getEventStartTime(right);
+    const fixtureOrder = formatFixtureTeams(left).label.localeCompare(
+      formatFixtureTeams(right).label,
+      "pt-BR",
+    );
+
+    if (mode === "nearest") {
+      return startOrder || fixtureOrder;
+    }
+
+    return -startOrder || fixtureOrder;
+  });
+}
+
 function selectionLabel(value: string) {
   if (value === "HOME") return "1";
   if (value === "DRAW") return "X";
@@ -920,32 +1001,6 @@ function selectionLabel(value: string) {
 
 function formatOdd(value: number | undefined) {
   return value ? value.toFixed(2) : "-";
-}
-
-function getBest1x2Odds(event: OddsEvent, category?: PaCategory) {
-  const bestBySelection = new Map<string, OddsFeedItem>();
-
-  for (const odd of event.odds) {
-    if (odd.market_code !== "1X2") continue;
-    if (category && odd.pa_category !== category) continue;
-    if (!["HOME", "DRAW", "AWAY"].includes(odd.selection)) continue;
-
-    const current = bestBySelection.get(odd.selection);
-    if (!current || odd.price > current.price) {
-      bestBySelection.set(odd.selection, odd);
-    }
-  }
-
-  return selections.map((selection) => ({
-    selection,
-    odd: bestBySelection.get(selection),
-  }));
-}
-
-function summaryCategoryLabel(value: string | undefined) {
-  if (value === "COM_PA") return "PA";
-  if (value === "SEM_PA") return "SEM PA";
-  return "";
 }
 
 function BookmakerEventLink({
@@ -1062,6 +1117,110 @@ function getRowEventUrl(row: OddsTableRow) {
     .find((eventUrl): eventUrl is string => Boolean(eventUrl)) ?? null;
 }
 
+function getCalculatorMeta(marketLabel: string) {
+  return marketLabel.trim().toUpperCase() === "1X2"
+    ? undefined
+    : marketLabel;
+}
+
+function getOddCalculatorSelection(
+  fixtureId: string,
+  odd: OddsFeedItem,
+): CalculatorSelectionLine {
+  const house = formatBookmakerName(odd.bookmaker_name);
+  const lineSelectionLabel = selectionLabel(odd.selection);
+  const marketLabel = odd.market_code || odd.market_name || "Odd";
+
+  return {
+    house,
+    id: createCalculatorSelectionId([
+      fixtureId,
+      odd.bookmaker_slug || odd.bookmaker_name,
+      marketLabel,
+      lineSelectionLabel,
+      odd.pa_category,
+    ]),
+    meta: getCalculatorMeta(marketLabel),
+    odd: odd.price,
+    pa: odd.pa_category === "COM_PA",
+    selectionKey: lineSelectionLabel,
+    selectionLabel: lineSelectionLabel,
+  };
+}
+
+function getOpportunityCalculatorSelections(
+  fixtureId: string,
+  opportunity: DuploOpportunity,
+): CalculatorSelectionLine[] {
+  return opportunity.lines.map((line) => ({
+    house: line.bookmakerName,
+    id: createCalculatorSelectionId([
+      fixtureId,
+      line.bookmakerSlug || line.bookmakerName,
+      line.marketLabel,
+      line.selectionLabel,
+      line.paCategory,
+    ]),
+    meta: getCalculatorMeta(line.marketLabel),
+    odd: line.odd,
+    pa: line.paCategory === "COM_PA",
+    selectionKey: line.selectionLabel,
+    selectionLabel: line.selectionLabel,
+  }));
+}
+
+function areCalculatorSelectionsActive(
+  selectedIds: ReadonlySet<string>,
+  lines: CalculatorSelectionLine[],
+) {
+  return lines.length > 0 && lines.every((line) => selectedIds.has(line.id));
+}
+
+function getBookmakerKey(slug: string | null | undefined, name: string) {
+  return (slug?.trim() || name.trim() || "casa").toLocaleLowerCase("pt-BR");
+}
+
+function getAvailableBookmakers(event: OddsEvent): BookmakerFilterOption[] {
+  const bookmakers = new Map<string, string>();
+
+  for (const odd of event.odds) {
+    const key = getBookmakerKey(odd.bookmaker_slug, odd.bookmaker_name);
+    const name = formatBookmakerName(odd.bookmaker_name);
+
+    if (!bookmakers.has(key)) {
+      bookmakers.set(key, name);
+    }
+  }
+
+  return Array.from(bookmakers, ([key, name]) => ({ key, name })).sort((left, right) =>
+    left.name.localeCompare(right.name, "pt-BR"),
+  );
+}
+
+function filterEventBookmakers(
+  event: OddsEvent,
+  hiddenBookmakers: ReadonlySet<string>,
+) {
+  if (!hiddenBookmakers.size) {
+    return event;
+  }
+
+  const odds = event.odds.filter((odd) => {
+    return !hiddenBookmakers.has(
+      getBookmakerKey(odd.bookmaker_slug, odd.bookmaker_name),
+    );
+  });
+
+  return {
+    ...event,
+    bookmaker_count: new Set(
+      odds.map((odd) => getBookmakerKey(odd.bookmaker_slug, odd.bookmaker_name)),
+    ).size,
+    odd_count: odds.length,
+    odds,
+  };
+}
+
 function OddPricePulse({
   children,
   className,
@@ -1132,114 +1291,47 @@ function OddPricePulse({
   );
 }
 
-function OddsSummaryRow({
-  event,
-  oddsLoading = false,
-  pulseVersion,
-}: {
-  event: OddsEvent;
-  oddsLoading?: boolean;
-  pulseVersion: number;
-}) {
-  const bestOdds = getBest1x2Odds(event);
-  const hasAnyOdd = bestOdds.some(({ odd }) => odd);
-  const showEmptyLabel = !hasAnyOdd && !oddsLoading;
-
-  return (
-    <span className="w-full max-w-[360px] rounded-[18px] border border-white/8 bg-white/[0.025] p-3">
-      {showEmptyLabel ? (
-        <span className="mb-2 block text-xs text-[var(--text-muted)]">
-          Sem odds
-        </span>
-      ) : null}
-
-      <span className="grid grid-cols-3 gap-2">
-        {bestOdds.map(({ selection, odd }) => {
-          const bookmakerName = odd ? formatBookmakerName(odd.bookmaker_name) : "";
-          const categoryLabel = summaryCategoryLabel(odd?.pa_category);
-
-          return (
-            <OddPricePulse
-              className="flex min-h-[66px] flex-col items-center justify-center rounded-[14px] border border-transparent bg-white/[0.035] px-2 py-2 text-center"
-              key={`best-${selection}`}
-              price={odd?.price}
-              pulseId={`summary:${event.fixture_id}:${selection}`}
-              pulseVersion={pulseVersion}
-            >
-              <span className="text-base font-semibold text-white">
-                {formatOdd(odd?.price)}
-              </span>
-              <span className="mt-0.5 max-w-[96px] truncate text-[10px] text-[var(--text-muted)]">
-                {odd ? (
-                  <>
-                    <BookmakerEventLink
-                      bookmakerName={bookmakerName}
-                      className="text-[var(--text-muted)] no-underline transition hover:text-white focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                      eventUrl={odd.bookmaker_event_url}
-                    >
-                      {bookmakerName}
-                    </BookmakerEventLink>
-                    {categoryLabel ? ` ${categoryLabel}` : ""}
-                  </>
-                ) : (
-                  oddsLoading ? "" : "Sem odd"
-                )}
-              </span>
-            </OddPricePulse>
-          );
-        })}
-      </span>
-    </span>
-  );
-}
-
 function EventCard({
   event,
-  oddsLoading = false,
-  pulseVersion,
+  eventBasePath,
   showLeague = true,
 }: {
   event: OddsEvent;
-  oddsLoading?: boolean;
-  pulseVersion: number;
+  eventBasePath: string;
   showLeague?: boolean;
 }) {
+  const teams = formatFixtureTeams(event);
+
   return (
     <article
-      className="group relative w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] md:p-5"
+      className="group relative flex min-h-[124px] w-full flex-col rounded-[22px] border border-white/10 bg-white/[0.025] p-4 text-left transition hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04] hover:shadow-[0_14px_34px_rgba(0,0,0,0.2)]"
     >
       <Link
-        aria-label={`Abrir odds de ${event.home_team} x ${event.away_team}`}
-        className="absolute inset-0 z-0 rounded-[24px] border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        href={getEventHref(event)}
+        aria-label={`Abrir odds de ${teams.label}`}
+        className="absolute inset-0 z-0 rounded-[22px] border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        href={getEventHref(event, eventBasePath)}
       />
-      <div className="pointer-events-none relative z-10 flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-            <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              {formatDate(event.starts_at)}
-            </span>
-            {showLeague ? (
-              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                {formatLeagueLine(event)}
-              </span>
-            ) : null}
-          </div>
 
-          <h2 className="mt-4 text-lg font-semibold tracking-tight text-white md:text-xl">
-            {event.home_team} x {event.away_team}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+      <div className="pointer-events-none relative z-10 flex h-full flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+          <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            {formatDate(event.starts_at)}
+          </span>
+          <span className="inline-flex rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[var(--text-muted)]">
             {formatTime(event.starts_at)}
-          </p>
+          </span>
         </div>
 
-        <div className="flex w-full justify-center xl:justify-end">
-          <OddsSummaryRow
-            event={event}
-            oddsLoading={oddsLoading}
-            pulseVersion={pulseVersion}
-          />
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 text-base font-semibold tracking-tight text-white md:text-lg">
+            {teams.label}
+          </h2>
+
+          {showLeague ? (
+            <p className="mt-2 truncate text-xs font-medium text-[var(--text-muted)]">
+              {formatLeagueLine(event)}
+            </p>
+          ) : null}
         </div>
       </div>
     </article>
@@ -1258,7 +1350,7 @@ function DatePresetButton({
   return (
     <button
       aria-pressed={active}
-      className={`inline-flex h-13 items-center justify-center rounded-2xl border px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+      className={`inline-flex h-13 items-center justify-center rounded-full border px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
         active
           ? "border-[rgba(255,139,187,0.42)] bg-[rgba(255,139,187,0.16)] text-white shadow-[0_0_22px_rgba(255,139,187,0.08)]"
           : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
@@ -1268,6 +1360,153 @@ function DatePresetButton({
     >
       {label}
     </button>
+  );
+}
+
+function EventListSortMenu({
+  onChange,
+  value,
+}: {
+  onChange: (value: EventListSortMode) => void;
+  value: EventListSortMode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const selectedLabel =
+    eventListSortOptions.find((option) => option.value === value)?.label ??
+    eventListSortOptions[0]?.label ??
+    "Organizar";
+
+  const updateMenuPosition = useCallback(() => {
+    const button = buttonRef.current;
+
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const gap = 8;
+    const menuHeight = 132;
+    const viewportPadding = 16;
+    const width = Math.max(rect.width, 220);
+    const left = Math.min(
+      Math.max(viewportPadding, rect.right - width),
+      window.innerWidth - width - viewportPadding,
+    );
+    const hasRoomBelow = rect.bottom + gap + menuHeight <= window.innerHeight;
+    const top = hasRoomBelow
+      ? rect.bottom + gap
+      : Math.max(viewportPadding, rect.top - menuHeight - gap);
+
+    setMenuPosition({ left, top, width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    updateMenuPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) return;
+      if (buttonRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+
+      setOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open, updateMenuPosition]);
+
+  const menu =
+    open && menuPosition
+      ? createPortal(
+          <div
+            className="fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+            ref={menuRef}
+            role="listbox"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              width: menuPosition.width,
+            }}
+          >
+            {eventListSortOptions.map((option) => (
+              <button
+                aria-selected={value === option.value}
+                className={`flex h-10 w-full items-center rounded-xl px-3 text-left text-sm font-semibold transition ${
+                  value === option.value
+                    ? "bg-[rgba(211,27,91,0.22)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-white"
+                }`}
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                role="option"
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <div className="relative w-full">
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={`inline-flex h-13 w-full items-center justify-between gap-3 rounded-full border px-4 text-sm font-semibold transition ${
+          open
+            ? "border-[rgba(255,139,187,0.52)] bg-[rgba(255,139,187,0.12)] text-white shadow-[0_12px_30px_rgba(211,27,91,0.12)]"
+            : "border-white/10 bg-white/[0.035] text-white hover:border-white/20 hover:bg-white/[0.06]"
+        }`}
+        onClick={() => setOpen((current) => !current)}
+        ref={buttonRef}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <ArrowUpDown
+            aria-hidden="true"
+            className="h-4 w-4 shrink-0 text-[var(--text-secondary)]"
+          />
+          <span className="truncate">{selectedLabel}</span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 text-[var(--text-secondary)] transition ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {menu}
+    </div>
   );
 }
 
@@ -1384,12 +1623,10 @@ function LeagueIcon({
 
 function LeagueEventsSection({
   group,
-  oddsLoading = false,
-  pulseVersion,
+  eventBasePath,
 }: {
   group: LeagueGroup;
-  oddsLoading?: boolean;
-  pulseVersion: number;
+  eventBasePath: string;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -1421,13 +1658,12 @@ function LeagueEventsSection({
         </span>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {group.events.map((event) => (
           <EventCard
             event={event}
+            eventBasePath={eventBasePath}
             key={event.fixture_id}
-            oddsLoading={oddsLoading}
-            pulseVersion={pulseVersion}
             showLeague={false}
           />
         ))}
@@ -1438,24 +1674,16 @@ function LeagueEventsSection({
 
 function EventCardSkeleton() {
   return (
-    <div className="w-full rounded-[24px] border border-white/10 bg-white/[0.025] p-4 md:p-5">
-      <div className="flex animate-pulse flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.38fr)] xl:items-center">
-        <div className="min-w-0">
-          <div className="flex gap-2">
-            <span className="h-6 w-20 rounded-full bg-white/8" />
-            <span className="h-6 w-44 rounded-full bg-white/8" />
-          </div>
-          <span className="mt-4 block h-6 w-3/5 rounded-full bg-white/10" />
-          <span className="mt-3 block h-4 w-20 rounded-full bg-white/8" />
+    <div className="min-h-[124px] w-full rounded-[22px] border border-white/10 bg-white/[0.025] p-4">
+      <div className="flex h-full animate-pulse flex-col gap-3">
+        <div className="flex gap-2">
+          <span className="h-6 w-20 rounded-full bg-white/8" />
+          <span className="h-6 w-14 rounded-full bg-white/8" />
         </div>
 
-        <div className="grid w-full max-w-[360px] grid-cols-3 gap-2 justify-self-end rounded-[18px] border border-white/8 bg-white/[0.025] p-3">
-          {selections.map((selection) => (
-            <span
-              className="h-[66px] rounded-[14px] bg-white/[0.055]"
-              key={`skeleton-odd-${selection}`}
-            />
-          ))}
+        <div>
+          <span className="block h-5 w-4/5 rounded-full bg-white/10" />
+          <span className="mt-2 block h-4 w-3/5 rounded-full bg-white/8" />
         </div>
       </div>
     </div>
@@ -1464,7 +1692,7 @@ function EventCardSkeleton() {
 
 function SearchResultsSkeleton() {
   return (
-    <section className="space-y-3">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
         <EventCardSkeleton key={`search-skeleton-${index}`} />
       ))}
@@ -1488,7 +1716,11 @@ function LeagueEventsSkeleton() {
             <span className="h-6 w-16 rounded-full bg-white/8" />
           </div>
 
-          <EventCardSkeleton />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <EventCardSkeleton />
+            <EventCardSkeleton />
+            <EventCardSkeleton />
+          </div>
         </div>
       ))}
     </section>
@@ -1552,14 +1784,18 @@ function OddsTableLoadingRows() {
 function OddsTable({
   category,
   event,
+  isOddSelected,
   oddsLoading = false,
+  onOddToggle,
   pulseVersion,
   sort,
   onSortChange,
 }: {
   category: PaCategory;
   event: OddsEvent;
+  isOddSelected: (odd: OddsFeedItem) => boolean;
   oddsLoading?: boolean;
+  onOddToggle: (odd: OddsFeedItem) => void;
   pulseVersion: number;
   sort: OddsSortState | null;
   onSortChange: (category: PaCategory, selection: Selection) => void;
@@ -1616,21 +1852,41 @@ function OddsTable({
                 </BookmakerEventLink>
                 {selections.map((selection) => {
                   const odd = row.odds[selection];
+                  const selected = odd ? isOddSelected(odd) : false;
+                  const highlighted = odd?.price === highestPrices[selection];
 
                   return (
-                    <OddPricePulse
-                      className={`${oddsBoxClass} text-[13px] font-semibold text-white ${
-                        odd?.price === highestPrices[selection]
-                          ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
-                          : "border border-transparent bg-white/[0.04]"
+                    <button
+                      aria-pressed={selected}
+                      className={`${oddsBoxClass} text-[13px] font-semibold text-white transition ${
+                        selected
+                          ? "border border-[rgba(191,219,254,0.72)] bg-[rgba(59,130,246,0.18)] shadow-[0_0_18px_rgba(147,197,253,0.16)]"
+                          : highlighted
+                            ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
+                            : "border border-transparent bg-white/[0.04]"
+                      } ${
+                        odd
+                          ? "hover:border-[rgba(191,219,254,0.5)] hover:bg-[rgba(59,130,246,0.12)]"
+                          : "cursor-default opacity-55"
                       }`}
+                      disabled={!odd}
                       key={`${row.key}-${selection}`}
-                      price={odd?.price}
-                      pulseId={`table:${row.key}:${selection}`}
-                      pulseVersion={pulseVersion}
+                      onClick={() => {
+                        if (odd) {
+                          onOddToggle(odd);
+                        }
+                      }}
+                      type="button"
                     >
-                      {formatOdd(odd?.price)}
-                    </OddPricePulse>
+                      <OddPricePulse
+                        className="tabular-nums"
+                        price={odd?.price}
+                        pulseId={`table:${row.key}:${selection}`}
+                        pulseVersion={pulseVersion}
+                      >
+                        {formatOdd(odd?.price)}
+                      </OddPricePulse>
+                    </button>
                   );
                 })}
               </div>
@@ -1648,7 +1904,293 @@ function OddsTable({
   );
 }
 
-export function OddsEventDetails({ event }: { event: OddsEvent }) {
+function BookmakerToggleButton({
+  active,
+  name,
+  onClick,
+}: {
+  active: boolean;
+  name: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`min-w-0 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+        active
+          ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.18)] text-white"
+          : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="block truncate">{name}</span>
+    </button>
+  );
+}
+
+function BookmakerFiltersDialog({
+  availableBookmakers,
+  hiddenBookmakers,
+  onClose,
+  onReset,
+  onToggleBookmaker,
+}: {
+  availableBookmakers: BookmakerFilterOption[];
+  hiddenBookmakers: ReadonlySet<string>;
+  onClose: () => void;
+  onReset: () => void;
+  onToggleBookmaker: (key: string) => void;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center overflow-hidden bg-black/65 p-4 backdrop-blur-md sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        aria-modal="true"
+        className="flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)] [zoom:0.92]"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
+              Filtros
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-white">
+              Ocultar casas
+            </h2>
+          </div>
+          <button
+            aria-label="Fechar filtros"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white">Casas</h3>
+            <button
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              onClick={onReset}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Limpar</span>
+            </button>
+          </div>
+
+          {availableBookmakers.length ? (
+            <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3">
+              {availableBookmakers.map((bookmaker) => (
+                <BookmakerToggleButton
+                  active={hiddenBookmakers.has(bookmaker.key)}
+                  key={bookmaker.key}
+                  name={bookmaker.name}
+                  onClick={() => onToggleBookmaker(bookmaker.key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4 text-sm text-[var(--text-muted)]">
+              Nenhuma casa encontrada.
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 flex shrink-0 justify-end border-t border-white/8 pt-3">
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] px-5 text-xs font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.2)] transition hover:brightness-110"
+            onClick={onClose}
+            type="button"
+          >
+            <Check aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>Aplicar</span>
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function getDuploProfitClass(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return "text-white";
+  }
+
+  return value > 0 ? "text-emerald-400" : "text-rose-400";
+}
+
+function DuploLineBadge({
+  line,
+}: {
+  line: DuploOpportunity["lines"][number];
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <BookmakerEventLink
+            bookmakerName={line.bookmakerName}
+            className="min-w-0 truncate text-xs font-semibold text-white no-underline transition hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            eventUrl={line.eventUrl}
+          >
+            {line.bookmakerName}
+          </BookmakerEventLink>
+          {line.paCategory === "COM_PA" ? (
+            <span className="shrink-0 rounded-full border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+              PA
+            </span>
+          ) : null}
+        </span>
+        <span className="text-sm font-semibold text-white">
+          {line.odd.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DuploTopList({
+  event,
+  onToggleOpportunity,
+  opportunities,
+  selectedIds,
+  title,
+}: {
+  event: OddsEvent;
+  onToggleOpportunity: (opportunity: DuploOpportunity) => void;
+  opportunities: DuploOpportunity[];
+  selectedIds: ReadonlySet<string>;
+  title: string;
+}) {
+  return (
+    <section className="rounded-[22px] border border-white/10 bg-white/[0.025] p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+        {title}
+      </h3>
+
+      <div className="mt-4 space-y-2">
+        {opportunities.length ? (
+          opportunities.map((opportunity, index) => {
+            const selected = areCalculatorSelectionsActive(
+              selectedIds,
+              getOpportunityCalculatorSelections(event.fixture_id, opportunity),
+            );
+
+            return (
+              <div
+                aria-pressed={selected}
+                className={`grid cursor-pointer gap-3 rounded-2xl border p-3 transition lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center ${
+                  selected
+                    ? "border-[rgba(191,219,254,0.66)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_20px_rgba(147,197,253,0.12)]"
+                    : "border-white/8 bg-white/[0.024] hover:border-[rgba(255,139,187,0.24)] hover:bg-white/[0.04]"
+                }`}
+                key={`${opportunity.mode}-${opportunity.family}-${index}`}
+                onClick={() => onToggleOpportunity(opportunity)}
+                onKeyDown={(keyboardEvent: ReactKeyboardEvent<HTMLDivElement>) => {
+                  if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
+                    return;
+                  }
+
+                  keyboardEvent.preventDefault();
+                  onToggleOpportunity(opportunity);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-xs font-semibold text-[var(--text-secondary)]">
+                  {index + 1}
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {opportunity.lines.map((line, lineIndex) => (
+                    <DuploLineBadge
+                      key={`${line.bookmakerSlug}-${line.selectionLabel}-${lineIndex}`}
+                      line={line}
+                    />
+                  ))}
+                </div>
+                <span
+                  className={`text-sm font-semibold ${getDuploProfitClass(
+                    opportunity.profitPercent,
+                  )}`}
+                >
+                  {formatDuploPercent(opportunity.profitPercent)}
+                </span>
+              </div>
+            );
+          })
+        ) : (
+          <p className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-[var(--text-muted)]">
+            Sem combinações suficientes.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DuploEventAnalysis({
+  event,
+  onToggleOpportunity,
+  selectedIds,
+}: {
+  event: OddsEvent;
+  onToggleOpportunity: (opportunity: DuploOpportunity) => void;
+  selectedIds: ReadonlySet<string>;
+}) {
+  const analysis = buildDuploAnalysis(event);
+
+  if (!analysis.all.length) {
+    return (
+      <section className="rounded-[22px] border border-white/10 bg-white/[0.025] p-4 text-sm text-[var(--text-muted)]">
+        Sem sinais de duplo suficientes para este evento.
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <DuploTopList
+          event={event}
+          onToggleOpportunity={onToggleOpportunity}
+          opportunities={analysis.paSingleTop}
+          selectedIds={selectedIds}
+          title="Top 5 - PA Casa ou Fora"
+        />
+        <DuploTopList
+          event={event}
+          onToggleOpportunity={onToggleOpportunity}
+          opportunities={analysis.paBothTop}
+          selectedIds={selectedIds}
+          title="Top 5 - PA em Casa e Fora"
+        />
+      </div>
+    </section>
+  );
+}
+
+export function OddsEventDetails({
+  backHref = "/monitor/odds",
+  event,
+}: {
+  backHref?: string;
+  event: OddsEvent;
+}) {
   const [currentEventState, setCurrentEvent] = useState(() => ({
     event,
     fixtureId: event.fixture_id,
@@ -1663,11 +2205,33 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
   });
   const [oddsPulseVersion, setOddsPulseVersion] = useState(0);
   const [refreshingOdds, setRefreshingOdds] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
+  const [calculatorSelections, setCalculatorSelections] = useState<
+    CalculatorSelectionLine[]
+  >([]);
   const currentEventRef = useRef(event);
   const currentEventFixtureIdRef = useRef(event.fixture_id);
   const latestOddsVersionRef = useRef<string | null>(event.latest_odd_updated_at);
   const lastOddsUpdateLabel = formatLastOddsUpdate(
     currentEvent.latest_odd_updated_at,
+  );
+  const currentFixtureTeams = formatFixtureTeams(currentEvent);
+  const availableBookmakers = useMemo(
+    () => getAvailableBookmakers(currentEvent),
+    [currentEvent],
+  );
+  const activeHiddenBookmakers = useMemo(() => {
+    const availableKeys = new Set(availableBookmakers.map((bookmaker) => bookmaker.key));
+    return new Set(hiddenBookmakers.filter((key) => availableKeys.has(key)));
+  }, [availableBookmakers, hiddenBookmakers]);
+  const filteredCurrentEvent = useMemo(
+    () => filterEventBookmakers(currentEvent, activeHiddenBookmakers),
+    [activeHiddenBookmakers, currentEvent],
+  );
+  const selectedCalculatorIds = useMemo(
+    () => new Set(calculatorSelections.map((selection) => selection.id)),
+    [calculatorSelections],
   );
 
   useEffect(() => {
@@ -1762,6 +2326,52 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
     }));
   }
 
+  function handleToggleBookmaker(key: string) {
+    setHiddenBookmakers((current) =>
+      current.includes(key)
+        ? current.filter((bookmakerKey) => bookmakerKey !== key)
+        : [...current, key],
+    );
+  }
+
+  function handleResetFilters() {
+    setHiddenBookmakers([]);
+  }
+
+  function handleToggleCalculatorOdd(odd: OddsFeedItem) {
+    const selection = getOddCalculatorSelection(currentEvent.fixture_id, odd);
+
+    setCalculatorSelections((current) =>
+      current.some((item) => item.id === selection.id)
+        ? current.filter((item) => item.id !== selection.id)
+        : mergeCalculatorSelections(current, [selection]),
+    );
+  }
+
+  function handleToggleCalculatorOpportunity(opportunity: DuploOpportunity) {
+    const selections = getOpportunityCalculatorSelections(
+      currentEvent.fixture_id,
+      opportunity,
+    );
+
+    setCalculatorSelections((current) => {
+      const currentIds = new Set(current.map((selection) => selection.id));
+      const selected = areCalculatorSelectionsActive(currentIds, selections);
+
+      return selected
+        ? current.filter(
+            (selection) => !selections.some((item) => item.id === selection.id),
+          )
+        : mergeCalculatorSelections(current, selections, { replaceAll: true });
+    });
+  }
+
+  function handleRemoveCalculatorSelection(id: string) {
+    setCalculatorSelections((current) =>
+      current.filter((selection) => selection.id !== id),
+    );
+  }
+
   return (
     <div className="space-y-5">
       <section className="lz-panel rounded-[28px] p-4 md:p-6">
@@ -1772,15 +2382,15 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
                 {formatDate(currentEvent.starts_at)}
               </span>
               <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                {formatLeagueLine(currentEvent)}
+                {formatTime(currentEvent.starts_at)}
               </span>
             </div>
 
             <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              {currentEvent.home_team} x {currentEvent.away_team}
+              {currentFixtureTeams.label}
             </h1>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              {formatTime(currentEvent.starts_at)}
+            <p className="mt-2 text-sm font-medium text-[var(--text-muted)]">
+              {formatLeagueLine(currentEvent)}
             </p>
             {lastOddsUpdateLabel ? (
               <p className="mt-1 text-xs text-[var(--text-dim)]">
@@ -1789,19 +2399,62 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
             ) : null}
           </div>
 
-          <Link
-            className="lz-button-secondary inline-flex h-11 w-full items-center justify-center rounded-full px-4 text-sm font-semibold transition sm:w-auto"
-            href="/odds"
-          >
-            Voltar
-          </Link>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Link
+              className="lz-button-secondary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition sm:w-auto"
+              href={backHref}
+            >
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              <span>Voltar</span>
+            </Link>
+
+            <button
+              className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition sm:w-auto ${
+                filtersOpen || activeHiddenBookmakers.size
+                  ? "border-[rgba(211,27,91,0.72)] bg-[rgba(211,27,91,0.18)] text-white"
+                  : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              onClick={() => setFiltersOpen(true)}
+              type="button"
+            >
+              <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+              <span>Filtros</span>
+              {activeHiddenBookmakers.size ? (
+                <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-white/10 px-2 py-0.5 text-xs text-[var(--text-secondary)]">
+                  {activeHiddenBookmakers.size}
+                </span>
+              ) : null}
+            </button>
+          </div>
         </div>
       </section>
+
+      {filtersOpen ? (
+        <BookmakerFiltersDialog
+          availableBookmakers={availableBookmakers}
+          hiddenBookmakers={activeHiddenBookmakers}
+          onClose={() => setFiltersOpen(false)}
+          onReset={handleResetFilters}
+          onToggleBookmaker={handleToggleBookmaker}
+        />
+      ) : null}
+
+      <DuploEventAnalysis
+        event={filteredCurrentEvent}
+        onToggleOpportunity={handleToggleCalculatorOpportunity}
+        selectedIds={selectedCalculatorIds}
+      />
 
       <div className="grid gap-3 lg:grid-cols-2">
         <OddsTable
           category="COM_PA"
-          event={currentEvent}
+          event={filteredCurrentEvent}
+          isOddSelected={(odd) =>
+            selectedCalculatorIds.has(
+              getOddCalculatorSelection(currentEvent.fixture_id, odd).id,
+            )
+          }
+          onOddToggle={handleToggleCalculatorOdd}
           onSortChange={handleSortChange}
           oddsLoading={refreshingOdds}
           pulseVersion={oddsPulseVersion}
@@ -1809,20 +2462,38 @@ export function OddsEventDetails({ event }: { event: OddsEvent }) {
         />
         <OddsTable
           category="SEM_PA"
-          event={currentEvent}
+          event={filteredCurrentEvent}
+          isOddSelected={(odd) =>
+            selectedCalculatorIds.has(
+              getOddCalculatorSelection(currentEvent.fixture_id, odd).id,
+            )
+          }
+          onOddToggle={handleToggleCalculatorOdd}
           onSortChange={handleSortChange}
           oddsLoading={refreshingOdds}
           pulseVersion={oddsPulseVersion}
           sort={sorts.SEM_PA}
         />
       </div>
+
+      <CalculatorSelectionDock
+        onClear={() => setCalculatorSelections([])}
+        onRemove={handleRemoveCalculatorSelection}
+        selections={calculatorSelections}
+      />
     </div>
   );
 }
 
-export function OddsEventSearch() {
+export function OddsEventSearch({
+  eventBasePath = "/monitor/odds",
+}: {
+  eventBasePath?: string;
+}) {
   const [query, setQuery] = useState("");
   const [activeDatePreset, setActiveDatePreset] = useState<DatePreset | null>("today");
+  const [activeListSort, setActiveListSort] =
+    useState<EventListSortMode>("league");
   const [state, setState] = useState<SearchState>({
     events: [],
     loading: true,
@@ -1993,6 +2664,9 @@ export function OddsEventSearch() {
     },
     [loadDatePreset],
   );
+  const handleListSortChange = useCallback((value: EventListSortMode) => {
+    setActiveListSort(value);
+  }, []);
 
   function handleQueryChange(event: ChangeEvent<HTMLInputElement>) {
     const nextQuery = event.target.value;
@@ -2160,8 +2834,13 @@ export function OddsEventSearch() {
   const hasQuery = query.trim().length >= 2;
   const hasDatePreset = activeDatePreset !== null;
   const hasActiveList = hasQuery || hasDatePreset;
-  const events = hasActiveList ? state.events : [];
-  const leagueGroups = hasDatePreset ? groupEventsByLeague(events) : [];
+  const events = hasActiveList ? state.events : emptyOddsEvents;
+  const sortedEvents = useMemo(
+    () => sortEventsForList(events, activeListSort),
+    [activeListSort, events],
+  );
+  const leagueGroups =
+    activeListSort === "league" ? groupEventsByLeague(events) : [];
   const showEmpty =
     hasActiveList && !state.loading && !state.error && events.length === 0;
   const activeDateLabel = activeDatePreset
@@ -2174,34 +2853,39 @@ export function OddsEventSearch() {
   return (
     <div className="space-y-5">
       <section className="lz-panel rounded-[28px] p-5 md:p-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="min-w-0 flex-1 lg:max-w-3xl">
-            <label
-              className="block text-sm font-semibold text-white"
-              htmlFor="odds-event-search"
-            >
-              Buscar eventos
-            </label>
+        <div className="relative z-10 flex flex-col gap-4">
+          <label
+            className="text-sm font-semibold text-white"
+            htmlFor="odds-event-search"
+          >
+            Buscar eventos
+          </label>
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
             <input
               autoComplete="off"
-              className="lz-input mt-3 h-13 w-full rounded-2xl px-4 text-base"
+              className="lz-input h-13 w-full rounded-full px-5 text-base"
               id="odds-event-search"
               onChange={handleQueryChange}
               placeholder="Digite um time, evento ou liga"
               type="search"
               value={query}
             />
-          </div>
 
-          <div className="flex flex-wrap gap-2 lg:pb-0">
-            {datePresets.map((preset) => (
-              <DatePresetButton
-                active={activeDatePreset === preset}
-                key={preset}
-                label={datePresetLabels[preset]}
-                onClick={() => handleDatePresetClick(preset)}
+            <div className="grid gap-3 sm:grid-cols-[repeat(2,minmax(112px,1fr))_minmax(190px,1.25fr)] xl:grid-cols-[112px_120px_220px]">
+              {datePresets.map((preset) => (
+                <DatePresetButton
+                  active={activeDatePreset === preset}
+                  key={preset}
+                  label={datePresetLabels[preset]}
+                  onClick={() => handleDatePresetClick(preset)}
+                />
+              ))}
+
+              <EventListSortMenu
+                onChange={handleListSortChange}
+                value={activeListSort}
               />
-            ))}
+            </div>
           </div>
         </div>
       </section>
@@ -2222,27 +2906,25 @@ export function OddsEventSearch() {
         </div>
       ) : null}
 
-      {events.length && hasDatePreset && !state.loading ? (
+      {events.length && activeListSort === "league" && !state.loading ? (
         <section className="space-y-4">
           {leagueGroups.map((group) => (
             <LeagueEventsSection
+              eventBasePath={eventBasePath}
               group={group}
               key={group.key}
-              oddsLoading={state.refreshingOdds}
-              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>
       ) : null}
 
-      {events.length && !hasDatePreset && !state.loading ? (
-        <section className="space-y-3">
-          {events.map((event) => (
+      {events.length && activeListSort !== "league" && !state.loading ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {sortedEvents.map((event) => (
             <EventCard
               event={event}
+              eventBasePath={eventBasePath}
               key={event.fixture_id}
-              oddsLoading={state.refreshingOdds}
-              pulseVersion={state.oddsPulseVersion}
             />
           ))}
         </section>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
@@ -238,8 +239,12 @@ export function BookmakersWorkspace({
           <form className="space-y-3" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
               <div className="relative flex-1" ref={autocompleteRef}>
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
+                />
                 <input
-                  className="lz-input w-full rounded-2xl px-4 py-3 text-sm"
+                  className="lz-input w-full rounded-2xl py-3 pl-10 pr-4 text-sm"
                   disabled={isPending}
                   onChange={(event) => {
                     setName(event.target.value);
@@ -310,12 +315,16 @@ export function BookmakersWorkspace({
                 </label>
 
                 <button
-                  className="lz-button-primary inline-flex rounded-full px-4 py-3 text-sm font-semibold"
+                  className="lz-button-primary inline-flex items-center justify-center rounded-full px-4 py-3 text-sm font-semibold"
                   disabled={isPending}
                   type="submit"
                 >
                   <span className="inline-flex items-center gap-2">
-                    {isPending ? <ButtonSpinner /> : null}
+                    {isPending ? (
+                      <ButtonSpinner />
+                    ) : (
+                      <Plus aria-hidden="true" className="h-4 w-4" />
+                    )}
                     <span>Adicionar casa</span>
                   </span>
                 </button>
@@ -353,20 +362,7 @@ export function BookmakersWorkspace({
                         title="Remover casa"
                         type="button"
                       >
-                        <svg
-                          aria-hidden="true"
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M6 6L18 18M18 6L6 18"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeWidth="1.8"
-                          />
-                        </svg>
+                        <X aria-hidden="true" className="h-4 w-4" />
                       </button>
                     </div>
 
