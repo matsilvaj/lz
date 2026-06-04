@@ -3,6 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getMonitorSupabaseClient } from "./client";
+import { formatDuploBookmakerName } from "./duplo";
 
 const FIXTURE_FEED_COLUMNS = [
   "fixture_id",
@@ -38,6 +39,7 @@ const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
 const EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS = 60;
 const ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3;
 const UNVERSIONED_FIXTURES_VERSION = "unversioned";
+const EXCLUDED_FREEBET_CONSULTATION_BOOKMAKERS = new Set(["tradeball"]);
 
 export type MonitorOddsSnapshotItem = {
   bookmaker_slug: string;
@@ -165,6 +167,26 @@ function cleanCount(value: unknown) {
 function cleanCachePart(value: string | null | undefined) {
   const parsed = cleanString(value);
   return encodeURIComponent(parsed || "none").slice(0, 180);
+}
+
+function normalizeBookmakerOptionKey(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function shouldExposeFreebetConsultationBookmaker(
+  odd: Pick<MonitorOddsSnapshotItem, "bookmaker_name" | "bookmaker_slug">,
+) {
+  const keys = [
+    odd.bookmaker_name,
+    odd.bookmaker_slug,
+    formatDuploBookmakerName(odd.bookmaker_name),
+  ].map(normalizeBookmakerOptionKey);
+
+  return keys.every((key) => !EXCLUDED_FREEBET_CONSULTATION_BOOKMAKERS.has(key));
 }
 
 function cleanOddsSnapshotItem(
@@ -694,6 +716,46 @@ const getCachedOddsSnapshotsByFixtureIds = unstable_cache(
   },
 );
 
+const getCachedAvailableFreebetConsultationBookmakers = unstable_cache(
+  async (fixturesVersion = "unknown", oddsVersion = "unknown") => {
+    const events = await listAvailableOddsEvents(
+      DEFAULT_DATE_RANGE_EVENT_LIMIT,
+      fixturesVersion,
+    );
+    const snapshotsResult = await getOddsSnapshotsByFixtureIds(
+      events.map((event) => event.fixture_id),
+      oddsVersion,
+    );
+    const bookmakers = new Map<string, string>();
+
+    for (const snapshot of snapshotsResult.snapshots) {
+      for (const odd of snapshot.odds) {
+        if (!shouldExposeFreebetConsultationBookmaker(odd)) {
+          continue;
+        }
+
+        const name = formatDuploBookmakerName(odd.bookmaker_name);
+        const key =
+          normalizeBookmakerOptionKey(name) ||
+          normalizeBookmakerOptionKey(odd.bookmaker_slug);
+
+        if (key && !bookmakers.has(key)) {
+          bookmakers.set(key, name);
+        }
+      }
+    }
+
+    return Array.from(bookmakers.values()).sort((left, right) =>
+      left.localeCompare(right, "pt-BR"),
+    );
+  },
+  ["monitor-odds-freebet-consultation-bookmakers-v1"],
+  {
+    tags: ["monitor-odds-freebet-consultation-bookmakers"],
+    revalidate: EVENTS_SHARED_CACHE_TTL_SECONDS,
+  },
+);
+
 export async function searchOddsEvents(
   search: string,
   limit = DEFAULT_EVENT_LIMIT,
@@ -773,6 +835,18 @@ export async function getOddsSnapshotsByFixtureIds(
         snapshotsByFixtureId.get(fixtureId) ?? emptyOddsSnapshot(fixtureId),
     ),
   } satisfies MonitorOddsSnapshotsResult;
+}
+
+export async function listAvailableFreebetConsultationBookmakers() {
+  const status = await getOddsFeedStatus();
+  const fixturesVersion = getFixturesCacheVersion(status.fixtures_version);
+  const oddsVersion =
+    status.odds_version ?? status.latest_odd_updated_at ?? "unknown";
+
+  return getCachedAvailableFreebetConsultationBookmakers(
+    fixturesVersion,
+    oddsVersion,
+  );
 }
 
 export async function getOddsEventByFixtureId(fixtureId: string) {

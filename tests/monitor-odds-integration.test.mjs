@@ -325,11 +325,13 @@ test("monitor duplo keeps remembered odds while refresh is pending", () => {
 
 test("freebet converter monitor uses available freebets and the calculator engine", () => {
   assert.match(freebetConverterPage, /getFreebetsPageData/);
+  assert.match(freebetConverterPage, /listAvailableFreebetConsultationBookmakers/);
   assert.match(freebetConverterPage, /convertibleGroups/);
-  assert.match(freebetConverterPage, /bookmakers=\{data\.bookmakers\}/);
+  assert.match(freebetConverterPage, /consultationBookmakers=\{consultationBookmakers\}/);
   assert.match(freebetConverterUi, /Oportunidades/);
   assert.match(freebetConverterUi, /Freebets cadastradas/);
   assert.match(freebetConverterUi, /Consulta/);
+  assert.match(freebetConverterUi, /consultationBookmakerOptions/);
   assert.match(freebetConverterUi, /handleStartConsultation/);
   assert.match(freebetConverterUi, /consultationFreebetCondition/);
   assert.match(freebetConverterUi, /Buscar oportunidades/);
@@ -360,6 +362,8 @@ test("freebet converter monitor uses available freebets and the calculator engin
   assert.match(freebetConversionLib, /calculateSurebet/);
   assert.match(freebetConversionLib, /calculationLines/);
   assert.match(freebetConversionLib, /conversionPercent/);
+  assert.match(oddsRepository, /EXCLUDED_FREEBET_CONSULTATION_BOOKMAKERS/);
+  assert.match(oddsRepository, /"tradeball"/);
 });
 
 test("freebet converter keeps Sem PA, protects the freebet house, and opens calculator", () => {

@@ -71,7 +71,7 @@ type ConvertibleFreebetGroup = {
 };
 
 type FreebetConverterMonitorWorkspaceProps = {
-  bookmakers: string[];
+  consultationBookmakers: string[];
   convertibleGroups: ConvertibleFreebetGroup[];
 };
 
@@ -1405,7 +1405,7 @@ function SignalSkeleton() {
 }
 
 export function FreebetConverterMonitorWorkspace({
-  bookmakers,
+  consultationBookmakers,
   convertibleGroups,
 }: FreebetConverterMonitorWorkspaceProps) {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("registered");
@@ -1438,16 +1438,16 @@ export function FreebetConverterMonitorWorkspace({
   const freebetHouseKey = selectedConversion
     ? getFreebetConversionBookmakerKey(selectedConversion.casa)
     : "";
-  const bookmakerOptions = useMemo(
+  const consultationBookmakerOptions = useMemo(
     () =>
-      bookmakers
+      consultationBookmakers
         .filter(Boolean)
         .map((bookmaker) => ({
           label: formatDuploBookmakerName(bookmaker),
           value: bookmaker,
         }))
         .sort((left, right) => left.label.localeCompare(right.label, "pt-BR")),
-    [bookmakers],
+    [consultationBookmakers],
   );
   const { maxOdd, minOdd } = useMemo(
     () => getOddLimits(minOddValue, maxOddValue),
@@ -1482,6 +1482,20 @@ export function FreebetConverterMonitorWorkspace({
     setSelectedConversion(storedConversion);
     setSelectedConversionSource("registered");
   }, [convertibleGroups, selectedConversion, selectionMode]);
+
+  useEffect(() => {
+    if (selectionMode !== "consultation" || !consultationHouse) {
+      return;
+    }
+
+    const houseStillAvailable = consultationBookmakerOptions.some(
+      (option) => option.value === consultationHouse,
+    );
+
+    if (!houseStillAvailable) {
+      setConsultationHouse("");
+    }
+  }, [consultationBookmakerOptions, consultationHouse, selectionMode]);
 
   const loadEvents = useCallback(
     async (options: { signal?: AbortSignal; showLoading?: boolean } = {}) => {
@@ -1926,28 +1940,21 @@ export function FreebetConverterMonitorWorkspace({
                     <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
                       Casa
                     </span>
-                    {bookmakerOptions.length ? (
-                      <LzSelect
-                        className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm font-semibold"
-                        onValueChange={(value) => {
-                          setConsultationHouse(value);
-                          setConsultationError(null);
-                        }}
-                        options={bookmakerOptions}
-                        placeholder="Selecionar casa"
-                        value={consultationHouse}
-                      />
-                    ) : (
-                      <input
-                        className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
-                        onChange={(event) => {
-                          setConsultationHouse(event.target.value);
-                          setConsultationError(null);
-                        }}
-                        placeholder="Nome da casa"
-                        value={consultationHouse}
-                      />
-                    )}
+                    <LzSelect
+                      className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm font-semibold"
+                      disabled={!consultationBookmakerOptions.length}
+                      onValueChange={(value) => {
+                        setConsultationHouse(value);
+                        setConsultationError(null);
+                      }}
+                      options={consultationBookmakerOptions}
+                      placeholder={
+                        consultationBookmakerOptions.length
+                          ? "Selecionar casa"
+                          : "Nenhuma casa disponível"
+                      }
+                      value={consultationHouse}
+                    />
                   </label>
 
                   <label className="space-y-1.5 text-sm">
