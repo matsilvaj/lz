@@ -1141,18 +1141,20 @@ export function ProcedureModal({
     })),
     { value: "defeat", label: "Derrota" },
   ];
-  const submittedHouses = (
-    isFreebetType
-      ? [
-          ...(freebetCollectionBlocked ? [] : collectionHouses.slice(1)),
-          ...selectedHouses.slice(1),
-          selectedFreebetHouse,
-        ]
-      : selectedHouses
-  )
-    .filter(Boolean)
-    .filter((house, index, houses) => houses.indexOf(house) === index)
-    .join(", ");
+  const submittedHouses =
+    selectedGroup === "expenses"
+      ? ""
+      : (isFreebetType
+          ? [
+              ...(freebetCollectionBlocked ? [] : collectionHouses.slice(1)),
+              ...selectedHouses.slice(1),
+              selectedFreebetHouse,
+            ]
+          : selectedHouses
+        )
+          .filter(Boolean)
+          .filter((house, index, houses) => houses.indexOf(house) === index)
+          .join(", ");
   const entryValueForSubmit =
     selectedGroup === "sports"
       ? (isFreebetType ? freebetResultAmount : sportsResultAmount).toFixed(2)
@@ -1362,7 +1364,7 @@ export function ProcedureModal({
             role: "principal",
             order: 0,
             resultKey: "principal",
-            house: selectedHouses[0] ?? "",
+            house: selectedGroup === "casino" ? (selectedHouses[0] ?? "") : "",
             stake: entryValueForSubmit,
             odd: "1",
             side: DEFAULT_BET_SIDE,
@@ -1485,7 +1487,14 @@ export function ProcedureModal({
           ? freebetResultAmount
           : sportsResultAmount
         : entryProfitAmount;
-    const housesText = submittedHouses || selectedHouses.filter(Boolean).join(", ");
+    const housesText =
+      selectedGroup === "expenses"
+        ? ""
+        : submittedHouses || selectedHouses.filter(Boolean).join(", ");
+    const shareSelectedHouses =
+      selectedGroup === "expenses" ? [] : selectedHouses;
+    const shareCollectionHouses =
+      selectedGroup === "expenses" ? [] : collectionHouses;
 
     return {
       version: 1,
@@ -1504,8 +1513,8 @@ export function ProcedureModal({
       freebetValue: parseDecimalInput(freebetValueInput),
       freebetCondition: freebetConditionValue,
       procedureStatus,
-      selectedHouses,
-      collectionHouses,
+      selectedHouses: shareSelectedHouses,
+      collectionHouses: shareCollectionHouses,
       selectedFreebetHouse,
       primaryStake,
       primaryOdd,
@@ -2562,6 +2571,7 @@ export function ProcedureModal({
                         ? "cursor-not-allowed opacity-50"
                         : ""
                     }`}
+                    data-readonly-allowed="true"
                     disabled={freebetCollectionBlocked}
                     onClick={() => {
                       if (freebetCollectionBlocked) {
@@ -2855,6 +2865,7 @@ export function ProcedureModal({
                           ? "cursor-not-allowed opacity-50"
                           : ""
                       }`}
+                      data-readonly-allowed="true"
                       disabled={freebetConversionBlocked}
                       onClick={() => {
                         if (freebetConversionBlocked) {
@@ -3253,56 +3264,74 @@ export function ProcedureModal({
                 </div>
               ) : (
                 <div className="space-y-4 rounded-[26px] border border-white/10 bg-white/4 p-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2 text-sm">
-                      <span className="font-medium text-white">
-                        {selectedGroup === "expenses" ? "Casa/Cassino" : "Casa"}
-                      </span>
-                      <button
-                        className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                        onClick={() =>
-                          setHousePickerTarget({ section: "main", index: 0 })
-                        }
-                        type="button"
-                      >
-                        {selectedHouses[0] || "Escolher casa"}
-                      </button>
+                  {selectedGroup === "expenses" ? (
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-white">Descrição</span>
+                        <input
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          name="game"
+                          onChange={(event) => setGameValue(event.target.value)}
+                          placeholder="Ex.: depósito, taxa, compra"
+                          type="text"
+                          value={gameValue}
+                        />
+                      </label>
+
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-white">Valor</span>
+                        <input
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          onChange={(event) => setEntryProfitValue(event.target.value)}
+                          placeholder="0,00"
+                          step="0.01"
+                          type="number"
+                          value={entryProfitValue}
+                        />
+                      </label>
                     </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2 text-sm">
+                        <span className="font-medium text-white">Casa</span>
+                        <button
+                          className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
+                          onClick={() =>
+                            setHousePickerTarget({ section: "main", index: 0 })
+                          }
+                          type="button"
+                        >
+                          {selectedHouses[0] || "Escolher casa"}
+                        </button>
+                      </div>
 
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-white">
-                        {selectedGroup === "expenses"
-                          ? "Valor gasto"
-                          : casinoResultInputLabel}
-                      </span>
-                      <input
-                        className="lz-input w-full rounded-2xl px-3 py-3"
-                        onChange={(event) => setEntryProfitValue(event.target.value)}
-                        placeholder="0,00"
-                        step="0.01"
-                        type="number"
-                        value={entryProfitValue}
-                      />
-                    </label>
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-white">
+                          {casinoResultInputLabel}
+                        </span>
+                        <input
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          onChange={(event) => setEntryProfitValue(event.target.value)}
+                          placeholder="0,00"
+                          step="0.01"
+                          type="number"
+                          value={entryProfitValue}
+                        />
+                      </label>
 
-                    <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="font-medium text-white">
-                        {selectedGroup === "expenses" ? "Categoria/descrição" : "Descrição"}
-                      </span>
-                      <input
-                        className="lz-input w-full rounded-2xl px-3 py-3"
-                        name="game"
-                        onChange={(event) => setGameValue(event.target.value)}
-                        placeholder={
-                          selectedGroup === "expenses"
-                            ? "Ex.: depósito, taxa, compra"
-                            : "Ex.: missão semanal, giros, método"
-                        }
-                        type="text"
-                        value={gameValue}
-                      />
-                    </label>
-                  </div>
+                      <label className="space-y-2 text-sm md:col-span-2">
+                        <span className="font-medium text-white">Descrição</span>
+                        <input
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          name="game"
+                          onChange={(event) => setGameValue(event.target.value)}
+                          placeholder="Ex.: missão semanal, giros, método"
+                          type="text"
+                          value={gameValue}
+                        />
+                      </label>
+                    </div>
+                  )}
 
                   <div className="rounded-[22px] border border-white/10 bg-white/4 p-1">
                     <div className="grid grid-cols-2 gap-1">

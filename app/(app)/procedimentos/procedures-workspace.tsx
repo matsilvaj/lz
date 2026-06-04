@@ -519,7 +519,7 @@ export function ProceduresWorkspace({
               defaultValue={filters.searchText}
               key={filters.searchText}
               onChange={(event) => updateSearchFilter(event.target.value)}
-              placeholder="Buscar jogo, tipo ou casa..."
+              placeholder="Buscar evento, tipo ou casa..."
               type="search"
             />
           </div>
@@ -884,7 +884,7 @@ export function ProceduresWorkspace({
 
                   <div className="mt-4 space-y-3 text-sm">
                     <div>
-                      <p className="text-[var(--text-dim)]">Jogo</p>
+                      <p className="text-[var(--text-dim)]">Evento</p>
                       <p className="mt-1 text-white">{procedure.jogo_time_pa || "-"}</p>
                     </div>
                     <div>
@@ -925,7 +925,7 @@ export function ProceduresWorkspace({
                   <tr className="border-b border-white/10">
                     <th className="px-3 py-3 text-center font-medium">Data</th>
                     <th className="px-3 py-3 text-center font-medium">Tipo</th>
-                    <th className="px-3 py-3 text-center font-medium">Jogo</th>
+                    <th className="px-3 py-3 text-center font-medium">Evento</th>
                     <th className="px-3 py-3 text-center font-medium">Casas</th>
                     <th className="px-3 py-3 text-center font-medium">Status</th>
                     <th className="px-3 py-3 text-center font-medium">Resultado R$</th>

@@ -25,6 +25,7 @@ export type CalculatorSelectionLine = {
 export type CalculatorConversionContext = {
   conversionBatchId?: string;
   entryValue: number;
+  freebetCondition?: string;
   freebetValue: number;
   house: string;
   originIds: number[];
@@ -200,6 +201,10 @@ export function appendConversionContextParams(
   params.set("freebetValue", String(conversionContext.freebetValue));
   params.set("entryValue", String(conversionContext.entryValue));
 
+  if (conversionContext.freebetCondition) {
+    params.set("freebetCondition", conversionContext.freebetCondition);
+  }
+
   if (conversionContext.conversionBatchId) {
     params.set("conversionBatchId", conversionContext.conversionBatchId);
   }
@@ -231,6 +236,7 @@ export function parseConversionContextParams(
   return {
     conversionBatchId: params.get("conversionBatchId") ?? undefined,
     entryValue: Number.isFinite(entryValue) ? entryValue : 0,
+    freebetCondition: params.get("freebetCondition") ?? undefined,
     freebetValue,
     house,
     originIds,

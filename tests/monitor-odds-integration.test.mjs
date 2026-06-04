@@ -270,6 +270,7 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(calculatorSelectionDock, /appendConversionContextParams/);
   assert.match(calculatorSelectionDock, /parseConversionContextParams/);
   assert.match(calculatorSelectionDock, /params\.set\("mode", "convert-freebet"\)/);
+  assert.match(calculatorSelectionDock, /params\.set\("freebetCondition"/);
   assert.match(calculatorSelectionDock, /params\.append\("originIds"/);
   assert.match(calculatorSelectionDock, /getOrderedCalculatorSelections/);
   assert.match(calculatorSelectionDock, /getDockProfitPercent/);
@@ -325,7 +326,15 @@ test("monitor duplo keeps remembered odds while refresh is pending", () => {
 test("freebet converter monitor uses available freebets and the calculator engine", () => {
   assert.match(freebetConverterPage, /getFreebetsPageData/);
   assert.match(freebetConverterPage, /convertibleGroups/);
-  assert.match(freebetConverterUi, /Prontas para conversão/);
+  assert.match(freebetConverterPage, /bookmakers=\{data\.bookmakers\}/);
+  assert.match(freebetConverterUi, /Oportunidades/);
+  assert.match(freebetConverterUi, /Freebets cadastradas/);
+  assert.match(freebetConverterUi, /Consulta/);
+  assert.match(freebetConverterUi, /handleStartConsultation/);
+  assert.match(freebetConverterUi, /consultationFreebetCondition/);
+  assert.match(freebetConverterUi, /Buscar oportunidades/);
+  assert.match(freebetConverterUi, /Odd min\./);
+  assert.match(freebetConverterUi, /Odd max\./);
   assert.match(freebetConverterUi, /FreebetSelectionDialog/);
   assert.match(freebetConverterUi, /buildSelectedGroup/);
   assert.match(freebetConverterUi, /selectedConversionStorageKey/);

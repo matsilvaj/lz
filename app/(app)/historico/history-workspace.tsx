@@ -355,7 +355,7 @@ export function HistoryWorkspace({
 
                     <div className="mt-4 space-y-3 text-sm">
                       <div>
-                        <p className="text-[var(--text-dim)]">Jogo</p>
+                        <p className="text-[var(--text-dim)]">Evento</p>
                         <p className="mt-1 text-white">{getDisplayGame(operation)}</p>
                       </div>
                       <div>
@@ -396,7 +396,7 @@ export function HistoryWorkspace({
                   <tr className="border-b border-white/10">
                     <th className="px-3 py-3 text-center font-medium">Data</th>
                     <th className="px-3 py-3 text-center font-medium">Tipo</th>
-                    <th className="px-3 py-3 text-center font-medium">Jogo</th>
+                    <th className="px-3 py-3 text-center font-medium">Evento</th>
                     <th className="px-3 py-3 text-center font-medium">Casas</th>
                     <th className="px-3 py-3 text-center font-medium">Status</th>
                     <th className="px-3 py-3 text-center font-medium">Resultado R$</th>
@@ -475,6 +475,7 @@ export function HistoryWorkspace({
           bookmakers={bookmakers}
           defaultValues={buildProcedureDefaultValues(detailsOperation)}
           hideTrigger
+          hideTypeSelector
           mode="edit"
           onOpenChange={(open) => {
             if (!open) {

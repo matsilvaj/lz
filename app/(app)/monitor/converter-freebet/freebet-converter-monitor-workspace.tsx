@@ -29,6 +29,7 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { LzSelect } from "../../_components/lz-select";
 import { formatFreebetCount } from "../../_components/ui";
 import {
   buildFreebetConversionAnalysis,
@@ -70,9 +71,12 @@ type ConvertibleFreebetGroup = {
 };
 
 type FreebetConverterMonitorWorkspaceProps = {
+  bookmakers: string[];
   convertibleGroups: ConvertibleFreebetGroup[];
 };
 
+type SelectionMode = "registered" | "consultation";
+type ConversionSource = "registered" | "consultation";
 type ModeFilter = FreebetConversionMode | "all";
 type SortMode =
   | "conversion_desc"
@@ -149,6 +153,7 @@ const sortOptions: SortMode[] = [
 const converterOddsSnapshotMemoryLimit = 300;
 const converterOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
 const selectedConversionStorageKey = "lz:monitor-converter-freebet:selected";
+const consultationFreebetCondition = "Converter freebet apenas";
 let converterRememberedEvents: DuploEvent[] = [];
 
 function cloneOdd(odd: DuploOddItem): DuploOddItem {
@@ -389,6 +394,7 @@ function getConversionBatchIdForIds(ids: number[]) {
 
 function getConversionContext(
   group: ConvertibleFreebetGroup | null,
+  source: ConversionSource,
 ): CalculatorConversionContext | null {
   if (!group) {
     return null;
@@ -397,6 +403,8 @@ function getConversionContext(
   return {
     conversionBatchId: getConversionBatchIdForIds(group.ids),
     entryValue: group.lucro_total,
+    freebetCondition:
+      source === "consultation" ? consultationFreebetCondition : undefined,
     freebetValue: group.valor_total,
     house: group.casa,
     originIds: group.ids,
@@ -1397,13 +1405,20 @@ function SignalSkeleton() {
 }
 
 export function FreebetConverterMonitorWorkspace({
+  bookmakers,
   convertibleGroups,
 }: FreebetConverterMonitorWorkspaceProps) {
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("registered");
   const [detailsGroup, setDetailsGroup] = useState<ConvertibleFreebetGroup | null>(
     null,
   );
   const [selectedConversion, setSelectedConversion] =
     useState<ConvertibleFreebetGroup | null>(null);
+  const [selectedConversionSource, setSelectedConversionSource] =
+    useState<ConversionSource>("registered");
+  const [consultationHouse, setConsultationHouse] = useState("");
+  const [consultationFreebetValue, setConsultationFreebetValue] = useState("");
+  const [consultationError, setConsultationError] = useState<string | null>(null);
   const [minOddValue, setMinOddValue] = useState("1.50");
   const [maxOddValue, setMaxOddValue] = useState("999999");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
@@ -1423,13 +1438,28 @@ export function FreebetConverterMonitorWorkspace({
   const freebetHouseKey = selectedConversion
     ? getFreebetConversionBookmakerKey(selectedConversion.casa)
     : "";
+  const bookmakerOptions = useMemo(
+    () =>
+      bookmakers
+        .filter(Boolean)
+        .map((bookmaker) => ({
+          label: formatDuploBookmakerName(bookmaker),
+          value: bookmaker,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label, "pt-BR")),
+    [bookmakers],
+  );
   const { maxOdd, minOdd } = useMemo(
     () => getOddLimits(minOddValue, maxOddValue),
     [maxOddValue, minOddValue],
   );
 
   useEffect(() => {
-    if (selectedConversion || !convertibleGroups.length) {
+    if (
+      selectedConversion ||
+      selectionMode !== "registered" ||
+      !convertibleGroups.length
+    ) {
       return;
     }
 
@@ -1450,7 +1480,8 @@ export function FreebetConverterMonitorWorkspace({
     }
 
     setSelectedConversion(storedConversion);
-  }, [convertibleGroups, selectedConversion]);
+    setSelectedConversionSource("registered");
+  }, [convertibleGroups, selectedConversion, selectionMode]);
 
   const loadEvents = useCallback(
     async (options: { signal?: AbortSignal; showLoading?: boolean } = {}) => {
@@ -1628,8 +1659,8 @@ export function FreebetConverterMonitorWorkspace({
     return ids;
   }, [rows]);
   const conversionContext = useMemo(
-    () => getConversionContext(selectedConversion),
-    [selectedConversion],
+    () => getConversionContext(selectedConversion, selectedConversionSource),
+    [selectedConversion, selectedConversionSource],
   );
   const counts = useMemo(() => {
     return modeFilters.reduce<Record<ModeFilter, number>>(
@@ -1668,6 +1699,7 @@ export function FreebetConverterMonitorWorkspace({
 
   function handleSelectConversion(group: ConvertibleFreebetGroup) {
     rememberSelectedConversion(group);
+    setSelectedConversionSource("registered");
     setSelectedConversion(group);
     setDetailsGroup(null);
     setCalculatorSelections([]);
@@ -1675,9 +1707,45 @@ export function FreebetConverterMonitorWorkspace({
     setActiveMode("all");
   }
 
+  function handleStartConsultation() {
+    const house = consultationHouse.trim();
+    const freebetValue = toNumberInput(consultationFreebetValue, 0);
+
+    if (!house) {
+      setConsultationError("Selecione a casa da freebet.");
+      return;
+    }
+
+    if (freebetValue <= 0) {
+      setConsultationError("Informe o valor da freebet.");
+      return;
+    }
+
+    clearRememberedSelectedConversion();
+    setConsultationError(null);
+    setSelectedConversionSource("consultation");
+    setSelectedConversion({
+      casa: house,
+      data: "Consulta",
+      ids: [],
+      itens: [],
+      lucro_total: 0,
+      quantidade: 1,
+      valor_total: freebetValue,
+    });
+    setDetailsGroup(null);
+    setCalculatorSelections([]);
+    setHiddenBookmakers([]);
+    setActiveMode("all");
+  }
+
   function handleBackToSelection() {
+    const previousSource = selectedConversionSource;
+
     clearRememberedSelectedConversion();
     setSelectedConversion(null);
+    setSelectedConversionSource("registered");
+    setSelectionMode(previousSource === "consultation" ? "consultation" : "registered");
     setCalculatorSelections([]);
     setHiddenBookmakers([]);
     setFiltersOpen(false);
@@ -1728,89 +1796,220 @@ export function FreebetConverterMonitorWorkspace({
     return (
       <div className="space-y-5">
         <section className="lz-panel rounded-[32px] p-5 md:p-6">
-          <div className="relative z-10">
+          <div className="relative z-10 space-y-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-dim)]">
-                  Fila de freebets
+                  Consultar
                 </p>
                 <h1 className="mt-1 text-2xl font-semibold text-white">
-                  Prontas para conversão
+                  Oportunidades
                 </h1>
+              </div>
+
+              <div className="inline-flex rounded-full border border-white/10 bg-black/15 p-1">
+                {[
+                  { label: "Freebets cadastradas", value: "registered" },
+                  { label: "Consulta", value: "consultation" },
+                ].map((option) => (
+                  <button
+                    aria-pressed={selectionMode === option.value}
+                    className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+                      selectionMode === option.value
+                        ? "lz-button-primary"
+                        : "text-[var(--text-secondary)] hover:text-white"
+                    }`}
+                    key={option.value}
+                    onClick={() => {
+                      setSelectionMode(option.value as SelectionMode);
+                      setDetailsGroup(null);
+                      setConsultationError(null);
+                    }}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="mt-5 rounded-[22px] border border-white/10 bg-black/10 px-3 py-2 md:px-4">
-              {convertibleGroups.length === 0 ? (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5 text-sm text-[var(--text-muted)]">
-                  Nenhuma freebet pronta para conversão.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] table-fixed text-sm">
-                    <colgroup>
-                      <col className="w-[15%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[9%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[20%]" />
-                      <col className="w-[24%]" />
-                    </colgroup>
-                    <thead className="text-[var(--text-dim)]">
-                      <tr className="border-b border-white/10">
-                        <th className="px-2 py-2.5 text-center font-semibold">
-                          Data da coleta
-                        </th>
-                        <th className="px-2 py-2.5 text-center font-semibold">Casa</th>
-                        <th className="px-2 py-2.5 text-center font-semibold">Qtd</th>
-                        <th className="px-2 py-2.5 text-center font-semibold">Valor FB</th>
-                        <th className="px-2 py-2.5 text-center font-semibold">
-                          Resultado coleta
-                        </th>
-                        <th className="px-2 py-2.5 text-center font-semibold">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {convertibleGroups.map((item, index) => (
-                        <tr
-                          className="border-b border-white/8 align-middle transition hover:bg-white/5"
-                          key={getConvertibleGroupKey(item, index)}
-                        >
-                          <td className="px-2 py-2.5 text-center font-semibold text-white">
-                            {item.data}
-                          </td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-white">
-                            {item.casa}
-                          </td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-white">
-                            {formatNumber(item.quantidade)}
-                          </td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-white">
-                            {formatCurrency(item.valor_total)}
-                          </td>
-                          <td
-                            className={`px-2 py-2.5 text-center font-semibold ${getProfitClass(
-                              item.lucro_total,
-                            )}`}
-                          >
-                            {formatCurrency(item.lucro_total)}
-                          </td>
-                          <td className="px-2 py-2.5 text-center">
-                            <button
-                              className="lz-button-primary rounded-full px-3.5 py-2 text-sm font-semibold leading-none"
-                              onClick={() => setDetailsGroup(item)}
-                              type="button"
-                            >
-                              Converter
-                            </button>
-                          </td>
+            {selectionMode === "registered" ? (
+              <div className="rounded-[22px] border border-white/10 bg-black/10 px-3 py-2 md:px-4">
+                {convertibleGroups.length === 0 ? (
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5 text-sm text-[var(--text-muted)]">
+                    Nenhuma freebet pronta para conversão.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-[15%]" />
+                        <col className="w-[16%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[16%]" />
+                        <col className="w-[20%]" />
+                        <col className="w-[24%]" />
+                      </colgroup>
+                      <thead className="text-[var(--text-dim)]">
+                        <tr className="border-b border-white/10">
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Data da coleta
+                          </th>
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Casa
+                          </th>
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Qtd
+                          </th>
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Valor FB
+                          </th>
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Resultado coleta
+                          </th>
+                          <th className="px-2 py-2.5 text-center font-semibold">
+                            Ação
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {convertibleGroups.map((item, index) => (
+                          <tr
+                            className="border-b border-white/8 align-middle transition hover:bg-white/5"
+                            key={getConvertibleGroupKey(item, index)}
+                          >
+                            <td className="px-2 py-2.5 text-center font-semibold text-white">
+                              {item.data}
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-white">
+                              {item.casa}
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-white">
+                              {formatNumber(item.quantidade)}
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-white">
+                              {formatCurrency(item.valor_total)}
+                            </td>
+                            <td
+                              className={`px-2 py-2.5 text-center font-semibold ${getProfitClass(
+                                item.lucro_total,
+                              )}`}
+                            >
+                              {formatCurrency(item.lucro_total)}
+                            </td>
+                            <td className="px-2 py-2.5 text-center">
+                              <button
+                                className="lz-button-primary rounded-full px-3.5 py-2 text-sm font-semibold leading-none"
+                                onClick={() => setDetailsGroup(item)}
+                                type="button"
+                              >
+                                Converter
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <form
+                className="rounded-[26px] border border-white/10 bg-black/10 p-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleStartConsultation();
+                }}
+              >
+                <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_120px_120px_auto] lg:items-end">
+                  <label className="space-y-1.5 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                      Casa
+                    </span>
+                    {bookmakerOptions.length ? (
+                      <LzSelect
+                        className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm font-semibold"
+                        onValueChange={(value) => {
+                          setConsultationHouse(value);
+                          setConsultationError(null);
+                        }}
+                        options={bookmakerOptions}
+                        placeholder="Selecionar casa"
+                        value={consultationHouse}
+                      />
+                    ) : (
+                      <input
+                        className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
+                        onChange={(event) => {
+                          setConsultationHouse(event.target.value);
+                          setConsultationError(null);
+                        }}
+                        placeholder="Nome da casa"
+                        value={consultationHouse}
+                      />
+                    )}
+                  </label>
+
+                  <label className="space-y-1.5 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                      Valor FB
+                    </span>
+                    <div className="flex h-12 w-full items-center gap-2 rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-sm text-[var(--text-secondary)] transition focus-within:border-[rgba(255,139,187,0.45)] focus-within:ring-2 focus-within:ring-[rgba(255,139,187,0.08)]">
+                      <span className="shrink-0 font-semibold">R$</span>
+                      <input
+                        className="min-w-0 flex-1 border-0 bg-transparent text-center text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)]"
+                        inputMode="decimal"
+                        onChange={(event) => {
+                          setConsultationFreebetValue(event.target.value);
+                          setConsultationError(null);
+                        }}
+                        placeholder="0,00"
+                        value={consultationFreebetValue}
+                      />
+                    </div>
+                  </label>
+
+                  <label className="space-y-1.5 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                      Odd min.
+                    </span>
+                    <input
+                      className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
+                      inputMode="decimal"
+                      onChange={(event) => setMinOddValue(event.target.value)}
+                      placeholder="1.50"
+                      value={minOddValue}
+                    />
+                  </label>
+
+                  <label className="space-y-1.5 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                      Odd max.
+                    </span>
+                    <input
+                      className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
+                      inputMode="decimal"
+                      onChange={(event) => setMaxOddValue(event.target.value)}
+                      placeholder="999999"
+                      value={maxOddValue}
+                    />
+                  </label>
+
+                  <button
+                    className="lz-button-primary inline-flex h-12 items-center justify-center rounded-full px-5 text-sm font-semibold"
+                    type="submit"
+                  >
+                    Buscar oportunidades
+                  </button>
                 </div>
-              )}
-            </div>
+
+                {consultationError ? (
+                  <p className="mt-3 text-sm font-medium text-rose-300">
+                    {consultationError}
+                  </p>
+                ) : null}
+              </form>
+            )}
           </div>
         </section>
 
@@ -1835,11 +2034,18 @@ export function FreebetConverterMonitorWorkspace({
                 Converter freebet
               </p>
               <h1 className="mt-1 text-2xl font-semibold text-white">
-                {selectedConversion.casa}
+                {selectedConversionSource === "consultation"
+                  ? "Consulta"
+                  : selectedConversion.casa}
               </h1>
               <p className="mt-1 text-sm font-medium text-[var(--text-secondary)]">
-                {formatFreebetCount(selectedConversion.quantidade)} ·{" "}
-                {formatCurrency(selectedConversion.valor_total)}
+                {selectedConversionSource === "consultation"
+                  ? `${selectedConversion.casa} · ${formatCurrency(
+                      selectedConversion.valor_total,
+                    )}`
+                  : `${formatFreebetCount(selectedConversion.quantidade)} · ${formatCurrency(
+                      selectedConversion.valor_total,
+                    )}`}
               </p>
             </div>
             <button
@@ -1848,27 +2054,41 @@ export function FreebetConverterMonitorWorkspace({
               type="button"
             >
               <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              <span>Trocar freebet</span>
+              <span>
+                {selectedConversionSource === "consultation"
+                  ? "Voltar para consulta"
+                  : "Trocar freebet"}
+              </span>
             </button>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[110px_120px_130px_190px]">
-            <input
-              aria-label="Odd mínima da freebet"
-              className="h-12 rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
-              inputMode="decimal"
-              onChange={(event) => setMinOddValue(event.target.value)}
-              placeholder="Min"
-              value={minOddValue}
-            />
-            <input
-              aria-label="Odd máxima da freebet"
-              className="h-12 rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
-              inputMode="decimal"
-              onChange={(event) => setMaxOddValue(event.target.value)}
-              placeholder="Max"
-              value={maxOddValue}
-            />
+          <div className="grid gap-3 lg:grid-cols-[120px_120px_130px_190px] lg:items-end">
+            <label className="space-y-1.5 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                Odd min.
+              </span>
+              <input
+                aria-label="Odd mínima da freebet"
+                className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
+                inputMode="decimal"
+                onChange={(event) => setMinOddValue(event.target.value)}
+                placeholder="1.50"
+                value={minOddValue}
+              />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                Odd max.
+              </span>
+              <input
+                aria-label="Odd máxima da freebet"
+                className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
+                inputMode="decimal"
+                onChange={(event) => setMaxOddValue(event.target.value)}
+                placeholder="999999"
+                value={maxOddValue}
+              />
+            </label>
             <button
               aria-expanded={filtersOpen}
               className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${

@@ -8,9 +8,7 @@ import { createPortal } from "react-dom";
 import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
-import { copyTextToClipboard } from "../_components/clipboard";
 import { ProcedureModal } from "../_components/procedure-modal";
-import { buildProcedureShareUrl } from "../_components/procedure-share";
 import {
   type ProcedureShareProtectionDraft,
   type ProcedureShareValues,
@@ -250,20 +248,25 @@ function buildDetailedDefaultValues(
   const collectionProtections = collectionEntries.filter(
     (entry) => entry.tipo_entrada === "protecao",
   );
+  const hasCollectionEntries = collectionEntries.length > 0;
+  const hasConversionEntries = conversionEntries.length > 0;
+  const freebetVisibleScope =
+    hasCollectionEntries && hasConversionEntries
+      ? "all"
+      : procedure.tipo_procedimento === "Coletar Freebet"
+        ? "collection"
+        : procedure.tipo_procedimento === "Converter Freebet" &&
+            !hasCollectionEntries
+          ? "conversion"
+          : "all";
 
   return {
     ...baseDefaults,
     collectionDate: getDateInputByScope(procedure, "freebet_collection"),
     conversionDate: getDateInputByScope(procedure, "freebet_conversion"),
-    freebetCollectionOpen: collectionEntries.length > 0,
-    freebetConversionOpen: conversionEntries.length > 0,
-    freebetVisibleScope:
-      procedure.tipo_procedimento === "Coletar Freebet"
-        ? "collection"
-        : procedure.tipo_procedimento === "Converter Freebet" &&
-            collectionEntries.length === 0
-          ? "conversion"
-          : "all",
+    freebetCollectionOpen: hasCollectionEntries,
+    freebetConversionOpen: hasConversionEntries,
+    freebetVisibleScope,
     collectionHouses: [
       collectionPrimary?.casa ?? "",
       ...collectionProtections.map((entry) => entry.casa),
@@ -326,7 +329,7 @@ export function buildProcedureDefaultValues(
 }
 
 function getMenuHeight(hasObservation: boolean, hasDetails: boolean) {
-  return 192 + (hasObservation ? 44 : 0) + (hasDetails ? 44 : 0);
+  return 148 + (hasObservation ? 44 : 0) + (hasDetails ? 44 : 0);
 }
 
 function getMenuPosition(
@@ -513,20 +516,6 @@ export function ProcedureRowActions({
     });
   }
 
-  async function handleCopyProcedure() {
-    setMenuOpen(false);
-    const copied = await copyTextToClipboard(
-      buildProcedureShareUrl(procedureDefaultValues),
-    );
-
-    showToast({
-      title: copied
-        ? "Link do procedimento copiado."
-        : "Não foi possível copiar o link.",
-      tone: copied ? "success" : "error",
-    });
-  }
-
   return (
     <>
       <ProcedureModal
@@ -606,14 +595,6 @@ export function ProcedureRowActions({
                 type="button"
               >
                 Duplicar
-              </button>
-
-              <button
-                className="block w-full rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
-                onClick={handleCopyProcedure}
-                type="button"
-              >
-                Copiar
               </button>
 
               {hasObservation ? (

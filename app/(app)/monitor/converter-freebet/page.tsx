@@ -13,6 +13,7 @@ export default async function MonitorConverterFreebetPage() {
   return (
     <MonitorShell activeTab="converter-freebet">
       <FreebetConverterMonitorWorkspace
+        bookmakers={data.bookmakers}
         convertibleGroups={data.convertibleGroups}
       />
     </MonitorShell>

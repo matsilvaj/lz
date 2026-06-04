@@ -66,16 +66,16 @@ export function VerticalBarChart({
         style={{ width: `max(100%, ${getChartMinWidth(data.length)}px)` }}
       >
       <ResponsiveContainer height="100%" width="100%">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 18 }}>
+        <BarChart data={data} margin={{ top: 10, right: 34, left: 0, bottom: 24 }}>
           <CartesianGrid stroke={THEME.grid} strokeDasharray="4 4" vertical={false} />
           <XAxis
             axisLine={false}
             dataKey="label"
             fontSize={11}
             interval={0}
-            height={34}
+            height={42}
             minTickGap={0}
-            padding={{ left: 4, right: 4 }}
+            padding={{ left: 4, right: 18 }}
             stroke={THEME.text}
             tickLine={false}
             tickMargin={10}
@@ -157,7 +157,7 @@ export function LineChart({
         style={{ width: `max(100%, ${getChartMinWidth(data.length)}px)` }}
       >
       <ResponsiveContainer height="100%" width="100%">
-        <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 18 }}>
+        <AreaChart data={data} margin={{ top: 10, right: 34, left: 0, bottom: 24 }}>
           <defs>
             <linearGradient id="colorValue" x1="0" x2="0" y1="0" y2="1">
               <stop offset="5%" stopColor={THEME.accent} stopOpacity={0.3} />
@@ -170,9 +170,9 @@ export function LineChart({
             dataKey="label"
             fontSize={11}
             interval={0}
-            height={34}
+            height={42}
             minTickGap={0}
-            padding={{ left: 4, right: 4 }}
+            padding={{ left: 4, right: 18 }}
             stroke={THEME.text}
             tickLine={false}
             tickMargin={10}

@@ -1,6 +1,6 @@
 "use client";
 
-import { calculateSurebet } from "@/core";
+import { FREEBET_CONDITION_CONVERSION_ONLY, calculateSurebet } from "@/core";
 import { Plus, RotateCcw } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -437,6 +437,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
     const freebetValue = Number(searchParams.get("freebetValue") ?? 0);
     const entryValue = Number(searchParams.get("entryValue") ?? 0);
     const conversionBatchId = searchParams.get("conversionBatchId") ?? "";
+    const freebetCondition = searchParams.get("freebetCondition") ?? "";
     const originIds = searchParams
       .getAll("originIds")
       .map((value) => Number.parseInt(value, 10))
@@ -446,6 +447,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       freebetValue,
       entryValue,
       conversionBatchId,
+      freebetCondition,
       originIds,
     });
 
@@ -454,6 +456,7 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       house,
       freebetValue: Number.isFinite(freebetValue) ? freebetValue : 0,
       entryValue: Number.isFinite(entryValue) ? entryValue : 0,
+      freebetCondition,
       conversionBatchId,
       originIds,
     };
@@ -810,6 +813,11 @@ export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
       hitDouble: false,
       freebetHouse,
       freebetValue,
+      freebetCondition:
+        conversionPreset?.freebetCondition ||
+        (conversionPreset && !conversionPreset.originIds.length
+          ? FREEBET_CONDITION_CONVERSION_ONLY
+          : undefined),
       conversionBatchId: conversionPreset?.conversionBatchId ?? "",
       originIds: conversionPreset?.originIds ?? [],
       selectedHouses: procedureSelectedHouses,
