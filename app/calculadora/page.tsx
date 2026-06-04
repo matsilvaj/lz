@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { getCalculatorPageData } from "@/lib/server/app-data";
 
@@ -75,7 +76,9 @@ export default async function CalculatorPage() {
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
         <div className="lz-page-enter">
-          <CalculatorWorkspace bookmakers={data.bookmakers} />
+          <Suspense fallback={null}>
+            <CalculatorWorkspace bookmakers={data.bookmakers} />
+          </Suspense>
         </div>
       </main>
     </div>
