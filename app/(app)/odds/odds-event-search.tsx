@@ -142,9 +142,13 @@ type OddsRefreshResult = {
   oddsVersion: string | null;
 };
 
-type DatePreset = "today" | "tomorrow";
+type DatePreset = "all" | "today" | "tomorrow";
+type DateRangePreset = Exclude<DatePreset, "all">;
 type EventListSortMode = "league" | "nearest" | "farthest";
 type EventsRequest =
+  | {
+      kind: "available";
+    }
   | {
       kind: "search";
       search: string;
@@ -152,7 +156,7 @@ type EventsRequest =
   | {
       from: string;
       kind: "date";
-      preset: DatePreset;
+      preset: DateRangePreset;
       to: string;
     };
 type PaCategory = "SEM_PA" | "COM_PA";
@@ -181,8 +185,9 @@ type LeagueGroup = {
 };
 
 const selections: Selection[] = ["HOME", "DRAW", "AWAY"];
-const datePresets: DatePreset[] = ["today", "tomorrow"];
+const datePresets: DatePreset[] = ["all", "today", "tomorrow"];
 const datePresetLabels: Record<DatePreset, string> = {
+  all: "Todos",
   today: "Hoje",
   tomorrow: "Amanhã",
 };
@@ -440,6 +445,43 @@ function formatTime(value: string | null) {
   return timeFormatter.format(date);
 }
 
+function formatDateParam(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getRelativeDateLabel(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const eventDate = new Date(value);
+
+  if (Number.isNaN(eventDate.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const eventKey = formatDateParam(eventDate);
+
+  if (eventKey === formatDateParam(today)) {
+    return "Hoje";
+  }
+
+  if (eventKey === formatDateParam(tomorrow)) {
+    return "Amanhã";
+  }
+
+  return null;
+}
+
 function formatLastOddsUpdate(value: string | null) {
   if (!value) return null;
 
@@ -545,7 +587,7 @@ function getEventHref(event: OddsEvent, basePath: string) {
   return `${basePath}/${encodeURIComponent(event.fixture_id)}`;
 }
 
-function getDatePresetRange(preset: DatePreset) {
+function getDatePresetRange(preset: DateRangePreset) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
 
@@ -557,8 +599,8 @@ function getDatePresetRange(preset: DatePreset) {
   end.setDate(end.getDate() + 1);
 
   return {
-    from: start.toISOString(),
-    to: end.toISOString(),
+    from: formatDateParam(start),
+    to: formatDateParam(end),
   };
 }
 
@@ -567,6 +609,10 @@ function getEventsRequestParams(request: EventsRequest) {
 
   if (request.kind === "search") {
     params.set("q", request.search);
+    return params;
+  }
+
+  if (request.kind === "available") {
     return params;
   }
 
@@ -589,6 +635,10 @@ function isSameEventsRequest(
 
   if (left.kind === "date" && right.kind === "date") {
     return left.preset === right.preset && left.from === right.from && left.to === right.to;
+  }
+
+  if (left.kind === "available" && right.kind === "available") {
+    return true;
   }
 
   return false;
@@ -1359,12 +1409,17 @@ function EventCard({
   event,
   eventBasePath,
   showLeague = true,
+  showRelativeDateLabel = false,
 }: {
   event: OddsEvent;
   eventBasePath: string;
   showLeague?: boolean;
+  showRelativeDateLabel?: boolean;
 }) {
   const teams = formatFixtureTeams(event);
+  const relativeDateLabel = showRelativeDateLabel
+    ? getRelativeDateLabel(event.starts_at)
+    : null;
 
   return (
     <article
@@ -1381,6 +1436,11 @@ function EventCard({
           <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
             {formatDate(event.starts_at)}
           </span>
+          {relativeDateLabel ? (
+            <span className="inline-flex rounded-full border border-[rgba(45,212,191,0.28)] bg-[rgba(45,212,191,0.09)] px-3 py-1 text-[var(--positive)]">
+              {relativeDateLabel}
+            </span>
+          ) : null}
           <span className="inline-flex rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[var(--text-muted)]">
             {formatTime(event.starts_at)}
           </span>
@@ -1688,9 +1748,11 @@ function LeagueIcon({
 function LeagueEventsSection({
   group,
   eventBasePath,
+  showRelativeDateLabel,
 }: {
   group: LeagueGroup;
   eventBasePath: string;
+  showRelativeDateLabel: boolean;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -1729,6 +1791,7 @@ function LeagueEventsSection({
             eventBasePath={eventBasePath}
             key={event.fixture_id}
             showLeague={false}
+            showRelativeDateLabel={showRelativeDateLabel}
           />
         ))}
       </div>
@@ -2614,7 +2677,7 @@ export function OddsEventSearch({
   eventBasePath?: string;
 }) {
   const [query, setQuery] = useState("");
-  const [activeDatePreset, setActiveDatePreset] = useState<DatePreset | null>("today");
+  const [activeDatePreset, setActiveDatePreset] = useState<DatePreset | null>("all");
   const [activeListSort, setActiveListSort] =
     useState<EventListSortMode>("league");
   const [state, setState] = useState<SearchState>({
@@ -2766,6 +2829,10 @@ export function OddsEventSearch({
       preset: DatePreset,
       options: { signal?: AbortSignal; showLoading?: boolean } = {},
     ) => {
+      if (preset === "all") {
+        return loadEvents({ kind: "available" }, options);
+      }
+
       const range = getDatePresetRange(preset);
       const request: EventsRequest = {
         from: range.from,
@@ -2798,8 +2865,8 @@ export function OddsEventSearch({
     setQuery(nextQuery);
 
     if (trimmedQuery.length === 0) {
-      setActiveDatePreset("today");
-      void loadDatePreset("today");
+      setActiveDatePreset("all");
+      void loadDatePreset("all");
       return;
     }
 
@@ -2815,7 +2882,7 @@ export function OddsEventSearch({
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
-      void loadDatePreset("today", {
+      void loadDatePreset("all", {
         showLoading: false,
         signal: controller.signal,
       });
@@ -2955,8 +3022,10 @@ export function OddsEventSearch({
   useMonitorOddsStatusFeed(canPollStatus, handleStatusUpdate);
 
   const hasQuery = query.trim().length >= 2;
-  const hasDatePreset = activeDatePreset !== null;
-  const hasActiveList = hasQuery || hasDatePreset;
+  const hasActiveDatePreset = activeDatePreset !== null;
+  const hasDatePreset = activeDatePreset !== null && activeDatePreset !== "all";
+  const hasAllPreset = activeDatePreset === "all";
+  const hasActiveList = hasQuery || hasActiveDatePreset;
   const events = hasActiveList ? state.events : emptyOddsEvents;
   const sortedEvents = useMemo(
     () => sortEventsForList(events, activeListSort),
@@ -2972,6 +3041,7 @@ export function OddsEventSearch({
   const emptyMessage = hasDatePreset
     ? `Nenhum jogo encontrado para ${activeDateLabel}.`
     : "Nenhum evento encontrado.";
+  const showRelativeDateLabel = hasAllPreset || hasQuery;
 
   return (
     <div className="space-y-5">
@@ -2995,7 +3065,7 @@ export function OddsEventSearch({
               value={query}
             />
 
-            <div className="grid gap-3 sm:grid-cols-[repeat(2,minmax(112px,1fr))_minmax(190px,1.25fr)] xl:grid-cols-[112px_120px_220px]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[112px_112px_120px_220px]">
               {datePresets.map((preset) => (
                 <DatePresetButton
                   active={activeDatePreset === preset}
@@ -3037,6 +3107,7 @@ export function OddsEventSearch({
               eventBasePath={eventBasePath}
               group={group}
               key={group.key}
+              showRelativeDateLabel={showRelativeDateLabel}
             />
           ))}
         </section>
@@ -3049,6 +3120,7 @@ export function OddsEventSearch({
               event={event}
               eventBasePath={eventBasePath}
               key={event.fixture_id}
+              showRelativeDateLabel={showRelativeDateLabel}
             />
           ))}
         </section>

@@ -43,6 +43,7 @@ import {
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
 
+type DateFilter = "all" | "today" | "tomorrow";
 type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
 type SortMode =
   | "profit_desc"
@@ -103,6 +104,12 @@ type SearchState = {
 };
 
 const modeFilters: ModeFilter[] = ["all", "pa_dois_lados", "pa_um_lado", "sem_pa"];
+const dateFilters: DateFilter[] = ["today", "tomorrow", "all"];
+const dateFilterLabels: Record<DateFilter, string> = {
+  all: "Todos",
+  today: "Hoje",
+  tomorrow: "Amanhã",
+};
 
 const sortLabels: Record<SortMode, string> = {
   farthest: "Mais distante",
@@ -304,6 +311,69 @@ function formatTime(value: string) {
   }).format(date);
 }
 
+function formatDateParam(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDateFilterKey(filter: DateFilter) {
+  if (filter === "all") {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+
+  if (filter === "tomorrow") {
+    date.setDate(date.getDate() + 1);
+  }
+
+  return formatDateParam(date);
+}
+
+function isEventInDateFilter(event: DuploEvent, filter: DateFilter) {
+  const filterKey = getDateFilterKey(filter);
+
+  if (!filterKey) {
+    return true;
+  }
+
+  const eventDate = new Date(event.starts_at);
+
+  if (Number.isNaN(eventDate.getTime())) {
+    return false;
+  }
+
+  return formatDateParam(eventDate) === filterKey;
+}
+
+function getRelativeDateLabel(value: string) {
+  const eventDate = new Date(value);
+
+  if (Number.isNaN(eventDate.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const eventKey = formatDateParam(eventDate);
+
+  if (eventKey === formatDateParam(today)) {
+    return "Hoje";
+  }
+
+  if (eventKey === formatDateParam(tomorrow)) {
+    return "Amanhã";
+  }
+
+  return null;
+}
+
 function formatLeagueLine(event: DuploEvent) {
   const leagueName = formatCompetitionName(event.league_name, event.league_country);
   const country = formatLeagueCountryName(event.league_country);
@@ -494,12 +564,14 @@ function sortSignalRows(rows: SignalRow[], mode: SortMode) {
 
 function getSignalRows(
   events: DuploEvent[],
+  dateFilter: DateFilter,
   mode: ModeFilter,
   hiddenBookmakers: ReadonlySet<string>,
   selectedLeagueKeys: ReadonlySet<string>,
   sortMode: SortMode = "profit_desc",
 ): SignalRow[] {
   const rows = events
+    .filter((event) => isEventInDateFilter(event, dateFilter))
     .filter(
       (event) =>
         selectedLeagueKeys.size === 0 ||
@@ -551,6 +623,31 @@ function ModeButton({
   );
 }
 
+function DateFilterButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold transition ${
+        active
+          ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
+          : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
 function BookmakerToggleButton({
   active,
   name,
@@ -578,6 +675,7 @@ function BookmakerToggleButton({
 
 function FiltersDialog({
   activeMode,
+  activeDateFilter,
   availableBookmakers,
   availableLeagues,
   counts,
@@ -585,12 +683,14 @@ function FiltersDialog({
   selectedLeagueKeys,
   onClose,
   onClearLeagues,
+  onDateFilterChange,
   onModeChange,
   onReset,
   onToggleLeague,
   onToggleBookmaker,
 }: {
   activeMode: ModeFilter;
+  activeDateFilter: DateFilter;
   availableBookmakers: BookmakerFilterOption[];
   availableLeagues: LeagueFilterOption[];
   counts: Record<ModeFilter, number>;
@@ -598,6 +698,7 @@ function FiltersDialog({
   selectedLeagueKeys: ReadonlySet<string>;
   onClose: () => void;
   onClearLeagues: () => void;
+  onDateFilterChange: (filter: DateFilter) => void;
   onModeChange: (mode: ModeFilter) => void;
   onReset: () => void;
   onToggleLeague: (leagueKey: string) => void;
@@ -630,17 +731,41 @@ function FiltersDialog({
               Monitor de duplo
             </h2>
           </div>
-          <button
-            aria-label="Fechar filtros"
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-            onClick={onClose}
-            type="button"
-          >
-            <X aria-hidden="true" className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="inline-flex h-11 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-4 text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              onClick={onReset}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Limpar filtros</span>
+            </button>
+            <button
+              aria-label="Fechar filtros"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              onClick={onClose}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 space-y-5">
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-white">Período</h3>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {dateFilters.map((filter) => (
+                <DateFilterButton
+                  active={activeDateFilter === filter}
+                  key={filter}
+                  label={dateFilterLabels[filter]}
+                  onClick={() => onDateFilterChange(filter)}
+                />
+              ))}
+            </div>
+          </section>
+
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-white">Tipo de sinal</h3>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -684,17 +809,7 @@ function FiltersDialog({
           </section>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-white">Ocultar casas</h3>
-              <button
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-                onClick={onReset}
-                type="button"
-              >
-                <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                <span>Limpar</span>
-              </button>
-            </div>
+            <h3 className="text-sm font-semibold text-white">Ocultar casas</h3>
 
             {availableBookmakers.length ? (
               <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
@@ -934,13 +1049,18 @@ function SignalCard({
   onToggleCalculator,
   row,
   selectedIds,
+  showRelativeDateLabel,
 }: {
   onToggleCalculator: (row: SignalRow) => void;
   row: SignalRow;
   selectedIds: ReadonlySet<string>;
+  showRelativeDateLabel: boolean;
 }) {
   const { event, opportunity } = row;
   const teams = formatFixtureTeams(event);
+  const relativeDateLabel = showRelativeDateLabel
+    ? getRelativeDateLabel(event.starts_at)
+    : null;
   const opportunitySelections = getOpportunityCalculatorSelections(
     event.fixture_id,
     opportunity,
@@ -970,6 +1090,11 @@ function SignalCard({
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
               {formatDate(event.starts_at)}
             </span>
+            {relativeDateLabel ? (
+              <span className="rounded-full border border-[rgba(45,212,191,0.28)] bg-[rgba(45,212,191,0.09)] px-3 py-1 text-[var(--positive)]">
+                {relativeDateLabel}
+              </span>
+            ) : null}
             <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1">
               {formatTime(event.starts_at)}
             </span>
@@ -1032,6 +1157,7 @@ function SignalSkeleton() {
 
 export function DoubleMonitorWorkspace() {
   const [query, setQuery] = useState("");
+  const [activeDateFilter, setActiveDateFilter] = useState<DateFilter>("all");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
   const [selectedLeagueKeys, setSelectedLeagueKeys] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -1180,13 +1306,17 @@ export function DoubleMonitorWorkspace() {
     };
   }, [loadEvents]);
 
+  const dateFilteredEvents = useMemo(
+    () => state.events.filter((event) => isEventInDateFilter(event, activeDateFilter)),
+    [activeDateFilter, state.events],
+  );
   const availableBookmakers = useMemo(
-    () => getAvailableBookmakers(state.events),
-    [state.events],
+    () => getAvailableBookmakers(dateFilteredEvents),
+    [dateFilteredEvents],
   );
   const availableLeagues = useMemo(
-    () => getAvailableLeagues(state.events),
-    [state.events],
+    () => getAvailableLeagues(dateFilteredEvents),
+    [dateFilteredEvents],
   );
   const activeHiddenBookmakers = useMemo(() => {
     const availableKeys = new Set(availableBookmakers.map((bookmaker) => bookmaker.key));
@@ -1200,6 +1330,7 @@ export function DoubleMonitorWorkspace() {
     () =>
       getSignalRows(
         state.events,
+        activeDateFilter,
         activeMode,
         activeHiddenBookmakers,
         activeSelectedLeagueKeys,
@@ -1207,6 +1338,7 @@ export function DoubleMonitorWorkspace() {
       ),
     [
       activeHiddenBookmakers,
+      activeDateFilter,
       activeMode,
       activeSelectedLeagueKeys,
       sortMode,
@@ -1224,6 +1356,7 @@ export function DoubleMonitorWorkspace() {
       (accumulator, mode) => {
         accumulator[mode] = getSignalRows(
           state.events,
+          activeDateFilter,
           mode,
           activeHiddenBookmakers,
           activeSelectedLeagueKeys,
@@ -1237,7 +1370,12 @@ export function DoubleMonitorWorkspace() {
         sem_pa: 0,
       },
     );
-  }, [activeHiddenBookmakers, activeSelectedLeagueKeys, state.events]);
+  }, [
+    activeDateFilter,
+    activeHiddenBookmakers,
+    activeSelectedLeagueKeys,
+    state.events,
+  ]);
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1272,7 +1410,12 @@ export function DoubleMonitorWorkspace() {
     );
   }
 
+  function handleDateFilterChange(filter: DateFilter) {
+    setActiveDateFilter(filter);
+  }
+
   function handleResetFilters() {
+    setActiveDateFilter("all");
     setActiveMode("all");
     setHiddenBookmakers([]);
     setSelectedLeagueKeys([]);
@@ -1330,6 +1473,7 @@ export function DoubleMonitorWorkspace() {
                 aria-expanded={filtersOpen}
                 className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                   filtersOpen ||
+                  activeDateFilter !== "all" ||
                   activeMode !== "all" ||
                   activeHiddenBookmakers.size > 0 ||
                   activeSelectedLeagueKeys.size > 0
@@ -1358,6 +1502,7 @@ export function DoubleMonitorWorkspace() {
       {filtersOpen ? (
         <FiltersDialog
           activeMode={activeMode}
+          activeDateFilter={activeDateFilter}
           availableBookmakers={availableBookmakers}
           availableLeagues={availableLeagues}
           counts={counts}
@@ -1365,6 +1510,7 @@ export function DoubleMonitorWorkspace() {
           selectedLeagueKeys={activeSelectedLeagueKeys}
           onClearLeagues={() => setSelectedLeagueKeys([])}
           onClose={() => setFiltersOpen(false)}
+          onDateFilterChange={handleDateFilterChange}
           onModeChange={setActiveMode}
           onReset={handleResetFilters}
           onToggleLeague={handleToggleLeague}
@@ -1394,6 +1540,7 @@ export function DoubleMonitorWorkspace() {
                   onToggleCalculator={handleToggleCalculatorRow}
                   row={row}
                   selectedIds={selectedCalculatorIds}
+                  showRelativeDateLabel={activeDateFilter === "all"}
                 />
               ))
             ) : (
