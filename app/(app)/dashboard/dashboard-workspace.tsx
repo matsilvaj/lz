@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { DatePickerField } from "../_components/date-picker-field";
 import { LzSelect } from "../_components/lz-select";
 import {
   SectionCard,
@@ -141,11 +142,29 @@ function sortYearsDesc(left: string, right: string) {
   return Number(right) - Number(left);
 }
 
+function pluralize(value: number, singular: string, plural: string) {
+  return value === 1 ? singular : plural;
+}
+
 function buildCurrentReferenceMonthId() {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
 
   return `month:${month}/${now.getFullYear()}`;
+}
+
+function getCustomPeriodDates(periodId = "") {
+  const [type, start, end] = periodId.split(":");
+
+  if (type === "day" && start) {
+    return { end: start, start };
+  }
+
+  if (type === "range" && start) {
+    return { end: end || start, start };
+  }
+
+  return { end: "", start: "" };
 }
 
 function ChartSkeleton() {
@@ -187,32 +206,34 @@ function getColorClass(value: number) {
 }
 
 function getPeriodUnitLabel(period: DashboardPeriodOption | undefined) {
-  return ["days", "month"].includes(period?.type ?? "")
+  return ["day", "days", "range", "month"].includes(period?.type ?? "")
     ? "dias com operação"
     : "meses com operação";
 }
 
 function getAverageCardLabel(period: DashboardPeriodOption | undefined) {
-  return ["days", "month"].includes(period?.type ?? "")
+  return ["day", "days", "range", "month"].includes(period?.type ?? "")
     ? "Média diária"
     : "Média mensal";
 }
 
 function getEvolutionTitle(period: DashboardPeriodOption | undefined) {
+  if (period?.type === "day") return "Evolução do dia";
   if (period?.type === "days") return "Evolução dos últimos 7 dias";
+  if (period?.type === "range") return "Evolução do período";
   if (period?.type === "year") return "Evolução anual";
   if (period?.type === "all") return "Evolução geral";
   return "Evolução mensal";
 }
 
 function getProfitChartTitle(period: DashboardPeriodOption | undefined) {
-  return ["days", "month"].includes(period?.type ?? "")
+  return ["day", "days", "range", "month"].includes(period?.type ?? "")
     ? "Lucro diário"
     : "Lucro por mês";
 }
 
 function getVolumeChartTitle(period: DashboardPeriodOption | undefined) {
-  return ["days", "month"].includes(period?.type ?? "")
+  return ["day", "days", "range", "month"].includes(period?.type ?? "")
     ? "Volume diário"
     : "Volume por mês";
 }
@@ -241,11 +262,13 @@ function DashboardMetricCard({
 }
 
 function DashboardPeriodPicker({
+  currentPeriod,
   id,
   onValueChange,
   options,
   value,
 }: {
+  currentPeriod: DashboardPeriodOption | null;
   id: string;
   onValueChange: (value: string) => void;
   options: DashboardPeriodOption[];
@@ -254,11 +277,26 @@ function DashboardPeriodPicker({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [panelStyle, setPanelStyle] = useState({ top: 0, left: 0, width: 360 });
+  const [panelStyle, setPanelStyle] = useState({
+    maxHeight: 480,
+    top: 0,
+    left: 0,
+    width: 360,
+  });
   const selectedOption = useMemo(
-    () => options.find((option) => option.id === value) ?? options[0] ?? null,
-    [options, value],
+    () =>
+      options.find((option) => option.id === value) ??
+      (currentPeriod?.id === value ? currentPeriod : null) ??
+      options[0] ??
+      null,
+    [currentPeriod, options, value],
   );
+  const selectedCustomDates = useMemo(
+    () => getCustomPeriodDates(selectedOption?.id),
+    [selectedOption?.id],
+  );
+  const [customRangeEnd, setCustomRangeEnd] = useState(selectedCustomDates.end);
+  const [customRangeStart, setCustomRangeStart] = useState(selectedCustomDates.start);
   const monthOptions = useMemo(
     () => options.filter((option) => option.type === "month"),
     [options],
@@ -321,14 +359,24 @@ function DashboardPeriodPicker({
         return;
       }
 
-      const width = Math.min(380, Math.max(rect.width, window.innerWidth - 32));
+      const viewportPadding = 16;
+      const width = Math.min(430, Math.max(rect.width, window.innerWidth - 32));
       const left = Math.min(
-        Math.max(rect.left, 16),
-        Math.max(window.innerWidth - width - 16, 16),
+        Math.max(rect.left, viewportPadding),
+        Math.max(window.innerWidth - width - viewportPadding, viewportPadding),
       );
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const preferredHeight = Math.min(560, window.innerHeight - viewportPadding * 2);
+      const opensAbove = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+      const availableHeight = opensAbove ? spaceAbove : spaceBelow;
+      const maxHeight = Math.max(320, Math.min(preferredHeight, availableHeight - 10));
 
       setPanelStyle({
-        top: rect.bottom + 10,
+        maxHeight,
+        top: opensAbove
+          ? Math.max(viewportPadding, rect.top - maxHeight - 10)
+          : rect.bottom + 10,
         left,
         width,
       });
@@ -338,6 +386,13 @@ function DashboardPeriodPicker({
       const target = event.target;
 
       if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (
+        target instanceof Element &&
+        target.closest("[data-lz-date-picker-popover]")
+      ) {
         return;
       }
 
@@ -373,10 +428,27 @@ function DashboardPeriodPicker({
     setOpen(false);
   }
 
+  function handleApplyCustomRange() {
+    if (!customRangeStart) {
+      return;
+    }
+
+    const rawEnd = customRangeEnd || customRangeStart;
+    const [start, end] =
+      customRangeStart <= rawEnd
+        ? [customRangeStart, rawEnd]
+        : [rawEnd, customRangeStart];
+
+    onValueChange(`range:${start}:${end}`);
+    setOpen(false);
+  }
+
   function handleToggleOpen() {
     if (!open) {
       setActiveMode(getPeriodMode(selectedOption?.type));
       setSelectedYear(selectedPeriodYear);
+      setCustomRangeStart(selectedCustomDates.start);
+      setCustomRangeEnd(selectedCustomDates.end);
     }
 
     setOpen((current) => !current);
@@ -431,8 +503,9 @@ function DashboardPeriodPicker({
               }}
             >
               <div
-                className="max-h-[78vh] overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+                className="lz-floating-panel overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-xl"
                 ref={panelRef}
+                style={{ maxHeight: `${panelStyle.maxHeight}px` }}
               >
                 <div className="grid grid-cols-2 gap-2">
                   {daysOption ? (
@@ -554,6 +627,35 @@ function DashboardPeriodPicker({
                   </div>
                 ) : null}
 
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+                    Período específico
+                  </p>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <DatePickerField
+                      className="h-11 rounded-full py-0 text-sm"
+                      onChange={setCustomRangeStart}
+                      placeholder="Início"
+                      value={customRangeStart}
+                    />
+                    <DatePickerField
+                      className="h-11 rounded-full py-0 text-sm"
+                      onChange={setCustomRangeEnd}
+                      placeholder="Fim"
+                      value={customRangeEnd}
+                    />
+                  </div>
+
+                  <button
+                    className="lz-button-secondary mt-3 h-11 w-full rounded-full px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
+                    disabled={!customRangeStart}
+                    onClick={handleApplyCustomRange}
+                    type="button"
+                  >
+                    Aplicar período
+                  </button>
+                </div>
               </div>
             </div>,
             document.body,
@@ -684,18 +786,28 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
         <DashboardMetricCard
           label="Freebets em aberto"
           value={formatNumber(data.openFreebets.openFreebets)}
-          helper={`${formatNumber(data.openFreebets.openFreebetsReady)} prontas (${formatCurrency(data.openFreebets.openFreebetsReadyValue)}) / ${formatNumber(data.openFreebets.openFreebetsPending)} aguardando`}
+          helper={`${formatNumber(data.openFreebets.openFreebetsReady)} ${pluralize(
+            data.openFreebets.openFreebetsReady,
+            "pronta",
+            "prontas",
+          )} (${formatCurrency(data.openFreebets.openFreebetsReadyValue)}) / ${formatNumber(
+            data.openFreebets.openFreebetsPending,
+          )} ${pluralize(
+            data.openFreebets.openFreebetsPending,
+            "aguardando",
+            "aguardando",
+          )}`}
         />
       </div>
 
       <div
         aria-busy={periodLoading}
-        className="lz-panel flex flex-col gap-3 rounded-[28px] px-4 py-4 xl:flex-row xl:items-center xl:justify-between"
+        className="lz-panel grid gap-3 rounded-[28px] px-4 py-4 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center"
       >
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:flex-nowrap">
           {DASHBOARD_TABS.map((tab) => (
             <button
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              className={`rounded-full px-4 py-2 text-sm font-medium transition sm:min-w-[92px] ${
                 activeTab === tab.id
                   ? "lz-button-primary"
                   : "lz-button-secondary"
@@ -709,15 +821,16 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
           ))}
         </div>
 
-        <div className="flex w-full flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center">
+        <div className="grid w-full gap-3 lg:grid-cols-2 xl:ml-auto xl:max-w-[900px]">
           <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">
             <label
-              className="text-sm font-medium text-[var(--text-secondary)]"
+              className="shrink-0 text-sm font-medium text-[var(--text-secondary)]"
               htmlFor="dashboard-period-filter"
             >
               Período
             </label>
             <DashboardPeriodPicker
+              currentPeriod={activePeriod ?? null}
               id="dashboard-period-filter"
               onValueChange={updateSelectedPeriod}
               options={data.periodOptions}
@@ -728,13 +841,13 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
           {activeTab !== "freebets" ? (
             <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">
               <label
-                className="text-sm font-medium text-[var(--text-secondary)]"
+                className="shrink-0 text-sm font-medium text-[var(--text-secondary)]"
                 htmlFor="dashboard-procedure-filter"
               >
                 Procedimento
               </label>
               <LzSelect
-                className="w-full rounded-full px-4 py-2 text-sm sm:min-w-[240px]"
+                className="w-full rounded-full px-4 py-2 text-sm sm:min-w-[220px]"
                 id="dashboard-procedure-filter"
                 onValueChange={(value) =>
                   startChartTransition(() => setSelectedFilter(value))

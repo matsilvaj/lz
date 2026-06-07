@@ -230,7 +230,8 @@ export function DatePickerField({
       {open && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed z-[80] rounded-[28px] border border-white/10 bg-[rgba(20,10,16,0.98)] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.46)] backdrop-blur-2xl"
+              className="lz-floating-panel fixed z-[120] rounded-[28px] border border-white/10 bg-[rgba(20,10,16,0.98)] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.46)] backdrop-blur-2xl"
+              data-lz-date-picker-popover="true"
               ref={popoverRef}
               style={{
                 left: popoverPosition.left,

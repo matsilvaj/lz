@@ -1,5 +1,5 @@
 export const appNavigationItems = [
-  { href: "/monitor", label: "Monitor" },
+  { href: "/monitor", label: "Monitor de ODDs" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/procedimentos", label: "Procedimentos" },
   { href: "/freebets", label: "Freebets" },

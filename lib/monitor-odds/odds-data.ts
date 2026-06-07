@@ -857,10 +857,13 @@ export async function getOddsEventByFixtureId(fixtureId: string) {
   }
 
   const status = await getOddsFeedStatus();
-  const fixture = await getCachedOddsFixtureByFixtureId(
+  const cachedFixture = await getCachedOddsFixtureByFixtureId(
     safeFixtureId,
     getFixturesCacheVersion(status.fixtures_version),
   );
+  const fixture =
+    cachedFixture ??
+    (await getOddsFixtureByFixtureIdUncached(safeFixtureId, "fresh"));
 
   if (!fixture) {
     return null;

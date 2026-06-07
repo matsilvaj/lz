@@ -358,6 +358,10 @@ function getMenuPosition(
   };
 }
 
+function isVisibleActionInstance(element: HTMLElement | null) {
+  return Boolean(element?.isConnected && element.getClientRects().length > 0);
+}
+
 export function ProcedureRowActions({
   bookmakers,
   onViewDetails,
@@ -443,6 +447,10 @@ export function ProcedureRowActions({
         return;
       }
 
+      if (!isVisibleActionInstance(buttonRef.current)) {
+        return;
+      }
+
       setMenuOpen(false);
       setEditOpen(true);
     }
@@ -451,6 +459,10 @@ export function ProcedureRowActions({
       const detail = (event as CustomEvent<ProcedureMenuEventDetail>).detail;
 
       if (detail?.procedureId !== procedure.id) {
+        return;
+      }
+
+      if (!isVisibleActionInstance(buttonRef.current)) {
         return;
       }
 

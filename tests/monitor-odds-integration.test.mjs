@@ -45,6 +45,10 @@ const freebetConversionLib = readFileSync(
   new URL("../lib/monitor-odds/freebet-conversion.ts", import.meta.url),
   "utf8",
 );
+const duploEngine = readFileSync(
+  new URL("../lib/monitor-odds/duplo.ts", import.meta.url),
+  "utf8",
+);
 const calculatorSelectionDock = readFileSync(
   new URL("../app/_components/calculator-selection-dock.tsx", import.meta.url),
   "utf8",
@@ -135,12 +139,12 @@ test("duplo monitor loads all available event days by default", () => {
   assert.doesNotMatch(doubleMonitorUi, /activeDatePreset/);
 });
 
-test("duplo monitor filters and lists only PA signal classes", () => {
-  assert.match(doubleMonitorUi, /paModeFilters/);
-  assert.match(doubleMonitorUi, /isPaModeFilter/);
+test("duplo monitor filters and lists all requested PA classes", () => {
+  assert.match(doubleMonitorUi, /"pa_dois_lados", "pa_um_lado", "sem_pa"/);
   assert.match(doubleMonitorUi, /createPortal\(/);
-  assert.doesNotMatch(doubleMonitorUi, /sem_pa/);
-  assert.doesNotMatch(doubleMonitorUi, /Sem PA/);
+  assert.match(duploEngine, /PA para os Dois lados/);
+  assert.match(duploEngine, /PA para 1 dos lados/);
+  assert.match(duploEngine, /Sem PA/);
 });
 
 test("monitor odds fixtures cache does not fall back to odds updates", () => {

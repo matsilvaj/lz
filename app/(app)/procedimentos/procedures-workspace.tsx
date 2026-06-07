@@ -518,6 +518,7 @@ export function ProceduresWorkspace({
               className="lz-input h-13 w-full rounded-full px-5 text-sm"
               defaultValue={filters.searchText}
               key={filters.searchText}
+              maxLength={80}
               onChange={(event) => updateSearchFilter(event.target.value)}
               placeholder="Buscar evento, tipo ou casa..."
               type="search"

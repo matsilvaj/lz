@@ -1292,7 +1292,7 @@ export function FreebetsWorkspace({
           <div className="flex min-h-full items-start justify-center">
             <section
               aria-modal="true"
-              className="w-full max-w-5xl rounded-[30px] border border-white/10 bg-[var(--panel)] p-4 shadow-2xl sm:p-5"
+              className="lz-floating-panel w-full max-w-5xl rounded-[30px] border border-white/10 bg-[var(--panel)] p-4 shadow-2xl sm:p-5"
               onClick={(event) => event.stopPropagation()}
               role="dialog"
             >

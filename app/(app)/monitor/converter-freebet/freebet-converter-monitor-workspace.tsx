@@ -115,6 +115,11 @@ type BookmakerFilterOption = {
   name: string;
 };
 
+type LeagueFilterOption = {
+  key: string;
+  name: string;
+};
+
 type SearchState = {
   error: string | null;
   events: DuploEvent[];
@@ -124,15 +129,15 @@ type SearchState = {
 
 const modeLabels: Record<ModeFilter, string> = {
   all: "Todos",
-  pa_dois_lados: "PA Casa e Fora",
-  pa_um_lado: "PA Casa ou Fora",
+  pa_dois_lados: "PA para os Dois lados",
+  pa_um_lado: "PA para 1 dos lados",
   sem_pa: "Sem PA",
 };
 const modeFilters: ModeFilter[] = [
   "all",
-  "sem_pa",
-  "pa_um_lado",
   "pa_dois_lados",
+  "pa_um_lado",
+  "sem_pa",
 ];
 const sortLabels: Record<SortMode, string> = {
   conversion_asc: "Menor conversão",
@@ -416,6 +421,13 @@ function toNumberInput(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function clampDecimalInput(value: string, maxLength = 12) {
+  return value
+    .replace(/[^\d,.]/g, "")
+    .replace(/([,.].*)[,.]/g, "$1")
+    .slice(0, maxLength);
+}
+
 function getOddLimits(minOddValue: string, maxOddValue: string) {
   const minOdd = Math.max(1.5, toNumberInput(minOddValue, 1.5));
   const maxOdd = Math.min(
@@ -532,6 +544,27 @@ function getAvailableBookmakers(events: DuploEvent[]): BookmakerFilterOption[] {
   );
 }
 
+function getLeagueKey(event: Pick<DuploEvent, "league_country" | "league_name">) {
+  return `${event.league_name || "campeonato"}::${event.league_country || ""}`;
+}
+
+function getAvailableLeagues(events: DuploEvent[]): LeagueFilterOption[] {
+  const leagues = new Map<string, string>();
+
+  for (const event of events) {
+    const key = getLeagueKey(event);
+    const name = formatLeagueLine(event);
+
+    if (!leagues.has(key)) {
+      leagues.set(key, name);
+    }
+  }
+
+  return Array.from(leagues, ([key, name]) => ({ key, name })).sort((left, right) =>
+    left.name.localeCompare(right.name, "pt-BR"),
+  );
+}
+
 function filterEventBookmakers(
   event: DuploEvent,
   hiddenBookmakers: ReadonlySet<string>,
@@ -599,6 +632,7 @@ function getSignalRows(
   minOdd: number,
   maxOdd: number,
   activeMode: ModeFilter,
+  selectedLeagueKeys: ReadonlySet<string>,
   sortMode: SortMode,
 ): SignalRow[] {
   if (!group) {
@@ -607,6 +641,11 @@ function getSignalRows(
 
   const freebetHouseKey = getFreebetConversionBookmakerKey(group.casa);
   const rows = events
+    .filter(
+      (event) =>
+        selectedLeagueKeys.size === 0 ||
+        selectedLeagueKeys.has(getLeagueKey(event)),
+    )
     .map((event) => {
       const filteredEvent = filterEventBookmakers(
         event,
@@ -817,7 +856,7 @@ function SortMenu({
     open && menuPosition
       ? createPortal(
           <div
-            className="fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+            className="lz-floating-panel fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
             ref={menuRef}
             role="listbox"
             style={{
@@ -924,22 +963,30 @@ function BookmakerToggleButton({
 function FiltersDialog({
   activeMode,
   availableBookmakers,
+  availableLeagues,
   counts,
   freebetHouseKey,
   hiddenBookmakers,
+  selectedLeagueKeys,
   onClose,
+  onClearLeagues,
   onModeChange,
   onReset,
+  onToggleLeague,
   onToggleBookmaker,
 }: {
   activeMode: ModeFilter;
   availableBookmakers: BookmakerFilterOption[];
+  availableLeagues: LeagueFilterOption[];
   counts: Record<ModeFilter, number>;
   freebetHouseKey: string;
   hiddenBookmakers: ReadonlySet<string>;
+  selectedLeagueKeys: ReadonlySet<string>;
   onClose: () => void;
+  onClearLeagues: () => void;
   onModeChange: (mode: ModeFilter) => void;
   onReset: () => void;
+  onToggleLeague: (leagueKey: string) => void;
   onToggleBookmaker: (key: string) => void;
 }) {
   if (typeof document === "undefined") {
@@ -957,7 +1004,7 @@ function FiltersDialog({
     >
       <div
         aria-modal="true"
-        className="max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)]"
+        className="lz-floating-panel max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)]"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
@@ -991,6 +1038,33 @@ function FiltersDialog({
                   label={modeLabels[mode]}
                   onClick={() => onModeChange(mode)}
                 />
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-white">Campeonato</h3>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ModeButton
+                active={selectedLeagueKeys.size === 0}
+                count={counts.all}
+                label="Todos"
+                onClick={onClearLeagues}
+              />
+              {availableLeagues.map((league) => (
+                <button
+                  aria-pressed={selectedLeagueKeys.has(league.key)}
+                  className={`inline-flex h-11 min-w-0 items-center justify-center rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedLeagueKeys.has(league.key)
+                      ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
+                      : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  key={league.key}
+                  onClick={() => onToggleLeague(league.key)}
+                  type="button"
+                >
+                  <span className="truncate">{league.name}</span>
+                </button>
               ))}
             </div>
           </section>
@@ -1099,7 +1173,7 @@ function FreebetSelectionDialog({
       <div className="flex min-h-full items-start justify-center">
         <section
           aria-modal="true"
-          className="w-full max-w-5xl rounded-[30px] border border-white/10 bg-[var(--panel)] p-4 shadow-2xl sm:p-5"
+          className="lz-floating-panel w-full max-w-5xl rounded-[30px] border border-white/10 bg-[var(--panel)] p-4 shadow-2xl sm:p-5"
           onClick={(event) => event.stopPropagation()}
           role="dialog"
         >
@@ -1422,6 +1496,7 @@ export function FreebetConverterMonitorWorkspace({
   const [minOddValue, setMinOddValue] = useState("1.50");
   const [maxOddValue, setMaxOddValue] = useState("999999");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
+  const [selectedLeagueKeys, setSelectedLeagueKeys] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("conversion_desc");
@@ -1629,6 +1704,10 @@ export function FreebetConverterMonitorWorkspace({
     () => getAvailableBookmakers(state.events),
     [state.events],
   );
+  const availableLeagues = useMemo(
+    () => getAvailableLeagues(state.events),
+    [state.events],
+  );
   const activeHiddenBookmakers = useMemo(() => {
     const availableKeys = new Set(availableBookmakers.map((bookmaker) => bookmaker.key));
     return new Set(
@@ -1637,6 +1716,10 @@ export function FreebetConverterMonitorWorkspace({
       ),
     );
   }, [availableBookmakers, freebetHouseKey, hiddenBookmakers]);
+  const activeSelectedLeagueKeys = useMemo(() => {
+    const availableKeys = new Set(availableLeagues.map((league) => league.key));
+    return new Set(selectedLeagueKeys.filter((key) => availableKeys.has(key)));
+  }, [availableLeagues, selectedLeagueKeys]);
   const rows = useMemo(
     () =>
       getSignalRows(
@@ -1646,10 +1729,12 @@ export function FreebetConverterMonitorWorkspace({
         minOdd,
         maxOdd,
         activeMode,
+        activeSelectedLeagueKeys,
         sortMode,
       ),
     [
       activeHiddenBookmakers,
+      activeSelectedLeagueKeys,
       activeMode,
       maxOdd,
       minOdd,
@@ -1686,6 +1771,7 @@ export function FreebetConverterMonitorWorkspace({
           minOdd,
           maxOdd,
           mode,
+          activeSelectedLeagueKeys,
           "conversion_desc",
         ).length;
         return accumulator;
@@ -1697,7 +1783,14 @@ export function FreebetConverterMonitorWorkspace({
         sem_pa: 0,
       },
     );
-  }, [activeHiddenBookmakers, maxOdd, minOdd, selectedConversion, state.events]);
+  }, [
+    activeHiddenBookmakers,
+    maxOdd,
+    minOdd,
+    selectedConversion,
+    activeSelectedLeagueKeys,
+    state.events,
+  ]);
   const showSignalSkeleton =
     state.loading || (state.refreshingOdds && !rows.length && state.events.length > 0);
   const selectedCalculatorIds = useMemo(
@@ -1719,6 +1812,7 @@ export function FreebetConverterMonitorWorkspace({
     setCalculatorSelections([]);
     setHiddenBookmakers([]);
     setActiveMode("all");
+    setSelectedLeagueKeys([]);
   }
 
   function handleStartConsultation() {
@@ -1751,6 +1845,7 @@ export function FreebetConverterMonitorWorkspace({
     setCalculatorSelections([]);
     setHiddenBookmakers([]);
     setActiveMode("all");
+    setSelectedLeagueKeys([]);
   }
 
   function handleBackToSelection() {
@@ -1763,6 +1858,7 @@ export function FreebetConverterMonitorWorkspace({
     setCalculatorSelections([]);
     setHiddenBookmakers([]);
     setFiltersOpen(false);
+    setSelectedLeagueKeys([]);
   }
 
   function handleToggleBookmaker(key: string) {
@@ -1777,9 +1873,18 @@ export function FreebetConverterMonitorWorkspace({
     );
   }
 
+  function handleToggleLeague(key: string) {
+    setSelectedLeagueKeys((current) =>
+      current.includes(key)
+        ? current.filter((leagueKey) => leagueKey !== key)
+        : [...current, key],
+    );
+  }
+
   function handleResetFilters() {
     setActiveMode("all");
     setHiddenBookmakers([]);
+    setSelectedLeagueKeys([]);
   }
 
   function handleToggleCalculatorRow(row: SignalRow) {
@@ -1966,8 +2071,11 @@ export function FreebetConverterMonitorWorkspace({
                       <input
                         className="min-w-0 flex-1 border-0 bg-transparent text-center text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)]"
                         inputMode="decimal"
+                        maxLength={12}
                         onChange={(event) => {
-                          setConsultationFreebetValue(event.target.value);
+                          setConsultationFreebetValue(
+                            clampDecimalInput(event.target.value, 12),
+                          );
                           setConsultationError(null);
                         }}
                         placeholder="0,00"
@@ -1983,7 +2091,10 @@ export function FreebetConverterMonitorWorkspace({
                     <input
                       className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
                       inputMode="decimal"
-                      onChange={(event) => setMinOddValue(event.target.value)}
+                      maxLength={10}
+                      onChange={(event) =>
+                        setMinOddValue(clampDecimalInput(event.target.value, 10))
+                      }
                       placeholder="1.50"
                       value={minOddValue}
                     />
@@ -1996,7 +2107,10 @@ export function FreebetConverterMonitorWorkspace({
                     <input
                       className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
                       inputMode="decimal"
-                      onChange={(event) => setMaxOddValue(event.target.value)}
+                      maxLength={10}
+                      onChange={(event) =>
+                        setMaxOddValue(clampDecimalInput(event.target.value, 10))
+                      }
                       placeholder="999999"
                       value={maxOddValue}
                     />
@@ -2078,7 +2192,10 @@ export function FreebetConverterMonitorWorkspace({
                 aria-label="Odd mínima da freebet"
                 className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
                 inputMode="decimal"
-                onChange={(event) => setMinOddValue(event.target.value)}
+                maxLength={10}
+                onChange={(event) =>
+                  setMinOddValue(clampDecimalInput(event.target.value, 10))
+                }
                 placeholder="1.50"
                 value={minOddValue}
               />
@@ -2091,7 +2208,10 @@ export function FreebetConverterMonitorWorkspace({
                 aria-label="Odd máxima da freebet"
                 className="h-12 w-full rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-4 text-center text-sm font-semibold text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
                 inputMode="decimal"
-                onChange={(event) => setMaxOddValue(event.target.value)}
+                maxLength={10}
+                onChange={(event) =>
+                  setMaxOddValue(clampDecimalInput(event.target.value, 10))
+                }
                 placeholder="999999"
                 value={maxOddValue}
               />
@@ -2099,7 +2219,10 @@ export function FreebetConverterMonitorWorkspace({
             <button
               aria-expanded={filtersOpen}
               className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
-                filtersOpen || activeMode !== "all" || activeHiddenBookmakers.size > 0
+                filtersOpen ||
+                activeMode !== "all" ||
+                activeHiddenBookmakers.size > 0 ||
+                activeSelectedLeagueKeys.size > 0
                   ? "border-[rgba(255,139,187,0.42)] bg-[rgba(255,139,187,0.16)] text-white"
                   : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
               }`}
@@ -2118,12 +2241,16 @@ export function FreebetConverterMonitorWorkspace({
         <FiltersDialog
           activeMode={activeMode}
           availableBookmakers={availableBookmakers}
+          availableLeagues={availableLeagues}
           counts={counts}
           freebetHouseKey={freebetHouseKey}
           hiddenBookmakers={activeHiddenBookmakers}
+          selectedLeagueKeys={activeSelectedLeagueKeys}
+          onClearLeagues={() => setSelectedLeagueKeys([])}
           onClose={() => setFiltersOpen(false)}
           onModeChange={setActiveMode}
           onReset={handleResetFilters}
+          onToggleLeague={handleToggleLeague}
           onToggleBookmaker={handleToggleBookmaker}
         />
       ) : null}

@@ -43,8 +43,7 @@ import {
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
 
-type PaModeFilter = "pa_um_lado" | "pa_dois_lados";
-type ModeFilter = PaModeFilter | "all";
+type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
 type SortMode =
   | "profit_desc"
   | "profit_asc"
@@ -91,6 +90,11 @@ type BookmakerFilterOption = {
   name: string;
 };
 
+type LeagueFilterOption = {
+  key: string;
+  name: string;
+};
+
 type SearchState = {
   error: string | null;
   events: DuploEvent[];
@@ -98,8 +102,7 @@ type SearchState = {
   refreshingOdds: boolean;
 };
 
-const paModeFilters: PaModeFilter[] = ["pa_um_lado", "pa_dois_lados"];
-const modeFilters: ModeFilter[] = ["all", ...paModeFilters];
+const modeFilters: ModeFilter[] = ["all", "pa_dois_lados", "pa_um_lado", "sem_pa"];
 
 const sortLabels: Record<SortMode, string> = {
   farthest: "Mais distante",
@@ -122,10 +125,6 @@ const duploEventsMemoryLimit = 20;
 const duploOddsSnapshotMemoryLimit = 300;
 const duploEventsByRequestKey = new Map<string, DuploEvent[]>();
 const duploOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
-
-function isPaModeFilter(value: string): value is PaModeFilter {
-  return paModeFilters.some((mode) => mode === value);
-}
 
 function getEventsRequestParams(request: EventsRequest) {
   const params = new URLSearchParams();
@@ -417,6 +416,27 @@ function getAvailableBookmakers(events: DuploEvent[]): BookmakerFilterOption[] {
   );
 }
 
+function getLeagueKey(event: Pick<DuploEvent, "league_country" | "league_name">) {
+  return `${event.league_name || "campeonato"}::${event.league_country || ""}`;
+}
+
+function getAvailableLeagues(events: DuploEvent[]): LeagueFilterOption[] {
+  const leagues = new Map<string, string>();
+
+  for (const event of events) {
+    const key = getLeagueKey(event);
+    const name = formatLeagueLine(event);
+
+    if (!leagues.has(key)) {
+      leagues.set(key, name);
+    }
+  }
+
+  return Array.from(leagues, ([key, name]) => ({ key, name })).sort((left, right) =>
+    left.name.localeCompare(right.name, "pt-BR"),
+  );
+}
+
 function filterEventBookmakers(
   event: DuploEvent,
   hiddenBookmakers: ReadonlySet<string>,
@@ -476,19 +496,22 @@ function getSignalRows(
   events: DuploEvent[],
   mode: ModeFilter,
   hiddenBookmakers: ReadonlySet<string>,
+  selectedLeagueKeys: ReadonlySet<string>,
   sortMode: SortMode = "profit_desc",
 ): SignalRow[] {
   const rows = events
+    .filter(
+      (event) =>
+        selectedLeagueKeys.size === 0 ||
+        selectedLeagueKeys.has(getLeagueKey(event)),
+    )
     .map((event) => {
       const filteredEvent = filterEventBookmakers(event, hiddenBookmakers);
       const analysis = buildDuploAnalysis(filteredEvent);
-      const visibleOpportunities = analysis.all.filter((opportunity) =>
-        isPaModeFilter(opportunity.mode),
-      );
       const opportunities =
         mode === "all"
-          ? visibleOpportunities
-          : visibleOpportunities.filter((opportunity) => opportunity.mode === mode);
+          ? analysis.all
+          : analysis.all.filter((opportunity) => opportunity.mode === mode);
       const opportunity = opportunities[0] ?? null;
 
       return opportunity ? { analysis, event: filteredEvent, opportunity } : null;
@@ -556,20 +579,28 @@ function BookmakerToggleButton({
 function FiltersDialog({
   activeMode,
   availableBookmakers,
+  availableLeagues,
   counts,
   hiddenBookmakers,
+  selectedLeagueKeys,
   onClose,
+  onClearLeagues,
   onModeChange,
   onReset,
+  onToggleLeague,
   onToggleBookmaker,
 }: {
   activeMode: ModeFilter;
   availableBookmakers: BookmakerFilterOption[];
+  availableLeagues: LeagueFilterOption[];
   counts: Record<ModeFilter, number>;
   hiddenBookmakers: ReadonlySet<string>;
+  selectedLeagueKeys: ReadonlySet<string>;
   onClose: () => void;
+  onClearLeagues: () => void;
   onModeChange: (mode: ModeFilter) => void;
   onReset: () => void;
+  onToggleLeague: (leagueKey: string) => void;
   onToggleBookmaker: (key: string) => void;
 }) {
   if (typeof document === "undefined") {
@@ -587,7 +618,7 @@ function FiltersDialog({
     >
       <div
         aria-modal="true"
-        className="max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)]"
+        className="lz-floating-panel max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)]"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
@@ -621,6 +652,33 @@ function FiltersDialog({
                   label={getDuploModeLabel(mode)}
                   onClick={() => onModeChange(mode)}
                 />
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-white">Campeonato</h3>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ModeButton
+                active={selectedLeagueKeys.size === 0}
+                count={counts.all}
+                label="Todos"
+                onClick={onClearLeagues}
+              />
+              {availableLeagues.map((league) => (
+                <button
+                  aria-pressed={selectedLeagueKeys.has(league.key)}
+                  className={`inline-flex h-11 min-w-0 items-center justify-center rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedLeagueKeys.has(league.key)
+                      ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
+                      : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  key={league.key}
+                  onClick={() => onToggleLeague(league.key)}
+                  type="button"
+                >
+                  <span className="truncate">{league.name}</span>
+                </button>
               ))}
             </div>
           </section>
@@ -749,7 +807,7 @@ function SortMenu({
     open && menuPosition
       ? createPortal(
           <div
-            className="fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+            className="lz-floating-panel fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
             ref={menuRef}
             role="listbox"
             style={{
@@ -975,6 +1033,7 @@ function SignalSkeleton() {
 export function DoubleMonitorWorkspace() {
   const [query, setQuery] = useState("");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
+  const [selectedLeagueKeys, setSelectedLeagueKeys] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("profit_desc");
@@ -1125,13 +1184,34 @@ export function DoubleMonitorWorkspace() {
     () => getAvailableBookmakers(state.events),
     [state.events],
   );
+  const availableLeagues = useMemo(
+    () => getAvailableLeagues(state.events),
+    [state.events],
+  );
   const activeHiddenBookmakers = useMemo(() => {
     const availableKeys = new Set(availableBookmakers.map((bookmaker) => bookmaker.key));
     return new Set(hiddenBookmakers.filter((key) => availableKeys.has(key)));
   }, [availableBookmakers, hiddenBookmakers]);
+  const activeSelectedLeagueKeys = useMemo(() => {
+    const availableKeys = new Set(availableLeagues.map((league) => league.key));
+    return new Set(selectedLeagueKeys.filter((key) => availableKeys.has(key)));
+  }, [availableLeagues, selectedLeagueKeys]);
   const rows = useMemo(
-    () => getSignalRows(state.events, activeMode, activeHiddenBookmakers, sortMode),
-    [activeHiddenBookmakers, activeMode, sortMode, state.events],
+    () =>
+      getSignalRows(
+        state.events,
+        activeMode,
+        activeHiddenBookmakers,
+        activeSelectedLeagueKeys,
+        sortMode,
+      ),
+    [
+      activeHiddenBookmakers,
+      activeMode,
+      activeSelectedLeagueKeys,
+      sortMode,
+      state.events,
+    ],
   );
   const showSignalSkeleton =
     state.loading || (state.refreshingOdds && !rows.length && state.events.length > 0);
@@ -1146,6 +1226,7 @@ export function DoubleMonitorWorkspace() {
           state.events,
           mode,
           activeHiddenBookmakers,
+          activeSelectedLeagueKeys,
         ).length;
         return accumulator;
       },
@@ -1153,9 +1234,10 @@ export function DoubleMonitorWorkspace() {
         all: 0,
         pa_dois_lados: 0,
         pa_um_lado: 0,
+        sem_pa: 0,
       },
     );
-  }, [activeHiddenBookmakers, state.events]);
+  }, [activeHiddenBookmakers, activeSelectedLeagueKeys, state.events]);
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1182,9 +1264,18 @@ export function DoubleMonitorWorkspace() {
     );
   }
 
+  function handleToggleLeague(key: string) {
+    setSelectedLeagueKeys((current) =>
+      current.includes(key)
+        ? current.filter((leagueKey) => leagueKey !== key)
+        : [...current, key],
+    );
+  }
+
   function handleResetFilters() {
     setActiveMode("all");
     setHiddenBookmakers([]);
+    setSelectedLeagueKeys([]);
   }
 
   function handleToggleCalculatorRow(row: SignalRow) {
@@ -1228,7 +1319,8 @@ export function DoubleMonitorWorkspace() {
             <input
               className="min-h-13 flex-1 rounded-full border border-white/10 bg-[rgba(22,10,18,0.72)] px-5 text-base font-medium text-white outline-none transition placeholder:text-[var(--text-dim)] focus:border-[rgba(255,139,187,0.45)] focus:ring-2 focus:ring-[rgba(255,139,187,0.08)]"
               id="double-monitor-search"
-              onChange={(event) => setQuery(event.target.value)}
+              maxLength={80}
+              onChange={(event) => setQuery(event.target.value.slice(0, 80))}
               placeholder="Digite um time, evento ou liga"
               type="search"
               value={query}
@@ -1237,7 +1329,10 @@ export function DoubleMonitorWorkspace() {
               <button
                 aria-expanded={filtersOpen}
                 className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
-                  filtersOpen || activeMode !== "all" || activeHiddenBookmakers.size > 0
+                  filtersOpen ||
+                  activeMode !== "all" ||
+                  activeHiddenBookmakers.size > 0 ||
+                  activeSelectedLeagueKeys.size > 0
                     ? "border-[rgba(255,139,187,0.42)] bg-[rgba(255,139,187,0.16)] text-white"
                     : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
                 }`}
@@ -1264,11 +1359,15 @@ export function DoubleMonitorWorkspace() {
         <FiltersDialog
           activeMode={activeMode}
           availableBookmakers={availableBookmakers}
+          availableLeagues={availableLeagues}
           counts={counts}
           hiddenBookmakers={activeHiddenBookmakers}
+          selectedLeagueKeys={activeSelectedLeagueKeys}
+          onClearLeagues={() => setSelectedLeagueKeys([])}
           onClose={() => setFiltersOpen(false)}
           onModeChange={setActiveMode}
           onReset={handleResetFilters}
+          onToggleLeague={handleToggleLeague}
           onToggleBookmaker={handleToggleBookmaker}
         />
       ) : null}

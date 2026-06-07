@@ -73,8 +73,8 @@ const doubleChanceLabels: Record<DuploDoubleChanceKey, string> = {
 };
 
 const modeLabels: Record<DuploMode, string> = {
-  pa_dois_lados: "PA Casa e Fora",
-  pa_um_lado: "PA Casa ou Fora",
+  pa_dois_lados: "PA para os Dois lados",
+  pa_um_lado: "PA para 1 dos lados",
   sem_pa: "Sem PA",
 };
 

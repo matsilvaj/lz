@@ -4,6 +4,7 @@ import {
   getOddsFeedStatus,
   getOddsSnapshotsByFixtureIds,
 } from "@/lib/monitor-odds/odds-data";
+import { normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,13 +23,16 @@ function parseFixtureIds(value: unknown) {
   const values = Array.isArray(value) ? value : String(value).split(",");
 
   return values
-    .map((fixtureId) => String(fixtureId).trim())
+    .map((fixtureId) => normalizeText(String(fixtureId), 160))
+    .filter((fixtureId) => /^[\w:-]{1,160}$/u.test(fixtureId))
     .filter(Boolean)
-    .slice(0, 200);
+    .slice(0, 100);
 }
 
 function parseOddsVersion(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  const normalized =
+    typeof value === "string" ? normalizeText(value, 160) : "";
+  return normalized ? normalized : null;
 }
 
 async function authorizeOddsRequest() {

@@ -6,10 +6,16 @@ import {
   listOddsEventsByDateRange,
   searchOddsEvents,
 } from "@/lib/monitor-odds/odds-data";
+import { normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+function normalizeDateParam(value: string | null) {
+  const normalized = normalizeText(value, 16);
+  return /^\d{4}-\d{2}-\d{2}$/u.test(normalized) ? normalized : null;
+}
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -33,9 +39,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "rate_limited" }, { status: 429 });
   }
 
-  const query = request.nextUrl.searchParams.get("q") ?? "";
-  const from = request.nextUrl.searchParams.get("from");
-  const to = request.nextUrl.searchParams.get("to");
+  const query = normalizeText(request.nextUrl.searchParams.get("q"), 80);
+  const from = normalizeDateParam(request.nextUrl.searchParams.get("from"));
+  const to = normalizeDateParam(request.nextUrl.searchParams.get("to"));
   const status = await getOddsFeedStatus();
   const fixturesVersion = status.fixtures_version;
   const normalizedQuery = query.trim();

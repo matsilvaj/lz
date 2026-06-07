@@ -788,6 +788,14 @@ export function ProcedureModal({
   const [selectedType, setSelectedType] = useState<ProcedureType>(
     initialProcedureType,
   );
+  const [customProcedureType, setCustomProcedureType] = useState(
+    defaultValues?.procedureType &&
+      !getDefaultProcedureOptions(initialProcedureGroup, typeOptions).some(
+        (option) => option.value === defaultValues.procedureType,
+      )
+      ? defaultValues.procedureType
+      : "",
+  );
   const [selectedGroup, setSelectedGroup] =
     useState<ProcedureGroup>(initialProcedureGroup);
   const [operationDate, setOperationDate] = useState(
@@ -1913,6 +1921,7 @@ export function ProcedureModal({
 
     setSelectedGroup(group);
     setSelectedType(nextType);
+    setCustomProcedureType("");
 
     if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
       moveSportsFieldsToCollection();
@@ -1950,6 +1959,7 @@ export function ProcedureModal({
     const nextIsFreebet = isFreebetProcedureType(type);
 
     setSelectedType(type);
+    setCustomProcedureType("");
 
     if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
       moveSportsFieldsToCollection();
@@ -2170,6 +2180,14 @@ export function ProcedureModal({
 
     setSelectedGroup(nextGroup);
     setSelectedType(nextType);
+    setCustomProcedureType(
+      defaultValues?.procedureType &&
+        !getDefaultProcedureOptions(nextGroup, typeOptions).some(
+          (option) => option.value === defaultValues.procedureType,
+        )
+        ? defaultValues.procedureType
+        : "",
+    );
     setOperationDate(defaultValues?.operationDate ?? getTodayInputValue());
     setCollectionDate(
       defaultValues?.collectionDate ??
@@ -2415,6 +2433,27 @@ export function ProcedureModal({
                         );
                       })}
                     </div>
+                    <label className="block max-w-md space-y-2 text-sm">
+                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                        Ou digite o tipo
+                      </span>
+                      <input
+                        className="lz-input w-full rounded-2xl px-3 py-3"
+                        maxLength={60}
+                        onChange={(event) => {
+                          const value = event.target.value.slice(0, 60);
+                          setCustomProcedureType(value);
+                          const normalized = value.trim().replace(/\s+/g, " ");
+
+                          if (normalized) {
+                            setSelectedType(normalized);
+                          }
+                        }}
+                        placeholder="Ex.: Reembolso, bônus, missão..."
+                        type="text"
+                        value={customProcedureType}
+                      />
+                    </label>
                     <input name="procedureType" type="hidden" value={selectedType} />
                   </div>
                 </div>
@@ -2464,6 +2503,7 @@ export function ProcedureModal({
                     <span className="font-medium text-white">Jogo</span>
                     <input
                       className="lz-input w-full rounded-2xl px-3 py-3"
+                      maxLength={120}
                       name="game"
                       onChange={(event) => setGameValue(event.target.value)}
                       placeholder="Ex.: Barcelona x Real Madrid"

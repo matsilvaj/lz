@@ -2525,7 +2525,7 @@ export class ProceduresPostgresRepository {
     if (
       !normalizedUserId ||
       normalizedWorkspaceId <= 0 ||
-      !["days", "month", "year", "all"].includes(periodType) ||
+      !["day", "days", "range", "month", "year", "all"].includes(periodType) ||
       (periodType !== "all" && !periodValue)
     ) {
       return {
@@ -2539,7 +2539,7 @@ export class ProceduresPostgresRepository {
     const metricsFilters = ["reference_month <> ''"];
     const seriesParams = [normalizedUserId, normalizedWorkspaceId];
     const seriesFilters = ["reference_month <> ''"];
-    const isDailyPeriod = ["days", "month"].includes(periodType);
+    const isDailyPeriod = ["day", "days", "range", "month"].includes(periodType);
     const bucketLabelSql = isDailyPeriod ? "data_operacao" : "reference_month";
     const bucketKeySql = isDailyPeriod
       ? `
@@ -2557,7 +2557,7 @@ export class ProceduresPostgresRepository {
         END
       `;
 
-    if (periodType === "days") {
+    if (["day", "days", "range"].includes(periodType)) {
       const startKey = parseText(period?.startKey);
       const endKey = parseText(period?.endKey);
 
@@ -2714,7 +2714,7 @@ export class ProceduresPostgresRepository {
     if (
       !normalizedUserId ||
       normalizedWorkspaceId <= 0 ||
-      !["days", "month", "year", "all"].includes(periodType) ||
+      !["day", "days", "range", "month", "year", "all"].includes(periodType) ||
       (periodType !== "all" && !periodValue)
     ) {
       return [];
@@ -2724,7 +2724,7 @@ export class ProceduresPostgresRepository {
     const conversionProfitSql = buildRealProfitSql("v");
     const params = [normalizedUserId, normalizedWorkspaceId];
     const filters = ["reference_month <> ''"];
-    const isDailyPeriod = ["days", "month"].includes(periodType);
+    const isDailyPeriod = ["day", "days", "range", "month"].includes(periodType);
     const bucketLabelSql = isDailyPeriod ? "data_operacao" : "reference_month";
     const bucketKeySql = isDailyPeriod
       ? `
@@ -2742,7 +2742,7 @@ export class ProceduresPostgresRepository {
         END
       `;
 
-    if (periodType === "days") {
+    if (["day", "days", "range"].includes(periodType)) {
       const startKey = parseText(period?.startKey);
       const endKey = parseText(period?.endKey);
 

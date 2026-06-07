@@ -174,7 +174,7 @@ export function LzSelect({
               }}
             >
               <div
-                className="rounded-[24px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-2 shadow-[0_28px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                className="lz-floating-panel rounded-[24px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-2 shadow-[0_28px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl"
                 id={menuId}
                 ref={menuRef}
                 role="listbox"

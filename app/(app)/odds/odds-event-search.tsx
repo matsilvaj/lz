@@ -1507,7 +1507,7 @@ function EventListSortMenu({
     open && menuPosition
       ? createPortal(
           <div
-            className="fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+            className="lz-floating-panel fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
             ref={menuRef}
             role="listbox"
             style={{
@@ -1847,6 +1847,7 @@ function OddsTableLoadingRows() {
 
 function OddsTable({
   category,
+  conversionContext,
   event,
   isOddSelected,
   oddsLoading = false,
@@ -1856,6 +1857,7 @@ function OddsTable({
   onSortChange,
 }: {
   category: PaCategory;
+  conversionContext: CalculatorConversionContext | null;
   event: OddsEvent;
   isOddSelected: (odd: OddsFeedItem) => boolean;
   oddsLoading?: boolean;
@@ -1897,10 +1899,17 @@ function OddsTable({
         {rows.length ? (
           rows.map((row) => {
             const eventUrl = getRowEventUrl(row);
+            const freebetRow = Object.values(row.odds).some((odd) =>
+              odd ? isConversionFreebetHouse(odd, conversionContext) : false,
+            );
 
             return (
               <div
-                className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
+                className={`${oddsTableGridClass} rounded-2xl p-1.5 ${
+                  freebetRow
+                    ? "border border-[rgba(191,219,254,0.42)] bg-[rgba(59,130,246,0.11)] shadow-[0_0_20px_rgba(147,197,253,0.08)]"
+                    : "bg-white/[0.026]"
+                }`}
                 key={row.key}
               >
                 <BookmakerEventLink
@@ -1918,6 +1927,9 @@ function OddsTable({
                   const odd = row.odds[selection];
                   const selected = odd ? isOddSelected(odd) : false;
                   const highlighted = odd?.price === highestPrices[selection];
+                  const freebetOdd = odd
+                    ? isConversionFreebetHouse(odd, conversionContext)
+                    : false;
 
                   return (
                     <button
@@ -1925,7 +1937,9 @@ function OddsTable({
                       className={`${oddsBoxClass} text-[13px] font-semibold text-white transition ${
                         selected
                           ? "border border-[rgba(191,219,254,0.72)] bg-[rgba(59,130,246,0.18)] shadow-[0_0_18px_rgba(147,197,253,0.16)]"
-                          : highlighted
+                          : freebetOdd
+                            ? "border border-[rgba(191,219,254,0.52)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_18px_rgba(147,197,253,0.1)]"
+                            : highlighted
                             ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
                             : "border border-transparent bg-white/[0.04]"
                       } ${
@@ -2021,7 +2035,7 @@ function BookmakerFiltersDialog({
     >
       <div
         aria-modal="true"
-        className="flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)] [zoom:0.92]"
+        className="lz-floating-panel flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)] [zoom:0.92]"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
@@ -2243,7 +2257,7 @@ function DuploEventAnalysis({
           onToggleOpportunity={onToggleOpportunity}
           opportunities={analysis.paSingleTop}
           selectedIds={selectedIds}
-          title="Top 5 - PA Casa ou Fora"
+          title="Top 5 - PA para 1 dos lados"
         />
         <DuploTopList
           conversionContext={conversionContext}
@@ -2251,7 +2265,7 @@ function DuploEventAnalysis({
           onToggleOpportunity={onToggleOpportunity}
           opportunities={analysis.paBothTop}
           selectedIds={selectedIds}
-          title="Top 5 - PA em Casa e Fora"
+          title="Top 5 - PA para os Dois lados"
         />
       </div>
     </section>
@@ -2546,6 +2560,7 @@ export function OddsEventDetails({
       <div className="grid gap-3 lg:grid-cols-2">
         <OddsTable
           category="COM_PA"
+          conversionContext={conversionContext}
           event={filteredCurrentEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
@@ -2564,6 +2579,7 @@ export function OddsEventDetails({
         />
         <OddsTable
           category="SEM_PA"
+          conversionContext={conversionContext}
           event={filteredCurrentEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
@@ -2776,7 +2792,7 @@ export function OddsEventSearch({
   }, []);
 
   function handleQueryChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextQuery = event.target.value;
+    const nextQuery = event.target.value.slice(0, 80);
     const trimmedQuery = nextQuery.trim();
 
     setQuery(nextQuery);
@@ -2972,6 +2988,7 @@ export function OddsEventSearch({
               autoComplete="off"
               className="lz-input h-13 w-full rounded-full px-5 text-base"
               id="odds-event-search"
+              maxLength={80}
               onChange={handleQueryChange}
               placeholder="Digite um time, evento ou liga"
               type="search"

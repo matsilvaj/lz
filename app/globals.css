@@ -471,6 +471,17 @@ html[data-theme="light"] .lz-textarea {
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+.lz-floating-panel {
+  border-color: var(--border);
+  background: rgba(23, 9, 16, 0.98);
+  color: var(--text-primary);
+}
+
+html[data-theme="light"] .lz-floating-panel {
+  background: rgba(255, 248, 251, 0.96);
+  box-shadow: 0 24px 70px rgba(88, 36, 58, 0.16);
+}
+
 .lz-chip {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
@@ -555,15 +566,25 @@ html[data-theme="light"] header.bg-\[rgba\(6\,2\,7\,0\.78\)\] {
 
 html[data-theme="light"] .bg-\[rgba\(17\,8\,14\,0\.96\)\],
 html[data-theme="light"] .bg-\[rgba\(17\,8\,14\,0\.98\)\],
+html[data-theme="light"] .bg-\[rgba\(18\,5\,13\,0\.94\)\],
+html[data-theme="light"] .bg-\[rgba\(18\,5\,13\,0\.96\)\],
+html[data-theme="light"] .bg-\[rgba\(18\,5\,13\,0\.98\)\],
 html[data-theme="light"] .bg-\[rgba\(23\,9\,16\,0\.98\)\],
 html[data-theme="light"] .bg-\[rgba\(20\,10\,16\,0\.98\)\] {
   background-color: rgba(255, 255, 255, 0.96);
 }
 
+html[data-theme="light"] .bg-\[rgba\(22\,10\,18\,0\.72\)\] {
+  background-color: rgba(255, 255, 255, 0.74);
+}
+
 html[data-theme="light"] .shadow-\[0_24px_60px_rgba\(0\,0\,0\,0\.4\)\],
 html[data-theme="light"] .shadow-\[0_24px_70px_rgba\(0\,0\,0\,0\.45\)\],
+html[data-theme="light"] .shadow-\[0_22px_70px_rgba\(0\,0\,0\,0\.42\)\],
 html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.46\)\],
-html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.5\)\] {
+html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.48\)\],
+html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.5\)\],
+html[data-theme="light"] .shadow-\[0_28px_90px_rgba\(0\,0\,0\,0\.55\)\] {
   box-shadow: 0 24px 60px rgba(88, 36, 58, 0.16);
 }
 

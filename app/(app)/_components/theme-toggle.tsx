@@ -38,18 +38,22 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") {
-      return "dark";
-    }
-
-    return window.localStorage.getItem(storageKey) === "light" ? "light" : "dark";
-  });
+  const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
-    applyTheme(theme);
-    window.localStorage.setItem(storageKey, theme);
-  }, [theme]);
+    const storedTheme =
+      window.localStorage.getItem(storageKey) === "light" ? "light" : "dark";
+
+    applyTheme(storedTheme);
+
+    const frame = window.requestAnimationFrame(() => {
+      setTheme(storedTheme);
+      setMounted(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   function toggleTheme() {
     const nextTheme = theme === "dark" ? "light" : "dark";
@@ -61,14 +65,15 @@ export function ThemeToggle() {
 
   return (
     <button
-      aria-label={theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
+      aria-label={
+        mounted && theme === "light" ? "Ativar tema escuro" : "Ativar tema claro"
+      }
       className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/8 hover:text-[var(--text-primary)]"
       onClick={toggleTheme}
-      suppressHydrationWarning
-      title={theme === "dark" ? "Tema claro" : "Tema escuro"}
+      title={mounted && theme === "light" ? "Tema escuro" : "Tema claro"}
       type="button"
     >
-      {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+      {mounted && theme === "light" ? <MoonIcon /> : <SunIcon />}
     </button>
   );
 }
