@@ -95,15 +95,21 @@ test("monitor odds client uses server-only env names", () => {
 });
 
 test("monitor odds routes are rate limited", () => {
+  assert.match(eventsRoute, /authorizeActiveApiUser/);
   assert.match(eventsRoute, /consumeRateLimit/);
   assert.match(eventsRoute, /monitor-odds:events/);
   assert.match(eventsRoute, /distributed: false/);
+  assert.doesNotMatch(eventsRoute, /supabase\.auth\.getUser/);
+  assert.match(statusRoute, /authorizeActiveApiUser/);
   assert.match(statusRoute, /consumeRateLimit/);
   assert.match(statusRoute, /monitor-odds:status/);
   assert.match(statusRoute, /distributed: false/);
+  assert.doesNotMatch(statusRoute, /supabase\.auth\.getUser/);
+  assert.match(oddsRoute, /authorizeActiveApiUser/);
   assert.match(oddsRoute, /consumeRateLimit/);
   assert.match(oddsRoute, /monitor-odds:odds/);
   assert.match(oddsRoute, /distributed: false/);
+  assert.doesNotMatch(oddsRoute, /supabase\.auth\.getUser/);
 });
 
 test("monitor odds search has bounded pagination", () => {
@@ -174,8 +180,13 @@ test("monitor odds hot path does not depend on Redis", () => {
 
 test("monitor odds snapshot route supports POST bodies", () => {
   assert.match(oddsRoute, /export async function POST/);
-  assert.match(oddsRoute, /await request\.json\(\)/);
-  assert.match(oddsRoute, /buildOddsResponse\(body\.fixtureIds, body\.oddsVersion\)/);
+  assert.match(oddsRoute, /readLimitedJson<OddsRequestBody>/);
+  assert.match(oddsRoute, /ODDS_REQUEST_MAX_BYTES/);
+  assert.doesNotMatch(oddsRoute, /await request\.json\(\)/);
+  assert.match(
+    oddsRoute,
+    /buildOddsResponse\(bodyResult\.data\.fixtureIds, bodyResult\.data\.oddsVersion\)/,
+  );
   assert.match(oddsRoute, /complete: snapshotsResult\.complete/);
   assert.match(oddsRoute, /stale: !snapshotsResult\.complete/);
 });
@@ -185,8 +196,17 @@ test("monitor odds UI refreshes snapshots without URL-sized fixture queries", ()
   assert.match(oddsUi, /method: "POST"/);
   assert.match(oddsUi, /fixtureIds: events\.map/);
   assert.match(oddsUi, /useMonitorOddsStatusFeed/);
+  assert.match(oddsUi, /redirectToLoginOnUnauthorized\(response\)/);
   assert.match(oddsUi, /function OddsEventDetails/);
   assert.match(oddsUi, /payload\.complete !== false/);
+});
+
+test("monitor client screens redirect silently when the active session expires", () => {
+  assert.match(oddsUi, /redirectToLoginOnUnauthorized\(response\)/);
+  assert.match(doubleMonitorUi, /redirectToLoginOnUnauthorized\(response\)/);
+  assert.match(doubleMonitorUi, /redirectToLoginOnUnauthorized\(oddsResponse\)/);
+  assert.match(freebetConverterUi, /redirectToLoginOnUnauthorized\(response\)/);
+  assert.match(freebetConverterUi, /redirectToLoginOnUnauthorized\(oddsResponse\)/);
 });
 
 test("monitor odds UI localizes international competitions and national teams", () => {

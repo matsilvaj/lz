@@ -5,6 +5,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { PASSWORD_RECOVERY_COOKIE } from "@/lib/auth/password-recovery";
+import {
+  clearCurrentActiveSession,
+  registerActiveSessionFromAccessToken,
+} from "@/lib/auth/session";
 import { getAppUrl } from "@/lib/auth/urls";
 import { normalizeEmail, normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
@@ -271,11 +275,24 @@ export async function login(formData: FormData) {
     redirect(buildAuthRedirect("/login", "error", "Muitas tentativas. Aguarde um pouco."));
   }
 
-  const { error } = await supabase.auth.signInWithPassword(credentials);
+  const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
-  if (error) {
+  if (error || !data.user || !data.session) {
     redirect(buildAuthRedirect("/login", "error", "E-mail ou senha inválidos."));
   }
+
+  const sessionRegistered = await registerActiveSessionFromAccessToken(
+    supabase,
+    data.user.id,
+    data.session.access_token,
+  );
+
+  if (!sessionRegistered) {
+    await supabase.auth.signOut({ scope: "local" });
+    redirect(buildAuthRedirect("/login", "error", "Nao foi possivel preparar sua sessao."));
+  }
+
+  await supabase.auth.signOut({ scope: "others" });
 
   revalidatePath("/", "layout");
   redirect("/dashboard");
@@ -333,7 +350,19 @@ export async function signup(formData: FormData) {
 
   revalidatePath("/", "layout");
 
-  if (data.session) {
+  if (data.session && data.user) {
+    const sessionRegistered = await registerActiveSessionFromAccessToken(
+      supabase,
+      data.user.id,
+      data.session.access_token,
+    );
+
+    if (!sessionRegistered) {
+      await supabase.auth.signOut({ scope: "local" });
+      redirect(buildAuthRedirect("/login", "error", "Nao foi possivel preparar sua sessao."));
+    }
+
+    await supabase.auth.signOut({ scope: "others" });
     redirect("/dashboard");
   }
 
@@ -456,7 +485,7 @@ export async function updatePasswordFromRecovery(formData: FormData) {
   }
 
   await clearPasswordRecoveryCookie();
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: "local" });
   revalidatePath("/", "layout");
   redirect(
     buildAuthRedirect(
@@ -469,7 +498,8 @@ export async function updatePasswordFromRecovery(formData: FormData) {
 
 export async function logout() {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  await clearCurrentActiveSession(supabase);
+  await supabase.auth.signOut({ scope: "local" });
 
   revalidatePath("/", "layout");
   redirect("/login");

@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
+
 import { DatePickerField } from "../_components/date-picker-field";
 import { LzSelect } from "../_components/lz-select";
 import {
@@ -724,6 +726,10 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
           cache: "no-store",
         },
       );
+
+      if (redirectToLoginOnUnauthorized(response)) {
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Não foi possível carregar o período do dashboard.");

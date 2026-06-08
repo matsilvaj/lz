@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { FormSubmitButton } from "@/app/_components/form-submit-button";
 import { PasswordInput } from "@/app/_components/password-input";
 import { PASSWORD_RECOVERY_COOKIE } from "@/lib/auth/password-recovery";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentAuthUser } from "@/lib/auth/session";
 
 import { updatePasswordFromRecovery } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
@@ -25,7 +25,7 @@ function buildLoginRedirect(message: string) {
 export default async function ResetPasswordPage({
   searchParams,
 }: ResetPasswordPageProps) {
-  const user = await getCurrentUser();
+  const user = await getCurrentAuthUser();
   const cookieStore = await cookies();
   const hasRecoveryCookie = Boolean(
     cookieStore.get(PASSWORD_RECOVERY_COOKIE)?.value,

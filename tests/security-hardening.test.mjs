@@ -434,6 +434,91 @@ test("bookmaker balance inputs accept only seven digits", async () => {
   assert.match(workspaceSource, /maxLength=\{7\}/u);
 });
 
+test("active user sessions enforce one app session per account", async () => {
+  const migration = await readFile(
+    projectFile(
+      "core",
+      "server",
+      "database",
+      "migrations",
+      "020_active_user_sessions.sql",
+    ),
+    "utf8",
+  );
+  const repositorySource = await readFile(
+    projectFile("core", "server", "database", "postgresRepository.js"),
+    "utf8",
+  );
+  const sessionSource = await readFile(
+    projectFile("lib", "auth", "session.ts"),
+    "utf8",
+  );
+  const authActionsSource = await readFile(
+    projectFile("app", "auth", "actions.ts"),
+    "utf8",
+  );
+
+  assert.match(migration, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+user_active_sessions/iu);
+  assert.match(migration, /user_id\s+UUID\s+PRIMARY\s+KEY\s+REFERENCES\s+auth\.users\(id\)\s+ON\s+DELETE\s+CASCADE/iu);
+  assert.match(migration, /REVOKE\s+ALL\s+ON\s+TABLE\s+user_active_sessions\s+FROM\s+anon,\s*authenticated/iu);
+  assert.match(migration, /FOR\s+ALL\s+TO\s+lz_runtime/iu);
+  assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE/iu.test(migration), false);
+
+  assert.match(repositorySource, /async\s+setActiveUserSession/u);
+  assert.match(repositorySource, /ON\s+CONFLICT\s*\(\s*user_id\s*\)\s+DO\s+UPDATE/iu);
+  assert.match(repositorySource, /async\s+isActiveUserSession/u);
+  assert.match(repositorySource, /last_seen_at\s*<\s*NOW\(\)\s*-\s*INTERVAL\s+'2 minutes'/iu);
+  assert.match(repositorySource, /async\s+clearActiveUserSession/u);
+
+  assert.match(sessionSource, /getCurrentActiveSession/);
+  assert.match(sessionSource, /repository\.isActiveUserSession/);
+  assert.match(sessionSource, /signOut\(\{\s*scope:\s*"local"\s*\}\)/);
+  assert.match(sessionSource, /authorizeActiveApiUser/);
+
+  assert.match(authActionsSource, /registerActiveSessionFromAccessToken/);
+  assert.match(authActionsSource, /signOut\(\{\s*scope:\s*"others"\s*\}\)/);
+  assert.match(authActionsSource, /clearCurrentActiveSession/);
+});
+
+test("profile password verification does not replace the active browser session", async () => {
+  const profileActionsSource = await readFile(
+    projectFile("app", "(app)", "perfil", "actions.ts"),
+    "utf8",
+  );
+  const ephemeralAuthSource = await readFile(
+    projectFile("lib", "supabase", "auth.ts"),
+    "utf8",
+  );
+
+  assert.match(ephemeralAuthSource, /persistSession:\s*false/u);
+  assert.match(ephemeralAuthSource, /autoRefreshToken:\s*false/u);
+  assert.match(profileActionsSource, /createEphemeralAuthClient/);
+  assert.match(profileActionsSource, /auth\.auth\.signInWithPassword/);
+  assert.doesNotMatch(
+    profileActionsSource,
+    /supabase\.auth\.signInWithPassword\(\{\s*email,\s*password:\s*currentPassword/su,
+  );
+});
+
+test("route JSON bodies are size and content-type guarded before parsing", async () => {
+  const requestSecuritySource = await readFile(
+    projectFile("lib", "security", "request.ts"),
+    "utf8",
+  );
+  const oddsRoute = await readFile(
+    projectFile("app", "api", "monitor-odds", "odds", "route.ts"),
+    "utf8",
+  );
+
+  assert.match(requestSecuritySource, /content-type/u);
+  assert.match(requestSecuritySource, /unsupported_media_type/u);
+  assert.match(requestSecuritySource, /content-length/u);
+  assert.match(requestSecuritySource, /payload_too_large/u);
+  assert.match(requestSecuritySource, /request\.text\(\)/u);
+  assert.match(oddsRoute, /readLimitedJson<OddsRequestBody>/u);
+  assert.doesNotMatch(oddsRoute, /request\.json\(\)/u);
+});
+
 test("freebet collection primary uses the freebet house for bookmaker balances", async () => {
   const modalSource = await readFile(
     projectFile("app", "(app)", "_components", "procedure-modal.tsx"),

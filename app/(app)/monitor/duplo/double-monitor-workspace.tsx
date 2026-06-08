@@ -28,6 +28,7 @@ import {
   mergeCalculatorSelections,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
   buildDuploAnalysis,
   formatDuploPercent,
@@ -1199,6 +1200,10 @@ export function DoubleMonitorWorkspace() {
           signal: options.signal,
         });
 
+        if (redirectToLoginOnUnauthorized(response)) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error("Não foi possível carregar os jogos.");
         }
@@ -1239,6 +1244,10 @@ export function DoubleMonitorWorkspace() {
           method: "POST",
           signal: options.signal,
         });
+
+        if (redirectToLoginOnUnauthorized(oddsResponse)) {
+          return;
+        }
 
         if (!oddsResponse.ok) {
           throw new Error("Não foi possível atualizar as odds dos jogos.");

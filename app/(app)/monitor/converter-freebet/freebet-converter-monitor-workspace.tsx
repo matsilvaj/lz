@@ -29,6 +29,7 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import { LzSelect } from "../../_components/lz-select";
 import { formatFreebetCount } from "../../_components/ui";
 import {
@@ -1720,6 +1721,10 @@ export function FreebetConverterMonitorWorkspace({
           signal: options.signal,
         });
 
+        if (redirectToLoginOnUnauthorized(response)) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error("Não foi possível carregar os jogos.");
         }
@@ -1757,6 +1762,10 @@ export function FreebetConverterMonitorWorkspace({
           method: "POST",
           signal: options.signal,
         });
+
+        if (redirectToLoginOnUnauthorized(oddsResponse)) {
+          return;
+        }
 
         if (!oddsResponse.ok) {
           throw new Error("Não foi possível atualizar as odds dos jogos.");

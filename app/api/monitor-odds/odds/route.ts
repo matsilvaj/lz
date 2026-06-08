@@ -4,11 +4,13 @@ import {
   getOddsFeedStatus,
   getOddsSnapshotsByFixtureIds,
 } from "@/lib/monitor-odds/odds-data";
+import { authorizeActiveApiUser } from "@/lib/auth/session";
 import { normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { readLimitedJson } from "@/lib/security/request";
 
 export const dynamic = "force-dynamic";
+const ODDS_REQUEST_MAX_BYTES = 32 * 1024;
 
 type OddsRequestBody = {
   fixtureIds?: unknown;
@@ -36,20 +38,17 @@ function parseOddsVersion(value: unknown) {
 }
 
 async function authorizeOddsRequest() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authorization = await authorizeActiveApiUser();
 
-  if (!user) {
+  if (authorization.response) {
     return {
-      response: Response.json({ error: "unauthorized" }, { status: 401 }),
+      response: authorization.response,
     };
   }
 
   const canPoll = await consumeRateLimit({
     distributed: false,
-    identity: user.id,
+    identity: authorization.user.id,
     key: "monitor-odds:odds",
     limit: 90,
     windowMs: 60_000,
@@ -116,13 +115,13 @@ export async function POST(request: NextRequest) {
     return authorization.response;
   }
 
-  let body: OddsRequestBody;
+  const bodyResult = await readLimitedJson<OddsRequestBody>(request, {
+    maxBytes: ODDS_REQUEST_MAX_BYTES,
+  });
 
-  try {
-    body = (await request.json()) as OddsRequestBody;
-  } catch {
-    return Response.json({ error: "invalid_json" }, { status: 400 });
+  if (bodyResult.response) {
+    return bodyResult.response;
   }
 
-  return buildOddsResponse(body.fixtureIds, body.oddsVersion);
+  return buildOddsResponse(bodyResult.data.fixtureIds, bodyResult.data.oddsVersion);
 }

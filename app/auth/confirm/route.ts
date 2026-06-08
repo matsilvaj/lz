@@ -6,6 +6,7 @@ import {
   PASSWORD_RECOVERY_COOKIE_MAX_AGE,
 } from "@/lib/auth/password-recovery";
 import { getSafeAppPath } from "@/lib/auth/redirects";
+import { registerActiveSessionFromAccessToken } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
 function redirectAfterConfirmation(nextPath: string, requestUrl: string) {
@@ -33,20 +34,54 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      if (nextPath !== "/redefinir-senha" && data.user && data.session) {
+        const sessionRegistered = await registerActiveSessionFromAccessToken(
+          supabase,
+          data.user.id,
+          data.session.access_token,
+        );
+
+        if (!sessionRegistered) {
+          await supabase.auth.signOut({ scope: "local" });
+          return NextResponse.redirect(
+            new URL("/login?error=Nao+foi+possivel+preparar+sua+sessao.", request.url),
+          );
+        }
+
+        await supabase.auth.signOut({ scope: "others" });
+      }
+
       return redirectAfterConfirmation(nextPath, request.url);
     }
   }
 
   if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       type,
       token_hash: tokenHash,
     });
 
     if (!error) {
+      if (nextPath !== "/redefinir-senha" && data.user && data.session) {
+        const sessionRegistered = await registerActiveSessionFromAccessToken(
+          supabase,
+          data.user.id,
+          data.session.access_token,
+        );
+
+        if (!sessionRegistered) {
+          await supabase.auth.signOut({ scope: "local" });
+          return NextResponse.redirect(
+            new URL("/login?error=Nao+foi+possivel+preparar+sua+sessao.", request.url),
+          );
+        }
+
+        await supabase.auth.signOut({ scope: "others" });
+      }
+
       return redirectAfterConfirmation(nextPath, request.url);
     }
   }

@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireUser } from "@/lib/auth/session";
+import { clearCurrentActiveSession, requireUser } from "@/lib/auth/session";
 import { normalizeEmail, normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createEphemeralAuthClient } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function buildProfileRedirect(key: "error" | "message", message: string) {
@@ -22,7 +23,6 @@ function parseEmail(value: FormDataEntryValue | null) {
 }
 
 async function verifyCurrentPassword(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   email: string | undefined,
   formData: FormData,
 ) {
@@ -32,7 +32,8 @@ async function verifyCurrentPassword(
     redirect(buildProfileRedirect("error", "Informe sua senha atual."));
   }
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const auth = createEphemeralAuthClient();
+  const { error } = await auth.auth.signInWithPassword({
     email,
     password: currentPassword,
   });
@@ -105,7 +106,7 @@ export async function updateEmailAction(formData: FormData) {
     redirect(buildProfileRedirect("error", "Informe o novo e-mail."));
   }
 
-  await verifyCurrentPassword(supabase, user.email, formData);
+  await verifyCurrentPassword(user.email, formData);
 
   const { error } = await supabase.auth.updateUser({ email });
 
@@ -148,7 +149,7 @@ export async function updatePasswordAction(formData: FormData) {
     redirect(buildProfileRedirect("error", "As senhas não conferem."));
   }
 
-  await verifyCurrentPassword(supabase, user.email, formData);
+  await verifyCurrentPassword(user.email, formData);
 
   const { error } = await supabase.auth.updateUser({ password });
 
@@ -174,7 +175,7 @@ export async function deleteAccountAction(formData: FormData) {
     redirect(buildProfileRedirect("error", "Muitas tentativas. Aguarde um pouco."));
   }
 
-  await verifyCurrentPassword(supabase, user.email, formData);
+  await verifyCurrentPassword(user.email, formData);
 
   let deletionError: string | null = null;
 
@@ -197,7 +198,8 @@ export async function deleteAccountAction(formData: FormData) {
     redirect(buildProfileRedirect("error", deletionError));
   }
 
-  await supabase.auth.signOut();
+  await clearCurrentActiveSession(supabase);
+  await supabase.auth.signOut({ scope: "local" });
   revalidatePath("/", "layout");
   redirect("/login?message=Conta+exclu%C3%ADda+com+sucesso.");
 }

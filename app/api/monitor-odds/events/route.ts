@@ -6,9 +6,9 @@ import {
   listOddsEventsByDateRange,
   searchOddsEvents,
 } from "@/lib/monitor-odds/odds-data";
+import { authorizeActiveApiUser } from "@/lib/auth/session";
 import { normalizeText } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -18,18 +18,15 @@ function normalizeDateParam(value: string | null) {
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authorization = await authorizeActiveApiUser();
 
-  if (!user) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (authorization.response) {
+    return authorization.response;
   }
 
   const canSearch = await consumeRateLimit({
     distributed: false,
-    identity: user.id,
+    identity: authorization.user.id,
     key: "monitor-odds:events",
     limit: 60,
     windowMs: 60_000,

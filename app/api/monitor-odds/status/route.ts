@@ -1,22 +1,19 @@
+import { authorizeActiveApiUser } from "@/lib/auth/session";
 import { getOddsFeedStatus } from "@/lib/monitor-odds/odds-data";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authorization = await authorizeActiveApiUser();
 
-  if (!user) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (authorization.response) {
+    return authorization.response;
   }
 
   const canPoll = await consumeRateLimit({
     distributed: false,
-    identity: user.id,
+    identity: authorization.user.id,
     key: "monitor-odds:status",
     limit: 30,
     windowMs: 60_000,

@@ -32,6 +32,7 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
   buildDuploAnalysis,
   formatDuploPercent,
@@ -862,6 +863,10 @@ async function fetchOddsForEvents(
     signal: options.signal,
   });
 
+  if (redirectToLoginOnUnauthorized(response)) {
+    throw new Error("Sessao encerrada.");
+  }
+
   if (response.status === 429) {
     throw new Error("Muitas atualizacoes em pouco tempo. Aguarde alguns segundos.");
   }
@@ -943,6 +948,10 @@ function useMonitorOddsStatusFeed(
         const response = await fetch("/api/monitor-odds/status", {
           cache: "no-store",
         });
+
+        if (redirectToLoginOnUnauthorized(response)) {
+          return;
+        }
 
         if (!response.ok) {
           return;
@@ -2718,6 +2727,10 @@ export function OddsEventSearch({
           cache: "no-store",
           signal: options.signal,
         });
+
+        if (redirectToLoginOnUnauthorized(response)) {
+          return;
+        }
 
         if (response.status === 429) {
           throw new Error("Muitas buscas em pouco tempo. Aguarde alguns segundos.");
