@@ -57,6 +57,10 @@ const calculatorPage = readFileSync(
   new URL("../app/calculadora/page.tsx", import.meta.url),
   "utf8",
 );
+const calculatorWorkspace = readFileSync(
+  new URL("../app/(app)/calculadora/calculator-workspace.tsx", import.meta.url),
+  "utf8",
+);
 const oddsDisplayNames = readFileSync(
   new URL("../lib/monitor-odds/display-names.ts", import.meta.url),
   "utf8",
@@ -332,6 +336,10 @@ test("calculator route keeps app chrome without protected workspace lookup", () 
   assert.match(calculatorPage, /AppNavigation/);
   assert.match(calculatorPage, /ThemeToggle/);
   assert.match(calculatorPage, /UserMenu/);
+  assert.match(calculatorPage, /searchParams\?: Promise/);
+  assert.match(calculatorPage, /initialSearchParams=\{resolvedSearchParams\}/);
+  assert.match(calculatorWorkspace, /initialSearchParams/);
+  assert.doesNotMatch(calculatorWorkspace, /useSearchParams/);
   assert.doesNotMatch(calculatorPage, /requireWorkspaceContext/);
   assert.equal(
     existsSync(new URL("../app/(app)/calculadora/page.tsx", import.meta.url)),

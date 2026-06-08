@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense } from "react";
 
 import { getCalculatorPageData } from "@/lib/server/app-data";
 
@@ -8,6 +7,10 @@ import { AppNavigation } from "../(app)/_components/app-navigation";
 import { ThemeToggle } from "../(app)/_components/theme-toggle";
 import { UserMenu } from "../(app)/_components/user-menu";
 import { CalculatorWorkspace } from "../(app)/calculadora/calculator-workspace";
+
+type CalculatorPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 function WorkspaceShortcut() {
   return (
@@ -34,8 +37,13 @@ function WorkspaceShortcut() {
   );
 }
 
-export default async function CalculatorPage() {
-  const data = await getCalculatorPageData();
+export default async function CalculatorPage({
+  searchParams,
+}: CalculatorPageProps) {
+  const [data, resolvedSearchParams] = await Promise.all([
+    getCalculatorPageData(),
+    searchParams ?? Promise.resolve({}),
+  ]);
 
   return (
     <div className="min-h-screen text-[var(--text-primary)]">
@@ -76,9 +84,10 @@ export default async function CalculatorPage() {
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
         <div className="lz-page-enter">
-          <Suspense fallback={null}>
-            <CalculatorWorkspace bookmakers={data.bookmakers} />
-          </Suspense>
+          <CalculatorWorkspace
+            bookmakers={data.bookmakers}
+            initialSearchParams={resolvedSearchParams}
+          />
         </div>
       </main>
     </div>

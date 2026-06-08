@@ -2,7 +2,7 @@
 
 import { FREEBET_CONDITION_CONVERSION_ONLY, calculateSurebet } from "@/core";
 import { Plus, RotateCcw } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProcedureShareValues } from "../_components/procedure-share-types";
@@ -22,6 +22,7 @@ import { formatCurrency } from "../_components/ui";
 
 type CalculatorWorkspaceProps = {
   bookmakers: string[];
+  initialSearchParams?: Record<string, string | string[] | undefined>;
 };
 
 type CalculatorProcedureDefaults = ProcedureShareValues & {
@@ -266,6 +267,28 @@ const calculatorConfigInputClass =
 
 const maxCalculatorColumnsPerRow = 5;
 
+function getInitialSearchParam(
+  params: Record<string, string | string[] | undefined>,
+  name: string,
+) {
+  const value = params[name];
+
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+function getAllInitialSearchParams(
+  params: Record<string, string | string[] | undefined>,
+  name: string,
+) {
+  const value = params[name];
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return value ? [value] : [];
+}
+
 function BookmakerAutocompleteInput({
   index,
   bookmakers,
@@ -423,11 +446,21 @@ function BookmakerAutocompleteInput({
   );
 }
 
-export function CalculatorWorkspace({ bookmakers }: CalculatorWorkspaceProps) {
+export function CalculatorWorkspace({
+  bookmakers,
+  initialSearchParams = {},
+}: CalculatorWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { showToast } = useToast();
+  const searchParams = useMemo(
+    () => ({
+      get: (name: string) => getInitialSearchParam(initialSearchParams, name),
+      getAll: (name: string) =>
+        getAllInitialSearchParams(initialSearchParams, name),
+    }),
+    [initialSearchParams],
+  );
   const conversionPreset = useMemo(() => {
     if (searchParams.get("mode") !== "convert-freebet") {
       return null;
