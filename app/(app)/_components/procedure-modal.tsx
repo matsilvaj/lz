@@ -453,7 +453,7 @@ function calculateSportsProfit(
 }
 
 function getSportCardClass(selected: boolean) {
-  return `rounded-[24px] border p-4 transition ${
+  return `min-w-0 rounded-[24px] border p-3 transition sm:p-4 ${
     selected
       ? "border-[rgba(216,31,89,0.72)] bg-[rgba(216,31,89,0.12)] shadow-[0_0_0_1px_rgba(216,31,89,0.22),0_18px_48px_rgba(216,31,89,0.12)]"
       : "border-white/10 bg-[rgba(255,255,255,0.035)]"
@@ -1681,7 +1681,7 @@ export function ProcedureModal({
 
     return (
       <>
-        <label className="space-y-2 text-sm">
+        <label className="min-w-0 space-y-2 text-sm">
           <span className="text-[var(--text-muted)]">Stake</span>
           <input
             className="lz-input w-full rounded-2xl px-3 py-3"
@@ -1699,11 +1699,11 @@ export function ProcedureModal({
           ) : null}
         </label>
 
-        <div className="space-y-2 text-sm">
+        <div className="min-w-0 space-y-2 text-sm">
           <span className="text-[var(--text-muted)]">
             {isLay ? "Odd Lay" : "Odd"}
           </span>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
             <input
               className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
               inputMode="decimal"
@@ -1728,7 +1728,7 @@ export function ProcedureModal({
             />
             <button
               aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
-              className={`min-w-12 rounded-2xl px-3 py-3 text-sm font-bold transition ${
+              className={`rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3 ${
                 isLay
                   ? "border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)]"
                   : "lz-button-secondary"
@@ -1742,7 +1742,7 @@ export function ProcedureModal({
             <button
               aria-expanded={configOpen}
               aria-label="Configurações da entrada"
-              className={`inline-flex min-w-12 items-center justify-center rounded-2xl border px-3 py-3 transition ${
+              className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
                 configOpen || hasCustomConfig
                   ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
                   : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
@@ -1757,7 +1757,7 @@ export function ProcedureModal({
         </div>
 
         {configOpen ? (
-          <div className="grid items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+          <div className="grid min-w-0 items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
             <label className={configFieldClass}>
               <span className="text-[var(--text-muted)]">Aumento (%)</span>
               <input
@@ -1791,7 +1791,7 @@ export function ProcedureModal({
               />
             </label>
 
-            <label className="inline-flex min-h-[84px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] lg:min-w-28 lg:justify-center">
+            <label className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-28 2xl:justify-center">
               <input
                 checked={freebetChecked}
                 className="lz-checkbox"
@@ -2317,10 +2317,10 @@ export function ProcedureModal({
 
       {open && typeof document !== "undefined"
         ? createPortal(
-            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-4 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/65 p-2 backdrop-blur-sm sm:p-4">
           <div className="flex min-h-full items-start justify-center py-2 md:py-4">
-          <div className="lz-panel w-full max-w-7xl rounded-[34px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] md:[zoom:0.8]">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="lz-panel w-full max-w-7xl rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[34px]">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-4 sm:px-6">
               <h2 className="text-lg font-semibold text-white">{title}</h2>
 
               <button
@@ -2335,7 +2335,7 @@ export function ProcedureModal({
 
             <form
               action={mode === "edit" ? updateProcedureAction : saveProcedureAction}
-              className="space-y-6 px-6 py-6"
+              className="space-y-5 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-6"
               onChangeCapture={handleReadOnlyFormInteraction}
               onClickCapture={handleReadOnlyFormInteraction}
               onInputCapture={handleReadOnlyFormInteraction}
@@ -2600,7 +2600,7 @@ export function ProcedureModal({
               )}
 
               {showFreebetCollectionSection ? (
-                <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-4">
+                <div className="min-w-0 space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-3 sm:p-4">
                   <button
                     aria-label={
                       freebetCollectionExpanded ? "Fechar coleta" : "Abrir coleta"
@@ -2651,7 +2651,7 @@ export function ProcedureModal({
                         </label>
                       </div>
 
-                      <div className="grid gap-4 xl:grid-cols-2">
+                      <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
                         <div
                           className={getSportCardClass(
                             collectionResultSelections.includes("principal"),
@@ -2663,7 +2663,7 @@ export function ProcedureModal({
                             </p>
                           </div>
 
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
                             {renderSportsBetFields({
                               stakeName: "collectionPrimaryStake",
                               oddName: "collectionPrimaryOdd",
@@ -2723,7 +2723,7 @@ export function ProcedureModal({
                                 ) : null}
                               </div>
 
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
                                   <button
@@ -2888,7 +2888,7 @@ export function ProcedureModal({
                   <div
                     className={
                       isFreebetType
-                        ? "space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-4"
+                      ? "min-w-0 space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-3 sm:p-4"
                         : "space-y-4"
                     }
                   >
@@ -2950,7 +2950,7 @@ export function ProcedureModal({
                     </div>
                   ) : null}
 
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
                     <div
                       className={getSportCardClass(
                         sportResultSelections.includes("principal"),
@@ -2960,7 +2960,7 @@ export function ProcedureModal({
                         <p className="text-sm font-semibold text-white">Principal</p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
                         {!isFreebetType ? (
                           <div className="space-y-2 text-sm sm:col-span-2">
                             <span className="text-[var(--text-muted)]">Casa</span>
@@ -3032,7 +3032,7 @@ export function ProcedureModal({
                                 ) : null}
                               </div>
 
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
                                   <button

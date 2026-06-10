@@ -3,6 +3,7 @@
 import { FREEBET_CONDITION_CONVERSION_ONLY, calculateSurebet } from "@/core";
 import { Plus, RotateCcw } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProcedureShareValues } from "../_components/procedure-share-types";
@@ -938,13 +939,13 @@ export function CalculatorWorkspace({
         />
       </div>
 
-      <div className="overflow-x-auto pb-2">
+      <div className="pb-2 md:overflow-x-auto">
         <div
-          className="grid items-stretch gap-4"
+          className="grid min-w-0 grid-cols-1 items-stretch gap-4 md:min-w-[var(--calculator-lines-min-width)] md:[grid-template-columns:var(--calculator-lines-columns)]"
           style={{
-            gridTemplateColumns: `repeat(${columnsPerRow}, minmax(220px, 1fr))`,
-            minWidth: `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
-          }}
+            "--calculator-lines-columns": `repeat(${columnsPerRow}, minmax(220px, 1fr))`,
+            "--calculator-lines-min-width": `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
+          } as CSSProperties}
         >
         {lines.map((line, index) => {
           const lineResult = calculation?.linhas?.[index];

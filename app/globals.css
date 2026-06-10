@@ -93,6 +93,7 @@ html[data-theme="light"] body::before {
 }
 
 * {
+  box-sizing: border-box;
   scrollbar-color: rgba(255, 119, 163, 0.4) rgba(255, 255, 255, 0.04);
 }
 
