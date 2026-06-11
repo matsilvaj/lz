@@ -1043,7 +1043,11 @@ export function CalculatorWorkspace({
                         value={displayedStake}
                       />
                       <button
-                        className="lz-button-secondary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
+                        className={`min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
+                          line.tipo === "L"
+                            ? "border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)]"
+                            : "lz-button-secondary"
+                        }`}
                         onClick={() => toggleLineType(index)}
                         type="button"
                       >

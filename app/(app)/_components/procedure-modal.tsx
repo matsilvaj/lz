@@ -268,6 +268,14 @@ function formatProcedureCurrency(value: number) {
   return formatCurrency(normalizeCurrencyAmount(value));
 }
 
+function formatDecimalDisplay(value: number, fractionDigits = 2) {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.005) {
+    return "";
+  }
+
+  return value.toFixed(fractionDigits).replace(".", ",");
+}
+
 function calculateAdjustedOdd(odd: number, increase: number) {
   if (odd <= 1) {
     return odd;
@@ -352,7 +360,7 @@ function calculateSportsProfit(
   );
 
   let investment = fallbackInvestment;
-  let returnsByIndex = new Map<number, number>();
+  let profitByIndex = new Map<number, number>();
 
   if (baseIndex >= 0) {
     try {
@@ -371,14 +379,14 @@ function calculateSportsProfit(
       );
 
       investment = Number(calculation?.investimento_efetivo ?? fallbackInvestment);
-      returnsByIndex = new Map(
+      profitByIndex = new Map(
         normalizedEntries.map((_, index) => [
           index,
-          Number(calculation?.linhas?.[index]?.retorno_bruto ?? 0),
+          Number(calculation?.linhas?.[index]?.lucro_liquido ?? 0),
         ]),
       );
     } catch {
-      returnsByIndex = new Map(
+      profitByIndex = new Map(
         normalizedEntries.map((entry, index) => {
           const layReturn = calculateLayReturn(
             entry.responsibility,
@@ -396,13 +404,13 @@ function calculateSportsProfit(
 
           return [
             index,
-            entry.side === "lay" ? layReturn : backReturn,
+            (entry.side === "lay" ? layReturn : backReturn) - fallbackInvestment,
           ];
         }),
       );
     }
   } else {
-    returnsByIndex = new Map(
+    profitByIndex = new Map(
       normalizedEntries.map((entry, index) => {
         const layReturn = calculateLayReturn(
           entry.responsibility,
@@ -420,14 +428,10 @@ function calculateSportsProfit(
 
         return [
           index,
-          entry.side === "lay" ? layReturn : backReturn,
+          (entry.side === "lay" ? layReturn : backReturn) - fallbackInvestment,
         ];
       }),
     );
-  }
-
-  if (selectedResults.includes("defeat")) {
-    return -investment;
   }
 
   if (selectedResults.length === 0) {
@@ -435,21 +439,23 @@ function calculateSportsProfit(
   }
 
   const selectedResultSet = new Set(selectedResults);
-  const totalReturn = normalizedEntries.reduce((sum, entry, index) => {
-    const entryReturn = returnsByIndex.get(index) ?? 0;
+  const selectedProfits = normalizedEntries
+    .map((entry, index) =>
+      selectedResultSet.has(entry.resultId) ? (profitByIndex.get(index) ?? 0) : null,
+    )
+    .filter((value): value is number => value !== null);
 
-    if (entry.side === "lay") {
-      return selectedResultSet.has(entry.resultId) ? sum : sum + entryReturn;
-    }
+  if (selectedProfits.length === 0) {
+    return selectedResultSet.has("defeat") ? -investment : 0;
+  }
 
-    if (!selectedResultSet.has(entry.resultId)) {
-      return sum;
-    }
+  const defeatProfit = selectedResultSet.has("defeat") ? -investment : 0;
+  const totalProfit = selectedProfits.reduce(
+    (sum, profit) => sum + profit,
+    defeatProfit,
+  );
 
-    return sum + entryReturn;
-  }, 0);
-
-  return normalizeCurrencyAmount(totalReturn - investment);
+  return normalizeCurrencyAmount(totalProfit);
 }
 
 function getSportCardClass(selected: boolean) {
@@ -465,30 +471,6 @@ function DisclosureIcon({ open }: { open: boolean }) {
     <span className="inline-flex h-9 w-12 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition group-hover:border-white/20 group-hover:text-white">
       {open ? <CloseIcon /> : <ChevronDownIcon />}
     </span>
-  );
-}
-
-function RiskWarningIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4 shrink-0"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="M12 4.75 20.25 19H3.75L12 4.75Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M12 9.5v4.25M12 16.5h.01"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
   );
 }
 
@@ -1671,6 +1653,13 @@ export function ProcedureModal({
   }) {
     const isLay = side === "lay";
     const displayedOddValue = isLay ? (layOddValue || oddValue) : oddValue;
+    const responsibilityValue = stakeValue;
+    const layOddNumber = parseDecimalInput(displayedOddValue);
+    const responsibilityNumber = parseDecimalInput(responsibilityValue);
+    const displayedLayStake =
+      isLay && layOddNumber > 1
+        ? formatDecimalDisplay(responsibilityNumber / (layOddNumber - 1))
+        : "";
     const hasCustomConfig =
       parseDecimalInput(increaseValue) !== 0 ||
       parseDecimalInput(commissionValue) !== 0 ||
@@ -1681,64 +1670,121 @@ export function ProcedureModal({
 
     return (
       <>
-        <label className="min-w-0 space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">Stake</span>
-          <input
-            className="lz-input w-full rounded-2xl px-3 py-3"
-            inputMode="decimal"
-            name={stakeName}
-            onChange={(event) => onStakeChange(event.target.value)}
-            placeholder="0,00"
-            value={stakeValue}
-          />
-          {isLay ? (
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-soft)]">
-              <RiskWarningIcon />
-              Valor do risco!
-            </p>
-          ) : null}
-        </label>
+        {isLay ? (
+          <label className="min-w-0 space-y-2 text-sm sm:col-span-2">
+            <span className="block text-[var(--text-muted)]">
+              Responsabilidade
+            </span>
+            <input
+              className="lz-input w-full rounded-2xl px-3 py-3"
+              inputMode="decimal"
+              name={stakeName}
+              onChange={(event) => onStakeChange(event.target.value)}
+              placeholder="0,00"
+              value={responsibilityValue}
+            />
+          </label>
+        ) : (
+          <label className="min-w-0 space-y-2 text-sm">
+            <span className="block text-[var(--text-muted)]">Stake</span>
+            <input
+              className="lz-input w-full rounded-2xl px-3 py-3"
+              inputMode="decimal"
+              name={stakeName}
+              onChange={(event) => onStakeChange(event.target.value)}
+              placeholder="0,00"
+              value={stakeValue}
+            />
+          </label>
+        )}
 
         <div className="min-w-0 space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">
-            {isLay ? "Odd Lay" : "Odd"}
+          <span className="block text-[var(--text-muted)]">
+            {isLay ? "Stake" : "Odd"}
           </span>
-          <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
+          {isLay ? (
             <input
-              className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
+              className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
               inputMode="decimal"
-              name={oddName}
               onChange={(event) => {
-                const nextValue = event.target.value;
+                const nextStake = parseDecimalInput(event.target.value);
+                const effectiveOdd = parseDecimalInput(displayedOddValue);
 
-                if (isLay) {
+                if (effectiveOdd > 1) {
+                  onStakeChange(
+                    formatDecimalDisplay(nextStake * (effectiveOdd - 1)),
+                  );
+                }
+              }}
+              placeholder="0,00"
+              value={displayedLayStake}
+            />
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
+              <input
+                className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
+                inputMode="decimal"
+                name={oddName}
+                onChange={(event) => onOddChange(event.target.value)}
+                placeholder="0.000"
+                value={displayedOddValue}
+              />
+              <button
+                aria-label="Alternar para lay"
+                className="lz-button-secondary rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3"
+                onClick={onToggleSide}
+                title="Back"
+                type="button"
+              >
+                B
+              </button>
+              <button
+                aria-expanded={configOpen}
+                aria-label="ConfiguraÃ§Ãµes da entrada"
+                className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
+                  configOpen || hasCustomConfig
+                    ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
+                    : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
+                }`}
+                onClick={onToggleConfig}
+                title="ConfiguraÃ§Ãµes"
+                type="button"
+              >
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.7} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {isLay ? (
+          <div className="min-w-0 space-y-2 text-sm">
+            <span className="block text-[var(--text-muted)]">Odd Lay</span>
+            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
+              <input
+                className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
+                inputMode="decimal"
+                name={oddName}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+
                   onLayOddChange(nextValue);
 
                   if (!oddValue.trim()) {
                     onOddChange(nextValue);
                   }
-
-                  return;
-                }
-
-                onOddChange(nextValue);
-              }}
-              placeholder="0.000"
-              value={displayedOddValue}
-            />
-            <button
-              aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
-              className={`rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3 ${
-                isLay
-                  ? "border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)]"
-                  : "lz-button-secondary"
-              }`}
-              onClick={onToggleSide}
-              title={isLay ? "Lay" : "Back"}
-              type="button"
-            >
-              {isLay ? "L" : "B"}
-            </button>
+                }}
+                placeholder="0.000"
+                value={displayedOddValue}
+              />
+              <button
+                aria-label="Alternar para back"
+                className="rounded-2xl border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] px-2 py-3 text-sm font-bold text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)] transition sm:px-3"
+                onClick={onToggleSide}
+                title="Lay"
+                type="button"
+              >
+                L
+              </button>
             <button
               aria-expanded={configOpen}
               aria-label="Configurações da entrada"
@@ -1755,6 +1801,7 @@ export function ProcedureModal({
             </button>
           </div>
         </div>
+        ) : null}
 
         {configOpen ? (
           <div className="grid min-w-0 items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
@@ -2319,7 +2366,7 @@ export function ProcedureModal({
         ? createPortal(
             <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/65 p-2 backdrop-blur-sm sm:p-4">
           <div className="flex min-h-full items-start justify-center py-2 md:py-4">
-          <div className="lz-panel w-full max-w-7xl rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[34px]">
+          <div className="lz-panel w-full max-w-7xl rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[34px] lg:[zoom:0.75]">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-4 sm:px-6">
               <h2 className="text-lg font-semibold text-white">{title}</h2>
 
@@ -2651,7 +2698,7 @@ export function ProcedureModal({
                         </label>
                       </div>
 
-                      <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
+                      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
                         <div
                           className={getSportCardClass(
                             collectionResultSelections.includes("principal"),
@@ -2950,7 +2997,7 @@ export function ProcedureModal({
                     </div>
                   ) : null}
 
-                  <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
+                  <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
                     <div
                       className={getSportCardClass(
                         sportResultSelections.includes("principal"),
