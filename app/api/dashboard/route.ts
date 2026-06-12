@@ -24,10 +24,47 @@ function normalizeDashboardPeriod(value: string | null) {
   return "";
 }
 
+function describeDashboardError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message.split("\n")[0] || "Dashboard data error",
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: String(error),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const period = normalizeDashboardPeriod(request.nextUrl.searchParams.get("period"));
-  const data = await getDashboardData(user.id, activeWorkspace.id, period);
+
+  let data;
+
+  try {
+    data = await getDashboardData(user.id, activeWorkspace.id, period);
+  } catch (error) {
+    console.error("Dashboard data request failed.", {
+      error: describeDashboardError(error),
+      period,
+    });
+
+    return Response.json(
+      {
+        error: "dashboard_unavailable",
+        message: "Nao foi possivel carregar o dashboard agora.",
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+        status: 503,
+      },
+    );
+  }
 
   return Response.json(data, {
     headers: {

@@ -41,12 +41,19 @@ function parsePoolMax(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 3;
 }
 
+function parsePositiveInteger(value, defaultValue) {
+  const parsed = Number(value ?? defaultValue);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue;
+}
+
 export function createPostgresPool({
   connectionString = process.env[DATABASE_RUNTIME_URL_ENV],
   ssl,
   max = parsePoolMax(process.env.POSTGRES_POOL_MAX),
   idleTimeoutMillis = 10_000,
   connectionTimeoutMillis = 5_000,
+  statementTimeoutMillis = process.env.POSTGRES_STATEMENT_TIMEOUT_MS,
+  queryTimeoutMillis = process.env.POSTGRES_QUERY_TIMEOUT_MS,
   allowExitOnIdle = true,
 } = {}) {
   if (!connectionString) {
@@ -67,12 +74,24 @@ export function createPostgresPool({
     );
   }
 
+  const resolvedStatementTimeoutMillis = parsePositiveInteger(
+    statementTimeoutMillis,
+    8_000,
+  );
+  const resolvedQueryTimeoutMillis = parsePositiveInteger(
+    queryTimeoutMillis,
+    Math.max(resolvedStatementTimeoutMillis + 1_000, 10_000),
+  );
+
   return new Pool({
+    application_name: process.env.POSTGRES_APPLICATION_NAME?.trim() || "lz-runtime",
     connectionString,
     ssl,
     max,
     idleTimeoutMillis,
     connectionTimeoutMillis,
+    statement_timeout: resolvedStatementTimeoutMillis,
+    query_timeout: resolvedQueryTimeoutMillis,
     allowExitOnIdle,
   });
 }
