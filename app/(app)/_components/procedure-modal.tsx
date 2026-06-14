@@ -351,6 +351,7 @@ function calculateSportsProfit(
       freebet: Boolean(entry.freebet),
     };
   });
+  
   const baseIndex = normalizedEntries.findIndex((entry) => entry.stake > 0);
   const fallbackInvestment = normalizedEntries.reduce(
     (sum, entry) =>
@@ -360,7 +361,7 @@ function calculateSportsProfit(
   );
 
   let investment = fallbackInvestment;
-  let profitByIndex = new Map<number, number>();
+  let returnByIndex = new Map<number, number>();
 
   if (baseIndex >= 0) {
     try {
@@ -379,14 +380,16 @@ function calculateSportsProfit(
       );
 
       investment = Number(calculation?.investimento_efetivo ?? fallbackInvestment);
-      profitByIndex = new Map(
-        normalizedEntries.map((_, index) => [
-          index,
-          Number(calculation?.linhas?.[index]?.lucro_liquido ?? 0),
-        ]),
+      
+      returnByIndex = new Map(
+        normalizedEntries.map((_, index) => {
+          const lucroLiquido = Number(calculation?.linhas?.[index]?.lucro_liquido ?? 0);
+
+          return [index, lucroLiquido + investment]; 
+        }),
       );
     } catch {
-      profitByIndex = new Map(
+      returnByIndex = new Map(
         normalizedEntries.map((entry, index) => {
           const layReturn = calculateLayReturn(
             entry.responsibility,
@@ -402,15 +405,12 @@ function calculateSportsProfit(
                 (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
                 entry.cashback / 100);
 
-          return [
-            index,
-            (entry.side === "lay" ? layReturn : backReturn) - fallbackInvestment,
-          ];
+          return [index, entry.side === "lay" ? layReturn : backReturn];
         }),
       );
     }
   } else {
-    profitByIndex = new Map(
+    returnByIndex = new Map(
       normalizedEntries.map((entry, index) => {
         const layReturn = calculateLayReturn(
           entry.responsibility,
@@ -426,10 +426,7 @@ function calculateSportsProfit(
               (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
               entry.cashback / 100);
 
-        return [
-          index,
-          (entry.side === "lay" ? layReturn : backReturn) - fallbackInvestment,
-        ];
+        return [index, entry.side === "lay" ? layReturn : backReturn];
       }),
     );
   }
@@ -439,23 +436,25 @@ function calculateSportsProfit(
   }
 
   const selectedResultSet = new Set(selectedResults);
-  const selectedProfits = normalizedEntries
+  const selectedReturns = normalizedEntries
     .map((entry, index) =>
-      selectedResultSet.has(entry.resultId) ? (profitByIndex.get(index) ?? 0) : null,
+      selectedResultSet.has(entry.resultId) ? (returnByIndex.get(index) ?? 0) : null,
     )
     .filter((value): value is number => value !== null);
 
-  if (selectedProfits.length === 0) {
+  if (selectedReturns.length === 0) {
+
     return selectedResultSet.has("defeat") ? -investment : 0;
   }
 
-  const defeatProfit = selectedResultSet.has("defeat") ? -investment : 0;
-  const totalProfit = selectedProfits.reduce(
-    (sum, profit) => sum + profit,
-    defeatProfit,
+
+  const totalGrossReturn = selectedReturns.reduce(
+    (sum, returnVal) => sum + returnVal,
+    0,
   );
 
-  return normalizeCurrencyAmount(totalProfit);
+
+  return normalizeCurrencyAmount(totalGrossReturn - investment);
 }
 
 function getSportCardClass(selected: boolean) {
