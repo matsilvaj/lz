@@ -782,7 +782,11 @@ export function CalculatorWorkspace({
   }
 
   const stakeTotal =
-    calculation?.linhas?.reduce((total, line) => total + Number(line.stake ?? 0), 0) ?? 0;
+    calculation?.linhas?.reduce((total, line, index) => {
+      const isLay = lines[index]?.tipo === "L";
+      const amount = isLay ? Number(line.responsabilidade ?? 0) : Number(line.stake ?? 0);
+      return total + amount;
+    }, 0) ?? 0;
   const hasLayLine = lines.some((line) => line.tipo === "L");
   const columnsPerRow = Math.min(lineCount, maxCalculatorColumnsPerRow);
   const procedureLineOrder = [
