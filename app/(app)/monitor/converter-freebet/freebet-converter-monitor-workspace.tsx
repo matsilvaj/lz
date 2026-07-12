@@ -1482,7 +1482,7 @@ function OpportunityLineMini({
           ) : null}
         </span>
         <span className="text-sm font-semibold text-white">
-          {line.odd.toFixed(2)}
+          {line.odd.toFixed(3)}
         </span>
       </div>
     </div>

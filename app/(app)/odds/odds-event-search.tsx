@@ -1063,7 +1063,7 @@ function selectionLabel(value: string) {
 }
 
 function formatOdd(value: number | undefined) {
-  return value ? value.toFixed(2) : "-";
+  return value ? value.toFixed(3) : "-";
 }
 
 function formatCurrency(value: number) {
@@ -2207,7 +2207,7 @@ function DuploLineBadge({
           ) : null}
         </span>
         <span className="text-sm font-semibold text-white">
-          {line.odd.toFixed(2)}
+          {line.odd.toFixed(3)}
         </span>
       </div>
     </div>
