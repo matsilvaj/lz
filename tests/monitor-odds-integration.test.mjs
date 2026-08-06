@@ -78,13 +78,30 @@ test("monitor odds repository reads only public monitor views", () => {
     "bookmaker_collection_state",
     "bookmaker_event_links",
     "bookmaker_league_links",
+    "capturas_eventos",
+    "estado_coletas",
+    "links_eventos",
+    "links_campeonatos",
   ];
 
-  assert.match(oddsRepository, /\.from\("public_odds_fixtures"\)/);
-  assert.match(oddsRepository, /\.from\("public_odds_snapshot"\)/);
-  assert.doesNotMatch(oddsRepository, /\.from\("public_odds_feed"\)/);
-  assert.doesNotMatch(oddsRepository, /public_odds_feed_compact/);
-  assert.match(oddsRepository, /\.from\("public_odds_feed_status"\)/);
+  const publicViews = [
+    "public_jogos_com_cotacoes",
+    "public_snapshot_cotacoes",
+    "public_status_feed_cotacoes",
+  ];
+
+  const forbiddenViewReads = [
+    "public_feed_cotacoes",
+    "public_feed_cotacoes_compact",
+  ];
+
+  for (const view of publicViews) {
+    assert.match(oddsRepository, new RegExp(`\\.from\\("${view}"\\)`));
+  }
+
+  for (const view of forbiddenViewReads) {
+    assert.doesNotMatch(oddsRepository, new RegExp(view));
+  }
 
   for (const table of forbiddenTables) {
     assert.equal(oddsRepository.includes(table), false, `${table} must not be queried`);

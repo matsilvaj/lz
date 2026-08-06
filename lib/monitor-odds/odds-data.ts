@@ -468,7 +468,7 @@ async function searchOddsEventsUncached(
   for (let page = 0; page < MAX_SEARCH_PAGES; page += 1) {
     const offset = page * SEARCH_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_fixtures")
+      .from("public_jogos_com_cotacoes")
       .select(FIXTURE_FEED_COLUMNS)
       .or(filter)
       .order("starts_at", { ascending: true })
@@ -520,7 +520,7 @@ async function listOddsEventsByDateRangeUncached(
   for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
     const offset = page * DATE_RANGE_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_fixtures")
+      .from("public_jogos_com_cotacoes")
       .select(FIXTURE_FEED_COLUMNS)
       .gte("starts_at", dateRange.from)
       .lt("starts_at", dateRange.to)
@@ -566,7 +566,7 @@ async function listAvailableOddsEventsUncached(
   for (let page = 0; page < MAX_DATE_RANGE_PAGES; page += 1) {
     const offset = page * DATE_RANGE_PAGE_SIZE;
     const { data, error } = await supabase
-      .from("public_odds_fixtures")
+      .from("public_jogos_com_cotacoes")
       .select(FIXTURE_FEED_COLUMNS)
       .order("starts_at", { ascending: true })
       .order("league_name", { ascending: true })
@@ -611,7 +611,7 @@ async function getOddsFixtureByFixtureIdUncached(
 
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
-    .from("public_odds_fixtures")
+    .from("public_jogos_com_cotacoes")
     .select(FIXTURE_FEED_COLUMNS)
     .eq("fixture_id", safeFixtureId)
     .maybeSingle();
@@ -626,7 +626,7 @@ async function getOddsFixtureByFixtureIdUncached(
 async function getOddsFeedStatusFromDatabase() {
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
-    .from("public_odds_feed_status")
+    .from("public_status_feed_cotacoes")
     .select(
       "fixtures_version,odds_version,latest_odd_updated_at,upcoming_fixture_count,odd_count",
     )
@@ -646,7 +646,7 @@ async function fetchOddsSnapshotsByFixtureIds(fixtureIds: string[]) {
 
   const supabase = getMonitorSupabaseClient();
   const { data, error } = await supabase
-    .from("public_odds_snapshot")
+    .from("public_snapshot_cotacoes")
     .select(ODDS_SNAPSHOT_COLUMNS)
     .in("fixture_id", fixtureIds);
 
