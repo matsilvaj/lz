@@ -26,6 +26,21 @@ const oddsUi = readFileSync(
   new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
   "utf8",
 );
+const monitorOddsPage = readFileSync(
+  new URL("../app/(app)/monitor/odds/page.tsx", import.meta.url),
+  "utf8",
+);
+const monitorDuploPage = readFileSync(
+  new URL("../app/(app)/monitor/duplo/page.tsx", import.meta.url),
+  "utf8",
+);
+const monitorMaintenanceUi = readFileSync(
+  new URL(
+    "../app/(app)/monitor/_components/monitor-maintenance-state.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const doubleMonitorUi = readFileSync(
   new URL("../app/(app)/monitor/duplo/double-monitor-workspace.tsx", import.meta.url),
   "utf8",
@@ -372,11 +387,16 @@ test("monitor duplo keeps remembered odds while refresh is pending", () => {
   assert.match(doubleMonitorUi, /state\.refreshingOdds && !rows\.length/);
 });
 
-test("freebet converter monitor uses available freebets and the calculator engine", () => {
-  assert.match(freebetConverterPage, /getFreebetsPageData/);
-  assert.match(freebetConverterPage, /listAvailableFreebetConsultationBookmakers/);
-  assert.match(freebetConverterPage, /convertibleGroups/);
-  assert.match(freebetConverterPage, /consultationBookmakers=\{consultationBookmakers\}/);
+test("monitor pages stay in maintenance while the data engine is updated", () => {
+  assert.match(monitorOddsPage, /MonitorMaintenanceState/);
+  assert.match(monitorDuploPage, /MonitorMaintenanceState/);
+  assert.match(freebetConverterPage, /MonitorMaintenanceState/);
+  assert.doesNotMatch(monitorOddsPage, /OddsEventSearch/);
+  assert.doesNotMatch(monitorDuploPage, /DoubleMonitorWorkspace/);
+  assert.doesNotMatch(freebetConverterPage, /getFreebetsPageData/);
+  assert.doesNotMatch(freebetConverterPage, /listAvailableFreebetConsultationBookmakers/);
+  assert.match(monitorMaintenanceUi, /Manutenção temporária/);
+  assert.match(monitorMaintenanceUi, /informações inconsistentes/);
   assert.match(freebetConverterUi, /Oportunidades/);
   assert.match(freebetConverterUi, /Freebets cadastradas/);
   assert.match(freebetConverterUi, /Consulta/);
