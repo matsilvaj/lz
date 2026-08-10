@@ -1,10 +1,12 @@
-import { MonitorMaintenanceState } from "../_components/monitor-maintenance-state";
+import { OddsEventSearch } from "../../odds/odds-event-search";
 import { MonitorShell } from "../_components/monitor-shell";
+
+export const dynamic = "force-dynamic";
 
 export default function MonitorOddsPage() {
   return (
     <MonitorShell activeTab="odds">
-      <MonitorMaintenanceState />
+      <OddsEventSearch eventBasePath="/monitor/odds" />
     </MonitorShell>
   );
 }
