@@ -14,6 +14,15 @@ function buildProfileRedirect(key: "error" | "message", message: string) {
   return `/perfil?${key}=${encodeURIComponent(message)}`;
 }
 
+function getProfileErrorMessage(error: { message?: string }, fallback: string) {
+  if (process.env.NODE_ENV !== "production") {
+    const message = String(error.message ?? "").trim();
+    if (message) return message;
+  }
+
+  return fallback;
+}
+
 function parseText(value: FormDataEntryValue | null) {
   return normalizeText(value, 80);
 }
@@ -80,7 +89,7 @@ export async function updateAccountAction(formData: FormData) {
   });
 
   if (error) {
-    redirect(buildProfileRedirect("error", error.message));
+    redirect(buildProfileRedirect("error", getProfileErrorMessage(error, "Não foi possível atualizar a conta.")));
   }
 
   revalidateApplication();
@@ -111,7 +120,7 @@ export async function updateEmailAction(formData: FormData) {
   const { error } = await supabase.auth.updateUser({ email });
 
   if (error) {
-    redirect(buildProfileRedirect("error", error.message));
+    redirect(buildProfileRedirect("error", getProfileErrorMessage(error, "Não foi possível atualizar o e-mail.")));
   }
 
   revalidateApplication();
@@ -154,7 +163,7 @@ export async function updatePasswordAction(formData: FormData) {
   const { error } = await supabase.auth.updateUser({ password });
 
   if (error) {
-    redirect(buildProfileRedirect("error", error.message));
+    redirect(buildProfileRedirect("error", getProfileErrorMessage(error, "Não foi possível atualizar a senha.")));
   }
 
   revalidateApplication();
