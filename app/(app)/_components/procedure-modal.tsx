@@ -1566,6 +1566,7 @@ export function ProcedureModal({
     if (value === FREEBET_CONDITION_CONVERSION_ONLY) {
       setFreebetCollectionOpen(false);
       setFreebetConversionOpen(true);
+      setPrimaryFreebet(true);
     }
   }
 

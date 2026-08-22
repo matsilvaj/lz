@@ -253,12 +253,13 @@ function buildDetailedDefaultValues(
   const freebetVisibleScope =
     hasCollectionEntries && hasConversionEntries
       ? "all"
-      : procedure.tipo_procedimento === "Coletar Freebet"
-        ? "collection"
-        : procedure.tipo_procedimento === "Converter Freebet" &&
-            !hasCollectionEntries
-          ? "conversion"
-          : "all";
+      : hasConversionEntries
+        ? "conversion"
+        : hasCollectionEntries
+          ? "collection"
+          : procedure.tipo_procedimento === "Converter Freebet"
+            ? "conversion"
+            : "collection";
 
   return {
     ...baseDefaults,
