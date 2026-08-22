@@ -51,6 +51,10 @@ import {
 } from "@/lib/monitor-odds/display-names";
 import { fetchOddsSnapshots } from "@/lib/monitor-odds/odds-fetch";
 import {
+  useMonitorOddsStatusFeed,
+  type MonitorOddsStatus,
+} from "@/lib/monitor-odds/use-status-feed";
+import {
   getPageSlice,
   SignalPagination,
 } from "../_components/signal-pagination";
@@ -146,6 +150,9 @@ const dateFilterLabels: Record<DateFilter, string> = {
   today: "Hoje",
   tomorrow: "Amanhã",
 };
+// A consulta de status roda a cada 4s (barata), mas rebaixar as odds de todos
+// os jogos custa ~200 KB, entao a lista se atualiza no maximo a cada 20s.
+const oddsRefreshIntervalMs = 20_000;
 const modeFilters: ModeFilter[] = [
   "all",
   "pa_dois_lados",
@@ -1682,6 +1689,9 @@ export function FreebetConverterMonitorWorkspace({
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("conversion_desc");
   const [page, setPage] = useState(1);
+  const eventsRef = useRef<DuploEvent[]>([]);
+  const oddsVersionRef = useRef<string | null>(null);
+  const lastOddsRefreshAtRef = useRef(0);
   const [calculatorSelections, setCalculatorSelections] = useState<
     CalculatorSelectionLine[]
   >([]);
@@ -1948,6 +1958,58 @@ export function FreebetConverterMonitorWorkspace({
   );
   const counts = useMemo(() => getModeCounts(analyzedEvents), [analyzedEvents]);
   const visibleRows = useMemo(() => getPageSlice(rows, page), [page, rows]);
+
+  useEffect(() => {
+    eventsRef.current = state.events;
+  }, [state.events]);
+
+  // Odds novas chegam sozinhas e a lista reordena junto: o intervalo de 20s e
+  // longo o bastante para isso nao atrapalhar o clique, e o melhor sinal
+  // aparecendo no topo e o que importa.
+  const handleStatusUpdate = useCallback(async (status: MonitorOddsStatus) => {
+    const nextOddsVersion =
+      status.odds_version ?? status.latest_odd_updated_at ?? null;
+
+    if (!nextOddsVersion || nextOddsVersion === oddsVersionRef.current) {
+      return;
+    }
+
+    if (Date.now() - lastOddsRefreshAtRef.current < oddsRefreshIntervalMs) {
+      return;
+    }
+
+    const currentEvents = eventsRef.current;
+
+    if (!currentEvents.length) {
+      return;
+    }
+
+    lastOddsRefreshAtRef.current = Date.now();
+
+    try {
+      const result = await fetchOddsSnapshots<OddsSnapshot>(
+        currentEvents.map((event) => event.fixture_id),
+        nextOddsVersion,
+      );
+
+      if (!result?.complete) {
+        return;
+      }
+
+      oddsVersionRef.current = result.oddsVersion;
+      rememberOddsSnapshots(result.snapshots);
+
+      const updatedEvents = mergeOddsSnapshots(currentEvents, result.snapshots);
+
+      setState((previous) => ({ ...previous, events: updatedEvents }));
+    } catch {
+      // Atualizacao automatica e best-effort: o que esta na tela continua valido.
+    }
+  }, []);
+
+  const canPollStatus = useCallback(() => eventsRef.current.length > 0, []);
+
+  useMonitorOddsStatusFeed(canPollStatus, handleStatusUpdate);
 
   // Volta para a primeira pagina quando os filtros mudam. Nao reage a
   // atualizacao de odds: quem esta lendo a pagina 3 continua nela.

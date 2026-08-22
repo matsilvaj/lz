@@ -716,17 +716,91 @@ const getCachedOddsFeedStatusFromDatabase = unstable_cache(
   },
 );
 
-const getCachedOddsSnapshotsByFixtureIds = unstable_cache(
-  async (fixtureIds: string[], oddsVersion = "unknown") => {
-    void oddsVersion;
-    return fetchOddsSnapshotsByFixtureIds(fixtureIds);
-  },
-  ["monitor-odds-snapshots-by-fixture-ids-v4"],
-  {
-    tags: ["monitor-odds-snapshots"],
-    revalidate: ODDS_SNAPSHOT_CACHE_TTL_SECONDS,
-  },
-);
+// Cache em memoria, e nao unstable_cache, por dois motivos.
+//
+// O data cache do Next recusa entradas acima de 2 MB e LANCA excecao ao inves
+// de apenas nao cachear: o snapshot de 200 jogos passa de 5 MB, entao a rota
+// inteira respondia 500.
+//
+// E a chave e o conjunto exato de fixtureIds, entao qualquer diferenca entre as
+// telas (duplo, converter, detalhe) ja era miss. Na pratica ele pagava o custo
+// de gravar megabytes sem quase nunca acertar.
+//
+// Aqui o objetivo e so amortecer rajadas: varios usuarios pedindo o mesmo
+// conjunto logo depois de uma atualizacao de odds fazem uma consulta so.
+type OddsSnapshotsCacheEntry = {
+  expiresAt: number;
+  snapshots: MonitorOddsSnapshot[];
+};
+
+const ODDS_SNAPSHOT_CACHE_MAX_ENTRIES = 2;
+const oddsSnapshotsCache = new Map<string, OddsSnapshotsCacheEntry>();
+const oddsSnapshotsInFlight = new Map<string, Promise<MonitorOddsSnapshot[]>>();
+
+function readOddsSnapshotsCache(key: string) {
+  const entry = oddsSnapshotsCache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    oddsSnapshotsCache.delete(key);
+    return null;
+  }
+
+  return entry.snapshots;
+}
+
+function writeOddsSnapshotsCache(key: string, snapshots: MonitorOddsSnapshot[]) {
+  oddsSnapshotsCache.delete(key);
+  oddsSnapshotsCache.set(key, {
+    expiresAt: Date.now() + ODDS_SNAPSHOT_CACHE_TTL_SECONDS * 1000,
+    snapshots,
+  });
+
+  while (oddsSnapshotsCache.size > ODDS_SNAPSHOT_CACHE_MAX_ENTRIES) {
+    const oldestKey = oddsSnapshotsCache.keys().next().value;
+
+    if (!oldestKey) {
+      return;
+    }
+
+    oddsSnapshotsCache.delete(oldestKey);
+  }
+}
+
+async function getCachedOddsSnapshotsByFixtureIds(
+  fixtureIds: string[],
+  oddsVersion = "unknown",
+) {
+  const key = `${oddsVersion}:${fixtureIds.join(",")}`;
+  const cached = readOddsSnapshotsCache(key);
+
+  if (cached) {
+    return cached;
+  }
+
+  // Pedidos simultaneos do mesmo conjunto compartilham uma consulta so.
+  const pending = oddsSnapshotsInFlight.get(key);
+
+  if (pending) {
+    return pending;
+  }
+
+  const request = fetchOddsSnapshotsByFixtureIds(fixtureIds)
+    .then((snapshots) => {
+      writeOddsSnapshotsCache(key, snapshots);
+      return snapshots;
+    })
+    .finally(() => {
+      oddsSnapshotsInFlight.delete(key);
+    });
+
+  oddsSnapshotsInFlight.set(key, request);
+
+  return request;
+}
 
 const getCachedAvailableFreebetConsultationBookmakers = unstable_cache(
   async (fixturesVersion = "unknown", oddsVersion = "unknown") => {

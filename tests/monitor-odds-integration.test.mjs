@@ -22,6 +22,10 @@ const oddsRoute = readFileSync(
   new URL("../app/api/monitor-odds/odds/route.ts", import.meta.url),
   "utf8",
 );
+const statusFeed = readFileSync(
+  new URL("../lib/monitor-odds/use-status-feed.ts", import.meta.url),
+  "utf8",
+);
 const oddsFetch = readFileSync(
   new URL("../lib/monitor-odds/odds-fetch.ts", import.meta.url),
   "utf8",
@@ -472,4 +476,54 @@ test("freebet converter keeps Sem PA, protects the freebet house, and opens calc
   );
   assert.match(freebetConverterUi, /replaceAll: true/);
   assert.match(freebetConverterUi, /createPortal\(/);
+});
+
+test("monitor screens share one status poll across tabs", () => {
+  // Uma aba consulta o servidor e repassa para as outras, senao abrir tres
+  // telas do monitor triplicaria o trafego.
+  assert.match(statusFeed, /canLeadStatusPolling/);
+  assert.match(statusFeed, /BroadcastChannel/);
+  assert.match(statusFeed, /statusPollIntervalMs = 4_000/);
+  assert.match(statusFeed, /export function useMonitorOddsStatusFeed/);
+
+  for (const ui of [oddsUi, doubleMonitorUi, freebetConverterUi]) {
+    assert.match(ui, /useMonitorOddsStatusFeed\(canPollStatus, handleStatusUpdate\)/);
+  }
+});
+
+test("monitor lists refresh odds on a slower cadence than the detail screen", () => {
+  // Rebaixar as odds de todos os jogos custa ~200 KB, entao as listas se
+  // limitam, enquanto o detalhe rebaixa um jogo so e acompanha o poll.
+  for (const ui of [doubleMonitorUi, freebetConverterUi]) {
+    assert.match(ui, /const oddsRefreshIntervalMs = 20_000;/);
+    assert.match(
+      ui,
+      /Date\.now\(\) - lastOddsRefreshAtRef\.current < oddsRefreshIntervalMs/,
+    );
+  }
+});
+
+test("monitor lists reorder as soon as new odds arrive", () => {
+  // Com 20s entre atualizacoes, reordenar na hora nao atrapalha o clique, e o
+  // melhor sinal precisa aparecer no topo.
+  for (const ui of [doubleMonitorUi, freebetConverterUi]) {
+    assert.match(ui, /getPageSlice\(rows, page\)/);
+    assert.doesNotMatch(ui, /FrozenOrder/);
+    assert.doesNotMatch(ui, /ReorderNotice/);
+  }
+});
+
+test("odds snapshots never go through the Next data cache", () => {
+  // O data cache recusa entradas acima de 2 MB e lanca excecao em vez de apenas
+  // nao cachear, e o snapshot de 200 jogos passa de 5 MB: a rota respondia 500.
+  assert.doesNotMatch(
+    oddsRepository,
+    /getCachedOddsSnapshotsByFixtureIds\s*=\s*unstable_cache/,
+  );
+  assert.match(
+    oddsRepository,
+    /async function getCachedOddsSnapshotsByFixtureIds\(/,
+  );
+  assert.match(oddsRepository, /const ODDS_SNAPSHOT_CACHE_MAX_ENTRIES = \d+;/);
+  assert.match(oddsRepository, /oddsSnapshotsInFlight/);
 });
