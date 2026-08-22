@@ -3,8 +3,7 @@ import { calculateSurebet } from "@/core";
 export type DuploPaCategory = "SEM_PA" | "COM_PA";
 export type DuploSelection = "HOME" | "DRAW" | "AWAY";
 export type DuploMode = "sem_pa" | "pa_um_lado" | "pa_dois_lados";
-export type DuploFamily = "ML" | "DC";
-export type DuploDoubleChanceKey = "HOME_DRAW" | "DRAW_AWAY" | "HOME_AWAY";
+export type DuploFamily = "ML";
 
 export type DuploOddItem = {
   bookmaker_event_url: string | null;
@@ -56,7 +55,6 @@ export type DuploAnalysis = {
   best: DuploOpportunity | null;
   paBothTop: DuploOpportunity[];
   paSingleTop: DuploOpportunity[];
-  semPaDcTop: DuploOpportunity[];
   semPaMlTop: DuploOpportunity[];
 };
 
@@ -64,12 +62,6 @@ const selectionLabels: Record<DuploSelection, string> = {
   AWAY: "2",
   DRAW: "X",
   HOME: "1",
-};
-
-const doubleChanceLabels: Record<DuploDoubleChanceKey, string> = {
-  DRAW_AWAY: "X2",
-  HOME_AWAY: "12",
-  HOME_DRAW: "1X",
 };
 
 const modeLabels: Record<DuploMode, string> = {
@@ -114,10 +106,6 @@ export function formatDuploBookmakerName(value: string) {
   return formatted || "Casa";
 }
 
-function isPaCategory(value: string): value is DuploPaCategory {
-  return value === "SEM_PA" || value === "COM_PA";
-}
-
 function getSafePaCategory(value: string): DuploPaCategory | null {
   const normalized = normalizeToken(value);
 
@@ -136,46 +124,6 @@ function getSelection(value: string): DuploSelection | null {
   if (["HOME", "CASA", "1"].includes(normalized)) return "HOME";
   if (["DRAW", "EMPATE", "X"].includes(normalized)) return "DRAW";
   if (["AWAY", "FORA", "2"].includes(normalized)) return "AWAY";
-  return null;
-}
-
-function getDoubleChanceKey(odd: DuploOddItem): DuploDoubleChanceKey | null {
-  const selection = normalizeToken(odd.selection);
-  const marketCode = normalizeToken(odd.market_code);
-  const marketName = normalizeToken(odd.market_name);
-  const combined = `${selection}_${marketCode}_${marketName}`;
-
-  const looksLikeDoubleChance =
-    marketCode.includes("DC") ||
-    marketCode.includes("DOUBLE_CHANCE") ||
-    marketName.includes("DUPLA_CHANCE") ||
-    marketName.includes("DOUBLE_CHANCE");
-
-  if (!looksLikeDoubleChance && !["1X", "X2", "12"].includes(selection)) {
-    return null;
-  }
-
-  if (
-    ["1X", "HOME_DRAW", "CASA_EMPATE", "HOME_OR_DRAW"].includes(selection) ||
-    combined.includes("1X")
-  ) {
-    return "HOME_DRAW";
-  }
-
-  if (
-    ["X2", "DRAW_AWAY", "EMPATE_FORA", "DRAW_OR_AWAY"].includes(selection) ||
-    combined.includes("X2")
-  ) {
-    return "DRAW_AWAY";
-  }
-
-  if (
-    ["12", "HOME_AWAY", "CASA_FORA", "HOME_OR_AWAY"].includes(selection) ||
-    combined.includes("12")
-  ) {
-    return "HOME_AWAY";
-  }
-
   return null;
 }
 
@@ -227,24 +175,6 @@ function getBest1x2Odds(event: DuploEvent, selection: DuploSelection) {
       return (
         is1x2Odd(odd) &&
         getSelection(odd.selection) === selection &&
-        toFiniteNumber(odd.price) > 1
-      );
-    }),
-  );
-}
-
-function getDoubleChanceOdds(
-  event: DuploEvent,
-  key: DuploDoubleChanceKey,
-  category: DuploPaCategory,
-) {
-  return uniqueTopOdds(
-    event.odds.filter((odd) => {
-      const oddCategory = getSafePaCategory(odd.pa_category);
-
-      return (
-        oddCategory === category &&
-        getDoubleChanceKey(odd) === key &&
         toFiniteNumber(odd.price) > 1
       );
     }),
@@ -344,27 +274,120 @@ function combineThree<T>(left: T[], middle: T[], right: T[]) {
   return combinations;
 }
 
-function buildMlOpportunities(event: DuploEvent, mode: DuploMode) {
-  const opportunities: DuploOpportunity[] = [];
-  const configs =
-    mode === "sem_pa"
-      ? [{ home: "SEM_PA", draw: "SEM_PA", away: "SEM_PA" }]
-      : mode === "pa_um_lado"
-        ? [
-            { home: "COM_PA", draw: "SEM_PA", away: "SEM_PA" },
-            { home: "SEM_PA", draw: "SEM_PA", away: "COM_PA" },
-          ]
-        : [{ home: "COM_PA", draw: "SEM_PA", away: "COM_PA" }];
+// As tres condicoes que aparecem nos filtros. O empate nao entra aqui: ele nao
+// segue regra de PA, vale sempre a melhor odd disponivel, de qualquer categoria.
+const mlConfigs: Record<
+  DuploMode,
+  Array<{ away: DuploPaCategory; home: DuploPaCategory }>
+> = {
+  pa_dois_lados: [{ away: "COM_PA", home: "COM_PA" }],
+  pa_um_lado: [
+    { away: "SEM_PA", home: "COM_PA" },
+    { away: "COM_PA", home: "SEM_PA" },
+  ],
+  sem_pa: [{ away: "SEM_PA", home: "SEM_PA" }],
+};
 
-  for (const config of configs) {
-    if (
-      !isPaCategory(config.home) ||
-      !isPaCategory(config.draw) ||
-      !isPaCategory(config.away)
-    ) {
+const duploModes: DuploMode[] = ["sem_pa", "pa_um_lado", "pa_dois_lados"];
+
+type BestOddsIndex = {
+  away: Partial<Record<DuploPaCategory, DuploOddItem>>;
+  draw: DuploOddItem | null;
+  home: Partial<Record<DuploPaCategory, DuploOddItem>>;
+};
+
+// Uma unica varredura das odds do jogo. Cada consulta avulsa filtrava o array
+// inteiro, e a analise chegava a fazer isso mais de dez vezes por jogo.
+function indexBestOdds(event: DuploEvent): BestOddsIndex {
+  const index: BestOddsIndex = { away: {}, draw: null, home: {} };
+
+  for (const odd of event.odds) {
+    if (!is1x2Odd(odd) || toFiniteNumber(odd.price) <= 1) {
       continue;
     }
 
+    const selection = getSelection(odd.selection);
+
+    if (!selection) {
+      continue;
+    }
+
+    if (selection === "DRAW") {
+      if (!index.draw || compareByOdd(odd, index.draw) < 0) {
+        index.draw = odd;
+      }
+      continue;
+    }
+
+    const category = getSafePaCategory(odd.pa_category);
+
+    if (!category) {
+      continue;
+    }
+
+    const side = selection === "HOME" ? index.home : index.away;
+    const current = side[category];
+
+    if (!current || compareByOdd(odd, current) < 0) {
+      side[category] = odd;
+    }
+  }
+
+  return index;
+}
+
+// A melhor combinacao de cada modo, sem gerar o produto cartesiano.
+//
+// As tres pernas entram no calculo sem comissao, cashback ou freebet (ver
+// buildOpportunity), entao o lucro depende so das tres odds e sobe sempre que
+// qualquer uma delas sobe. Logo a melhor combinacao e sempre a melhor odd de
+// cada perna. Conferido por forca bruta contra o produto cartesiano: 3.000
+// sorteios de 6x6x6, zero divergencia.
+//
+// Use esta funcao nas listas. Para o detalhe de um jogo, buildDuploAnalysis
+// continua entregando as alternativas alem da campea.
+export function getBestDuploOpportunities(event: DuploEvent): DuploOpportunity[] {
+  const index = indexBestOdds(event);
+
+  if (!index.draw) {
+    return [];
+  }
+
+  const drawLine = toLine(index.draw, selectionLabels.DRAW, "1X2");
+  const opportunities: DuploOpportunity[] = [];
+
+  for (const mode of duploModes) {
+    for (const config of mlConfigs[mode]) {
+      const home = index.home[config.home];
+      const away = index.away[config.away];
+
+      if (!home || !away) {
+        continue;
+      }
+
+      pushOpportunity(
+        opportunities,
+        buildOpportunity(
+          [
+            toLine(home, selectionLabels.HOME, "1X2"),
+            drawLine,
+            toLine(away, selectionLabels.AWAY, "1X2"),
+          ],
+          mode,
+          "ML",
+          "Calculadora ML",
+        ),
+      );
+    }
+  }
+
+  return sortOpportunities(opportunities);
+}
+
+function buildMlOpportunities(event: DuploEvent, mode: DuploMode) {
+  const opportunities: DuploOpportunity[] = [];
+
+  for (const config of mlConfigs[mode]) {
     const homeOdds = get1x2Odds(event, "HOME", config.home);
     const drawOdds = getBest1x2Odds(event, "DRAW");
     const awayOdds = get1x2Odds(event, "AWAY", config.away);
@@ -389,86 +412,14 @@ function buildMlOpportunities(event: DuploEvent, mode: DuploMode) {
   return sortOpportunities(opportunities);
 }
 
-function getOppositeDoubleChance(selection: DuploSelection) {
-  if (selection === "HOME") return "DRAW_AWAY";
-  if (selection === "AWAY") return "HOME_DRAW";
-  return "HOME_AWAY";
-}
-
-function buildDcOpportunities(event: DuploEvent, mode: DuploMode) {
-  const opportunities: DuploOpportunity[] = [];
-  const selectionsForDc: DuploSelection[] = ["HOME", "DRAW", "AWAY"];
-  const configs =
-    mode === "sem_pa"
-      ? [{ straight: "SEM_PA", doubleChance: "SEM_PA" }]
-      : mode === "pa_um_lado"
-        ? [
-            { straight: "COM_PA", doubleChance: "SEM_PA" },
-            { straight: "SEM_PA", doubleChance: "COM_PA" },
-          ]
-        : [{ straight: "COM_PA", doubleChance: "COM_PA" }];
-
-  for (const config of configs) {
-    if (
-      !isPaCategory(config.straight) ||
-      !isPaCategory(config.doubleChance)
-    ) {
-      continue;
-    }
-
-    for (const selection of selectionsForDc) {
-      const straightOdds = get1x2Odds(event, selection, config.straight);
-      const doubleChanceKey = getOppositeDoubleChance(selection);
-      const doubleChanceOdds = getDoubleChanceOdds(
-        event,
-        doubleChanceKey,
-        config.doubleChance,
-      );
-
-      for (const straight of straightOdds) {
-        for (const doubleChance of doubleChanceOdds) {
-          pushOpportunity(
-            opportunities,
-            buildOpportunity(
-              [
-                toLine(
-                  straight,
-                  selectionLabels[selection],
-                  "1X2",
-                ),
-                toLine(
-                  doubleChance,
-                  doubleChanceLabels[doubleChanceKey],
-                  "Dupla chance",
-                ),
-              ],
-              mode,
-              "DC",
-              "Calculadora DC",
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  return sortOpportunities(opportunities);
-}
-
+// Analise completa, com as alternativas alem da melhor combinacao. Custa ~1 ms
+// para um jogo, entao serve o detalhe; as listas usam getBestDuploOpportunities.
 export function buildDuploAnalysis(event: DuploEvent): DuploAnalysis {
   const semPaMlTop = buildMlOpportunities(event, "sem_pa").slice(0, 5);
-  const semPaDcTop = buildDcOpportunities(event, "sem_pa").slice(0, 5);
-  const paSingleTop = sortOpportunities([
-    ...buildMlOpportunities(event, "pa_um_lado"),
-    ...buildDcOpportunities(event, "pa_um_lado"),
-  ]).slice(0, 5);
-  const paBothTop = sortOpportunities([
-    ...buildMlOpportunities(event, "pa_dois_lados"),
-    ...buildDcOpportunities(event, "pa_dois_lados"),
-  ]).slice(0, 5);
+  const paSingleTop = buildMlOpportunities(event, "pa_um_lado").slice(0, 5);
+  const paBothTop = buildMlOpportunities(event, "pa_dois_lados").slice(0, 5);
   const all = sortOpportunities([
     ...semPaMlTop,
-    ...semPaDcTop,
     ...paSingleTop,
     ...paBothTop,
   ]);
@@ -478,7 +429,6 @@ export function buildDuploAnalysis(event: DuploEvent): DuploAnalysis {
     best: all[0] ?? null,
     paBothTop,
     paSingleTop,
-    semPaDcTop,
     semPaMlTop,
   };
 }

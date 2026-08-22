@@ -49,6 +49,11 @@ import {
   formatLeagueCountryName,
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
+import { fetchOddsSnapshots } from "@/lib/monitor-odds/odds-fetch";
+import {
+  getPageSlice,
+  SignalPagination,
+} from "../_components/signal-pagination";
 
 type FreebetQueueItem = {
   casa: string;
@@ -100,16 +105,16 @@ type EventsResponse = {
   odds_version?: string | null;
 };
 
-type OddsResponse = {
-  complete?: boolean;
-  odds_version?: string | null;
-  snapshots?: OddsSnapshot[];
-};
-
 type SignalRow = {
-  analysis: ReturnType<typeof buildFreebetConversionAnalysis>;
   event: DuploEvent;
   opportunity: FreebetConversionOpportunity;
+};
+
+// Um jogo ja analisado. A analise e o custo dominante da tela, entao ela roda
+// uma vez por jogo e alimenta tanto as linhas visiveis quanto os contadores.
+type AnalyzedEvent = {
+  event: DuploEvent;
+  opportunities: FreebetConversionOpportunity[];
 };
 
 type BookmakerFilterOption = {
@@ -696,52 +701,101 @@ function sortSignalRows(rows: SignalRow[], sortMode: SortMode) {
   });
 }
 
-function getSignalRows(
+function getAnalyzedEvents(
   events: DuploEvent[],
   group: ConvertibleFreebetGroup | null,
   dateFilter: DateFilter,
   hiddenBookmakers: ReadonlySet<string>,
   minOdd: number,
   maxOdd: number,
-  activeMode: ModeFilter,
   selectedLeagueKeys: ReadonlySet<string>,
-  sortMode: SortMode,
-): SignalRow[] {
+): AnalyzedEvent[] {
   if (!group) {
     return [];
   }
 
   const freebetHouseKey = getFreebetConversionBookmakerKey(group.casa);
-  const rows = events
-    .filter((event) => isEventInDateFilter(event, dateFilter))
-    .filter(
-      (event) =>
-        selectedLeagueKeys.size === 0 ||
-        selectedLeagueKeys.has(getLeagueKey(event)),
-    )
-    .map((event) => {
-      const filteredEvent = filterEventBookmakers(
-        event,
-        hiddenBookmakers,
-        freebetHouseKey,
-      );
-      const analysis = buildFreebetConversionAnalysis(filteredEvent, {
-        freebetHouse: group.casa,
-        freebetValue: group.valor_total,
-        maxOdd,
-        minOdd,
-      });
-      const opportunities =
-        activeMode === "all"
-          ? analysis.all
-          : analysis.all.filter((opportunity) => opportunity.mode === activeMode);
-      const opportunity = opportunities[0] ?? null;
+  const analyzed: AnalyzedEvent[] = [];
 
-      return opportunity ? { analysis, event: filteredEvent, opportunity } : null;
-    })
-    .filter((row): row is SignalRow => Boolean(row));
+  for (const event of events) {
+    if (!isEventInDateFilter(event, dateFilter)) {
+      continue;
+    }
+
+    if (
+      selectedLeagueKeys.size > 0 &&
+      !selectedLeagueKeys.has(getLeagueKey(event))
+    ) {
+      continue;
+    }
+
+    const filteredEvent = filterEventBookmakers(
+      event,
+      hiddenBookmakers,
+      freebetHouseKey,
+    );
+    const analysis = buildFreebetConversionAnalysis(filteredEvent, {
+      freebetHouse: group.casa,
+      freebetValue: group.valor_total,
+      maxOdd,
+      minOdd,
+    });
+
+    analyzed.push({ event: filteredEvent, opportunities: analysis.all });
+  }
+
+  return analyzed;
+}
+
+function getSignalRows(
+  analyzedEvents: AnalyzedEvent[],
+  activeMode: ModeFilter,
+  sortMode: SortMode,
+): SignalRow[] {
+  const rows: SignalRow[] = [];
+
+  for (const { event, opportunities } of analyzedEvents) {
+    const opportunity =
+      activeMode === "all"
+        ? opportunities[0]
+        : opportunities.find((candidate) => candidate.mode === activeMode);
+
+    if (opportunity) {
+      rows.push({ event, opportunity });
+    }
+  }
 
   return sortSignalRows(rows, sortMode);
+}
+
+// Quantos jogos tem ao menos uma conversao de cada modo. Antes isso refazia a
+// analise inteira uma vez por modo, so para exibir um numero no badge.
+function getModeCounts(analyzedEvents: AnalyzedEvent[]) {
+  const counts: Record<ModeFilter, number> = {
+    all: 0,
+    pa_dois_lados: 0,
+    pa_um_lado: 0,
+    sem_pa: 0,
+  };
+
+  for (const { opportunities } of analyzedEvents) {
+    if (!opportunities.length) {
+      continue;
+    }
+
+    counts.all += 1;
+
+    for (const mode of modeFilters) {
+      if (
+        mode !== "all" &&
+        opportunities.some((opportunity) => opportunity.mode === mode)
+      ) {
+        counts[mode] += 1;
+      }
+    }
+  }
+
+  return counts;
 }
 
 function getOpportunityCalculatorSelections(
@@ -1627,6 +1681,7 @@ export function FreebetConverterMonitorWorkspace({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("conversion_desc");
+  const [page, setPage] = useState(1);
   const [calculatorSelections, setCalculatorSelections] = useState<
     CalculatorSelectionLine[]
   >([]);
@@ -1750,40 +1805,27 @@ export function FreebetConverterMonitorWorkspace({
           return;
         }
 
-        const oddsResponse = await fetch("/api/monitor-odds/odds", {
-          body: JSON.stringify({
-            fixtureIds: events.map((event) => event.fixture_id),
-            oddsVersion,
-          }),
-          cache: "no-store",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-          signal: options.signal,
-        });
+        const oddsResult = await fetchOddsSnapshots<OddsSnapshot>(
+          events.map((event) => event.fixture_id),
+          oddsVersion,
+          { signal: options.signal },
+        );
 
-        if (redirectToLoginOnUnauthorized(oddsResponse)) {
+        if (!oddsResult) {
           return;
         }
 
-        if (!oddsResponse.ok) {
-          throw new Error("Não foi possível atualizar as odds dos jogos.");
-        }
-
-        const oddsPayload = (await oddsResponse.json()) as OddsResponse;
         if (options.signal?.aborted || activeLoadIdRef.current !== loadId) {
           return;
         }
 
-        if (oddsPayload.complete !== false) {
-          rememberOddsSnapshots(oddsPayload.snapshots ?? []);
+        if (oddsResult.complete) {
+          rememberOddsSnapshots(oddsResult.snapshots);
         }
 
-        const hydratedEvents =
-          oddsPayload.complete === false
-            ? hydrateEventsWithRememberedOdds(events)
-            : mergeOddsSnapshots(events, oddsPayload.snapshots ?? []);
+        const hydratedEvents = oddsResult.complete
+          ? mergeOddsSnapshots(events, oddsResult.snapshots)
+          : hydrateEventsWithRememberedOdds(events);
         rememberConverterEvents(hydratedEvents);
 
         setState({
@@ -1859,30 +1901,32 @@ export function FreebetConverterMonitorWorkspace({
     const availableKeys = new Set(availableLeagues.map((league) => league.key));
     return new Set(selectedLeagueKeys.filter((key) => availableKeys.has(key)));
   }, [availableLeagues, selectedLeagueKeys]);
-  const rows = useMemo(
+  const analyzedEvents = useMemo(
     () =>
-      getSignalRows(
+      getAnalyzedEvents(
         state.events,
         selectedConversion,
         activeDateFilter,
         activeHiddenBookmakers,
         minOdd,
         maxOdd,
-        activeMode,
         activeSelectedLeagueKeys,
-        sortMode,
       ),
     [
-      activeHiddenBookmakers,
       activeDateFilter,
+      activeHiddenBookmakers,
       activeSelectedLeagueKeys,
-      activeMode,
       maxOdd,
       minOdd,
       selectedConversion,
-      sortMode,
       state.events,
     ],
+  );
+  // Trocar o modo ou a ordenacao nao refaz analise nenhuma: so filtra e ordena
+  // o que ja foi calculado.
+  const rows = useMemo(
+    () => getSignalRows(analyzedEvents, activeMode, sortMode),
+    [activeMode, analyzedEvents, sortMode],
   );
   const visibleCalculatorSelectionIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1902,37 +1946,22 @@ export function FreebetConverterMonitorWorkspace({
     () => getConversionContext(selectedConversion, selectedConversionSource),
     [selectedConversion, selectedConversionSource],
   );
-  const counts = useMemo(() => {
-    return modeFilters.reduce<Record<ModeFilter, number>>(
-      (accumulator, mode) => {
-        accumulator[mode] = getSignalRows(
-          state.events,
-          selectedConversion,
-          activeDateFilter,
-          activeHiddenBookmakers,
-          minOdd,
-          maxOdd,
-          mode,
-          activeSelectedLeagueKeys,
-          "conversion_desc",
-        ).length;
-        return accumulator;
-      },
-      {
-        all: 0,
-        pa_dois_lados: 0,
-        pa_um_lado: 0,
-        sem_pa: 0,
-      },
-    );
+  const counts = useMemo(() => getModeCounts(analyzedEvents), [analyzedEvents]);
+  const visibleRows = useMemo(() => getPageSlice(rows, page), [page, rows]);
+
+  // Volta para a primeira pagina quando os filtros mudam. Nao reage a
+  // atualizacao de odds: quem esta lendo a pagina 3 continua nela.
+  useEffect(() => {
+    setPage(1);
   }, [
-    activeHiddenBookmakers,
     activeDateFilter,
+    activeHiddenBookmakers,
+    activeMode,
+    activeSelectedLeagueKeys,
     maxOdd,
     minOdd,
     selectedConversion,
-    activeSelectedLeagueKeys,
-    state.events,
+    sortMode,
   ]);
   const showSignalSkeleton =
     state.loading || (state.refreshingOdds && !rows.length && state.events.length > 0);
@@ -2425,7 +2454,7 @@ export function FreebetConverterMonitorWorkspace({
                 <SignalSkeleton />
               </>
             ) : rows.length ? (
-              rows.map((row) => (
+              visibleRows.map((row) => (
                 <SignalCard
                   key={`${row.event.fixture_id}:${row.opportunity.lines
                     .map((line) => `${line.bookmakerSlug}:${line.selectionLabel}`)
@@ -2443,6 +2472,14 @@ export function FreebetConverterMonitorWorkspace({
               </div>
             )}
           </div>
+
+          {showSignalSkeleton ? null : (
+            <SignalPagination
+              onPageChange={setPage}
+              page={page}
+              total={rows.length}
+            />
+          )}
 
           {state.refreshingOdds ? (
             <p className="text-xs font-medium text-[var(--text-dim)]">

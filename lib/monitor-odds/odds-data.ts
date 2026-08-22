@@ -31,10 +31,22 @@ const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 3;
 const DEFAULT_EVENT_LIMIT = 20;
 const DATE_RANGE_PAGE_SIZE = 200;
-const MAX_DATE_RANGE_PAGES = 8;
-const DEFAULT_DATE_RANGE_EVENT_LIMIT = 150;
+// Teto de jogos por listagem, e o unico numero que precisa ser ajustado.
+//
+// Antes eram 150, e um fim de semana cheio passava disso: os jogos excedentes
+// sumiam do site sem aviso. Nao da para simplesmente remover o teto — o laco de
+// paginacao tem o proprio limite de paginas, entao "sem teto" viraria um teto
+// invisivel nascido da multiplicacao de duas constantes. Por isso o numero de
+// paginas e derivado daqui: mexer neste valor muda o limite de verdade.
+//
+// A valvula existe porque cada jogo carrega ~36 KB de odds; sem ela, uma
+// anomalia nos dados vira uma resposta de dezenas de MB no navegador.
+const DEFAULT_DATE_RANGE_EVENT_LIMIT = 1000;
+const MAX_DATE_RANGE_PAGES = Math.ceil(
+  DEFAULT_DATE_RANGE_EVENT_LIMIT / DATE_RANGE_PAGE_SIZE,
+);
 const MAX_DATE_RANGE_DAYS = 3;
-const MAX_ODDS_FIXTURE_IDS = 200;
+export const MAX_ODDS_FIXTURE_IDS = 200;
 const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
 const EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS = 60;
 const ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3;

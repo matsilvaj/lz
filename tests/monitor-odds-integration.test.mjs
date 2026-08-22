@@ -22,6 +22,10 @@ const oddsRoute = readFileSync(
   new URL("../app/api/monitor-odds/odds/route.ts", import.meta.url),
   "utf8",
 );
+const oddsFetch = readFileSync(
+  new URL("../lib/monitor-odds/odds-fetch.ts", import.meta.url),
+  "utf8",
+);
 const oddsUi = readFileSync(
   new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
   "utf8",
@@ -152,7 +156,12 @@ test("monitor odds feed exposes safe bookmaker event urls", () => {
 });
 
 test("monitor odds date range listing is bounded and filtered by start time", () => {
-  assert.match(oddsRepository, /const MAX_DATE_RANGE_PAGES = \d+;/);
+  // O numero de paginas e derivado do teto de jogos, para nao existir um limite
+  // invisivel diferente do que a constante do teto anuncia.
+  assert.match(
+    oddsRepository,
+    /const MAX_DATE_RANGE_PAGES = Math\.ceil\(\s*DEFAULT_DATE_RANGE_EVENT_LIMIT \/ DATE_RANGE_PAGE_SIZE,\s*\);/,
+  );
   assert.match(oddsRepository, /page < MAX_DATE_RANGE_PAGES/);
   assert.match(oddsRepository, /\.gte\("starts_at", dateRange\.from\)/);
   assert.match(oddsRepository, /\.lt\("starts_at", dateRange\.to\)/);
@@ -225,9 +234,11 @@ test("monitor odds UI refreshes snapshots without URL-sized fixture queries", ()
 test("monitor client screens redirect silently when the active session expires", () => {
   assert.match(oddsUi, /redirectToLoginOnUnauthorized\(response\)/);
   assert.match(doubleMonitorUi, /redirectToLoginOnUnauthorized\(response\)/);
-  assert.match(doubleMonitorUi, /redirectToLoginOnUnauthorized\(oddsResponse\)/);
+  assert.match(doubleMonitorUi, /fetchOddsSnapshots<OddsSnapshot>/);
   assert.match(freebetConverterUi, /redirectToLoginOnUnauthorized\(response\)/);
-  assert.match(freebetConverterUi, /redirectToLoginOnUnauthorized\(oddsResponse\)/);
+  assert.match(freebetConverterUi, /fetchOddsSnapshots<OddsSnapshot>/);
+  // o redirect por sessao expirada agora acontece no modulo compartilhado
+  assert.match(oddsFetch, /redirectToLoginOnUnauthorized\(response\)/);
 });
 
 test("monitor odds UI localizes international competitions and national teams", () => {
@@ -269,18 +280,37 @@ test("monitor odds snapshots cache is scoped by odds version", () => {
   );
 });
 
-test("monitor odds UI renders events before refreshing odds", () => {
-  const renderIndex = oddsUi.indexOf(
-    "refreshingOdds: Boolean(events.length && nextOddsVersion)",
-  );
-  const oddsRefreshIndex = oddsUi.indexOf(
-    "const result = await fetchOddsForEvents(events, nextOddsVersion",
-    renderIndex,
-  );
+test("monitor odds list never fetches odds it does not render", () => {
+  // Os cards da listagem mostram apenas data, hora, times e liga. Buscar odds
+  // aqui custava o feed inteiro a cada poll sem mudar nada na tela.
+  const listStartIndex = oddsUi.indexOf("export function OddsEventSearch(");
+  assert.notEqual(listStartIndex, -1);
 
-  assert.notEqual(renderIndex, -1);
-  assert.notEqual(oddsRefreshIndex, -1);
-  assert.ok(renderIndex < oddsRefreshIndex);
+  const listSource = oddsUi.slice(listStartIndex);
+
+  assert.doesNotMatch(listSource, /fetchOddsForEvents/);
+  assert.doesNotMatch(listSource, /mergeOddsSnapshots/);
+  assert.doesNotMatch(listSource, /hydrateEventsWithRememberedOdds/);
+});
+
+test("monitor odds list only reloads when the fixtures change", () => {
+  const listStartIndex = oddsUi.indexOf("export function OddsEventSearch(");
+  const listSource = oddsUi.slice(listStartIndex);
+
+  assert.match(listSource, /nextFixturesVersion !== previousFixturesVersion/);
+  assert.doesNotMatch(listSource, /nextOddsVersion/);
+});
+
+test("monitor odds list memoizes cards and league grouping", () => {
+  assert.match(oddsUi, /const EventCard = memo\(function EventCard\(/);
+  assert.match(
+    oddsUi,
+    /const LeagueEventsSection = memo\(function LeagueEventsSection\(/,
+  );
+  assert.match(
+    oddsUi,
+    /const leagueGroups = useMemo\(\s*\(\) =>\s*\(activeListSort === "league" \? groupEventsByLeague\(events\) : \[\]\)/,
+  );
 });
 
 test("monitor odds UI keeps remembered odds while a refresh is pending", () => {
@@ -303,7 +333,7 @@ test("monitor odds UI highlights actual odd price movement", () => {
   assert.match(oddsUi, /previousPulseIdRef/);
   assert.match(oddsUi, /previousPulseVersionRef/);
   assert.match(oddsUi, /pulseVersion === previousPulseVersion/);
-  assert.match(oddsUi, /oddsPulseVersion: current\.oddsPulseVersion \+ 1/);
+  assert.match(oddsUi, /setOddsPulseVersion\(\(current\) => current \+ 1\)/);
   assert.match(oddsUi, /pulseId={`table:\$\{row\.key\}:\$\{selection\}`}/);
   assert.match(globalsCss, /odds-price-move-up/);
   assert.match(globalsCss, /odds-price-move-down/);
@@ -400,7 +430,8 @@ test("freebet converter monitor uses available freebets and the calculator engin
   assert.match(freebetConverterUi, /maxOddValue/);
   assert.match(freebetConverterUi, /buildFreebetConversionAnalysis/);
   assert.match(freebetConverterUi, /\/api\/monitor-odds\/events/);
-  assert.match(freebetConverterUi, /\/api\/monitor-odds\/odds/);
+  assert.match(freebetConverterUi, /fetchOddsSnapshots<OddsSnapshot>/);
+  assert.match(oddsFetch, /\/api\/monitor-odds\/odds/);
   assert.doesNotMatch(freebetConverterUi, /type="search"/);
   assert.doesNotMatch(freebetConverterUi, /Digite um time/);
   assert.doesNotMatch(freebetConverterUi, /freebet\(s\)/);

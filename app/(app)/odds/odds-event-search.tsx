@@ -16,6 +16,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -110,11 +111,11 @@ type OddsEvent = {
   odds: OddsFeedItem[];
 };
 
+// A listagem exibe apenas metadados do jogo (data, hora, times, liga). As odds
+// sao carregadas somente na tela de detalhe, por isso nao ha estado de odds aqui.
 type SearchState = {
   events: OddsEvent[];
   loading: boolean;
-  oddsPulseVersion: number;
-  refreshingOdds: boolean;
   error: string | null;
 };
 
@@ -1414,7 +1415,7 @@ function OddPricePulse({
   );
 }
 
-function EventCard({
+const EventCard = memo(function EventCard({
   event,
   eventBasePath,
   showLeague = true,
@@ -1469,7 +1470,7 @@ function EventCard({
       </div>
     </article>
   );
-}
+});
 
 function DatePresetButton({
   active,
@@ -1754,7 +1755,7 @@ function LeagueIcon({
   );
 }
 
-function LeagueEventsSection({
+const LeagueEventsSection = memo(function LeagueEventsSection({
   group,
   eventBasePath,
   showRelativeDateLabel,
@@ -1806,7 +1807,7 @@ function LeagueEventsSection({
       </div>
     </section>
   );
-}
+});
 
 function EventCardSkeleton() {
   return (
@@ -1938,9 +1939,11 @@ function OddsTable({
   sort: OddsSortState | null;
   onSortChange: (category: PaCategory, selection: Selection) => void;
 }) {
-  const baseRows = get1x2Rows(event, category);
-  const highestPrices = getHighestPrices(baseRows);
-  const rows = sortRows(baseRows, sort);
+  // Montar e ordenar as linhas percorre todas as odds do evento e usa
+  // localeCompare; sem memo isso refazia a cada renderizacao, nas duas tabelas.
+  const baseRows = useMemo(() => get1x2Rows(event, category), [category, event]);
+  const highestPrices = useMemo(() => getHighestPrices(baseRows), [baseRows]);
+  const rows = useMemo(() => sortRows(baseRows, sort), [baseRows, sort]);
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-[22px] border border-white/10 bg-white/[0.025] p-3 md:p-4">
@@ -2310,7 +2313,9 @@ function DuploEventAnalysis({
   onToggleOpportunity: (opportunity: DuploOpportunity) => void;
   selectedIds: ReadonlySet<string>;
 }) {
-  const analysis = buildDuploAnalysis(event);
+  // So refaz quando o evento muda de verdade (odds novas ou filtro de casas).
+  // Solto no corpo do componente, isso rodava a cada renderizacao.
+  const analysis = useMemo(() => buildDuploAnalysis(event), [event]);
 
   if (!analysis.all.length) {
     return (
@@ -2692,14 +2697,9 @@ export function OddsEventSearch({
   const [state, setState] = useState<SearchState>({
     events: [],
     loading: true,
-    oddsPulseVersion: 0,
-    refreshingOdds: false,
     error: null,
   });
-  const eventsRef = useRef<OddsEvent[]>([]);
   const latestFixturesVersionRef = useRef<string | null>(null);
-  const latestOddUpdatedAtRef = useRef<string | null>(null);
-  const latestOddsVersionRef = useRef<string | null>(null);
   const lastUnversionedFixturesRefreshAtRef = useRef(0);
   const activeRequestRef = useRef<EventsRequest | null>(null);
 
@@ -2711,12 +2711,9 @@ export function OddsEventSearch({
       activeRequestRef.current = request;
 
       if (options.showLoading !== false) {
-        eventsRef.current = [];
         setState({
           events: [],
           loading: true,
-          oddsPulseVersion: 0,
-          refreshingOdds: false,
           error: null,
         });
       }
@@ -2750,72 +2747,16 @@ export function OddsEventSearch({
         }
 
         const nextFixturesVersion = payload.fixtures_version ?? null;
-        const nextOddsVersion =
-          payload.odds_version ?? payload.latest_odd_updated_at ?? null;
-        const events = hydrateEventsWithRememberedOdds(payload.events ?? []);
-
-        if (
-          options.signal?.aborted ||
-          !isSameEventsRequest(activeRequestRef.current, request)
-        ) {
-          return;
-        }
+        const events = payload.events ?? [];
 
         latestFixturesVersionRef.current = nextFixturesVersion;
         lastUnversionedFixturesRefreshAtRef.current = Date.now();
-        latestOddsVersionRef.current = null;
-        latestOddUpdatedAtRef.current = null;
 
-        eventsRef.current = events;
         setState({
           events,
           loading: false,
-          oddsPulseVersion: 0,
-          refreshingOdds: Boolean(events.length && nextOddsVersion),
           error: null,
         });
-
-        if (!events.length || !nextOddsVersion) {
-          return;
-        }
-
-        try {
-          const result = await fetchOddsForEvents(events, nextOddsVersion, {
-            signal: options.signal,
-          });
-
-          if (
-            options.signal?.aborted ||
-            !isSameEventsRequest(activeRequestRef.current, request)
-          ) {
-            return;
-          }
-
-          if (result.oddsVersion) {
-            latestOddsVersionRef.current = result.oddsVersion;
-            latestOddUpdatedAtRef.current =
-              payload.latest_odd_updated_at ?? result.oddsVersion;
-          }
-
-          eventsRef.current = result.events;
-          setState((current) => ({
-            ...current,
-            events: result.events,
-            error: null,
-            loading: false,
-            oddsPulseVersion: current.oddsPulseVersion,
-            refreshingOdds: false,
-          }));
-        } catch {
-          if (options.signal?.aborted) {
-            return;
-          }
-
-          setState((current) => ({
-            ...current,
-            refreshingOdds: false,
-          }));
-        }
       } catch (error) {
         if (
           options.signal?.aborted ||
@@ -2824,12 +2765,9 @@ export function OddsEventSearch({
           return;
         }
 
-        eventsRef.current = [];
         setState({
           events: [],
           loading: false,
-          oddsPulseVersion: 0,
-          refreshingOdds: false,
           error: error instanceof Error ? error.message : "Erro ao buscar eventos.",
         });
       }
@@ -2942,11 +2880,7 @@ export function OddsEventSearch({
       }
 
       const nextFixturesVersion = payload.fixtures_version ?? null;
-      const nextOddsVersion =
-        payload.odds_version ?? payload.latest_odd_updated_at ?? null;
       const previousFixturesVersion = latestFixturesVersionRef.current;
-      const previousOddsVersion =
-        latestOddsVersionRef.current ?? latestOddUpdatedAtRef.current;
       const shouldRefreshUnversionedFixtures =
         !nextFixturesVersion &&
         !previousFixturesVersion &&
@@ -2972,60 +2906,9 @@ export function OddsEventSearch({
         return;
       }
 
-      if (!nextOddsVersion) {
-        return;
-      }
-
-      if (nextOddsVersion === previousOddsVersion) {
-        return;
-      }
-
-      const currentEvents = eventsRef.current;
-
-      if (!currentEvents.length) {
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        refreshingOdds: true,
-      }));
-
-      try {
-        const result = await fetchOddsForEvents(currentEvents, nextOddsVersion);
-        const updatedEvents = result.events;
-
-        if (!isSameEventsRequest(activeRequestRef.current, activeRequest)) {
-          setState((current) => ({
-            ...current,
-            refreshingOdds: false,
-          }));
-          return;
-        }
-
-        if (result.oddsVersion) {
-          latestOddsVersionRef.current = result.oddsVersion;
-          latestOddUpdatedAtRef.current =
-            payload.latest_odd_updated_at ?? result.oddsVersion;
-        } else {
-          latestOddsVersionRef.current = null;
-          latestOddUpdatedAtRef.current = null;
-        }
-
-        eventsRef.current = updatedEvents;
-        setState((current) => ({
-          ...current,
-          events: updatedEvents,
-          oddsPulseVersion: current.oddsPulseVersion + 1,
-          refreshingOdds: false,
-        }));
-      } catch {
-        // Odds refresh is best-effort; the current snapshot remains visible.
-        setState((current) => ({
-          ...current,
-          refreshingOdds: false,
-        }));
-      }
+      // Mudancas de odds nao afetam a listagem: os cards mostram apenas
+      // metadados do jogo. Recarregar aqui custaria o feed inteiro de odds a
+      // cada poll sem alterar um pixel na tela.
     },
     [loadEvents],
   );
@@ -3044,8 +2927,10 @@ export function OddsEventSearch({
     () => sortEventsForList(events, activeListSort),
     [activeListSort, events],
   );
-  const leagueGroups =
-    activeListSort === "league" ? groupEventsByLeague(events) : [];
+  const leagueGroups = useMemo(
+    () => (activeListSort === "league" ? groupEventsByLeague(events) : []),
+    [activeListSort, events],
+  );
   const showEmpty =
     hasActiveList && !state.loading && !state.error && events.length === 0;
   const activeDateLabel = activeDatePreset

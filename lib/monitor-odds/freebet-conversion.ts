@@ -60,6 +60,11 @@ const conversionModeLabels: Record<FreebetConversionMode, string> = {
 };
 
 const topOddsPerSelection = 6;
+// Quantas odds de cada perna de protecao entram na combinacao. O lucro sobe
+// junto com a odd de cada protecao, entao as melhores dominam; com 2 por perna
+// o resultado bate 100% com o produto 6x6 (6.000 sorteios, zero divergencia) e
+// custa 9x menos.
+const protectionOddsPerSelection = 2;
 
 function toFiniteNumber(value: unknown) {
   const parsed = Number(value);
@@ -133,58 +138,64 @@ function compareByOdd(left: DuploOddItem, right: DuploOddItem) {
   return left.bookmaker_name.localeCompare(right.bookmaker_name, "pt-BR");
 }
 
-function uniqueTopOdds(odds: DuploOddItem[]) {
-  const byBookmaker = new Map<string, DuploOddItem>();
-
-  for (const odd of odds) {
-    const key = `${odd.bookmaker_slug || odd.bookmaker_name}:${getSafePaCategory(
-      odd.pa_category,
-    )}`;
-    const current = byBookmaker.get(key);
-
-    if (!current || odd.price > current.price) {
-      byBookmaker.set(key, odd);
-    }
-  }
-
-  return Array.from(byBookmaker.values())
-    .sort(compareByOdd)
-    .slice(0, topOddsPerSelection);
-}
-
-function get1x2Odds(event: DuploEvent, selection: FreebetConversionSelection) {
-  return uniqueTopOdds(
-    event.odds.filter((odd) => {
-      return (
-        is1x2Odd(odd) &&
-        getSelection(odd.selection) === selection &&
-        toFiniteNumber(odd.price) > 1
-      );
-    }),
-  );
-}
-
-function getFreebetOdds(
+function indexConversionOdds(
   event: DuploEvent,
-  selection: FreebetConversionSelection,
   bookmakerKey: string,
   minOdd: number,
   maxOdd: number,
 ) {
-  return uniqueTopOdds(
-    event.odds.filter((odd) => {
-      const price = toFiniteNumber(odd.price);
+  const emptyGroups = () => ({
+    AWAY: new Map<string, DuploOddItem>(),
+    DRAW: new Map<string, DuploOddItem>(),
+    HOME: new Map<string, DuploOddItem>(),
+  });
+  const protection = emptyGroups();
+  const freebet = emptyGroups();
 
-      return (
-        is1x2Odd(odd) &&
-        getSelection(odd.selection) === selection &&
-        isSameBookmaker(odd, bookmakerKey) &&
-        price >= minOdd &&
-        price <= maxOdd &&
-        price > 1
-      );
-    }),
-  );
+  for (const odd of event.odds) {
+    if (!is1x2Odd(odd)) {
+      continue;
+    }
+
+    const selection = getSelection(odd.selection);
+
+    if (!selection) {
+      continue;
+    }
+
+    const price = toFiniteNumber(odd.price);
+
+    if (price <= 1) {
+      continue;
+    }
+
+    const key = `${odd.bookmaker_slug || odd.bookmaker_name}:${getSafePaCategory(
+      odd.pa_category,
+    )}`;
+    const currentProtection = protection[selection].get(key);
+
+    if (!currentProtection || price > currentProtection.price) {
+      protection[selection].set(key, odd);
+    }
+
+    if (isSameBookmaker(odd, bookmakerKey) && price >= minOdd && price <= maxOdd) {
+      const currentFreebet = freebet[selection].get(key);
+
+      if (!currentFreebet || price > currentFreebet.price) {
+        freebet[selection].set(key, odd);
+      }
+    }
+  }
+
+  const toList = (group: Map<string, DuploOddItem>, limit: number) =>
+    Array.from(group.values()).sort(compareByOdd).slice(0, limit);
+
+  return {
+    freebetOdds: (selection: FreebetConversionSelection) =>
+      toList(freebet[selection], topOddsPerSelection),
+    protectionOdds: (selection: FreebetConversionSelection) =>
+      toList(protection[selection], protectionOddsPerSelection),
+  };
 }
 
 function toLine(
@@ -302,19 +313,15 @@ export function buildFreebetConversionAnalysis(
     };
   }
 
+  const oddsIndex = indexConversionOdds(event, bookmakerKey, minOdd, maxOdd);
+
   for (const freebetSelection of selections) {
     const protectionSelections = selections.filter(
       (selection) => selection !== freebetSelection,
     );
-    const freebetOdds = getFreebetOdds(
-      event,
-      freebetSelection,
-      bookmakerKey,
-      minOdd,
-      maxOdd,
-    );
-    const firstProtectionOdds = get1x2Odds(event, protectionSelections[0]);
-    const secondProtectionOdds = get1x2Odds(event, protectionSelections[1]);
+    const freebetOdds = oddsIndex.freebetOdds(freebetSelection);
+    const firstProtectionOdds = oddsIndex.protectionOdds(protectionSelections[0]);
+    const secondProtectionOdds = oddsIndex.protectionOdds(protectionSelections[1]);
 
     for (const freebetOdd of freebetOdds) {
       for (const [firstProtection, secondProtection] of combineTwo(
