@@ -6,6 +6,7 @@ export type ProcedureShareProtectionDraft = {
   commission?: string;
   increase?: string;
   cashback?: string;
+  cashbackLossOnly?: boolean;
   freebet?: boolean;
 };
 
@@ -22,6 +23,7 @@ export type ProcedureShareEntryDetail = {
   commission?: number;
   increase?: number;
   cashback?: number;
+  cashbackLossOnly?: boolean;
   freebet?: boolean;
   operationDate?: string;
 };
@@ -58,6 +60,7 @@ export type ProcedureShareValues = {
   primaryCommission?: string;
   primaryIncrease?: string;
   primaryCashback?: string;
+  primaryCashbackLossOnly?: boolean;
   primaryFreebet?: boolean;
   sportProtections?: ProcedureShareProtectionDraft[];
   sportResultSelections?: string[];
@@ -68,6 +71,7 @@ export type ProcedureShareValues = {
   collectionPrimaryCommission?: string;
   collectionPrimaryIncrease?: string;
   collectionPrimaryCashback?: string;
+  collectionPrimaryCashbackLossOnly?: boolean;
   collectionPrimaryFreebet?: boolean;
   collectionProtections?: ProcedureShareProtectionDraft[];
   collectionResultSelections?: string[];

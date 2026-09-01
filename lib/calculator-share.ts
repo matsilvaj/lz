@@ -1,5 +1,6 @@
 export type SharedCalculatorLine = {
   aumento_percentual?: unknown;
+  cashback_apenas_perda?: unknown;
   cashback_percentual?: unknown;
   comissao_percentual?: unknown;
   freebet?: unknown;

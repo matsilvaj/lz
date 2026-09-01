@@ -50,6 +50,7 @@ type ProtectionDraft = {
   commission: string;
   increase: string;
   cashback: string;
+  cashbackLossOnly: boolean;
   freebet: boolean;
 };
 type ProcedureStatus = "Pendente" | "Concluído";
@@ -149,6 +150,7 @@ function createProtectionDraft(
     commission: draft.commission ?? "",
     increase: draft.increase ?? "",
     cashback: draft.cashback ?? "",
+    cashbackLossOnly: Boolean(draft.cashbackLossOnly),
     freebet: Boolean(draft.freebet),
   };
 }
@@ -289,6 +291,7 @@ function calculateLayReturn(
   effectiveOdd: number,
   commission: number,
   cashback: number,
+  cashbackLossOnly: boolean,
 ) {
   if (responsibility <= 0 || effectiveOdd <= 1) {
     return 0;
@@ -296,11 +299,12 @@ function calculateLayReturn(
 
   const layStake = responsibility / (effectiveOdd - 1);
   const commissionMultiplier = 1 - commission / 100;
-  const cashbackRate = cashback / 100;
+  // Cashback pago so na derrota nao existe no cenario em que o lay ganha.
+  const cashbackRate = cashbackLossOnly ? 0 : cashback / 100;
 
   return (
     layStake *
-    (effectiveOdd - 1 + commissionMultiplier - (effectiveOdd - 1) * cashbackRate)
+    (effectiveOdd - 1 + commissionMultiplier + (effectiveOdd - 1) * cashbackRate)
   );
 }
 
@@ -318,6 +322,7 @@ function calculateSportsProfit(
     commissionInput?: string;
     increaseInput?: string;
     cashbackInput?: string;
+    cashbackLossOnly?: boolean;
     freebet?: boolean;
   }>,
   selectedResults: SportResultSelection[],
@@ -348,6 +353,7 @@ function calculateSportsProfit(
       commission: parseDecimalInput(entry.commissionInput ?? ""),
       increase,
       cashback,
+      cashbackLossOnly: Boolean(entry.cashbackLossOnly),
       freebet: Boolean(entry.freebet),
     };
   });
@@ -374,6 +380,7 @@ function calculateSportsProfit(
           aumento_percentual: entry.increase,
           comissao_percentual: entry.commission,
           cashback_percentual: entry.cashback,
+          cashback_apenas_perda: entry.cashbackLossOnly,
           freebet: entry.freebet,
         })),
         baseIndex,
@@ -396,14 +403,15 @@ function calculateSportsProfit(
             entry.effectiveOdd,
             entry.commission,
             entry.cashback,
+            entry.cashbackLossOnly,
           );
           const backReturn = entry.freebet
             ? entry.stake *
               ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
             : entry.stake *
               (1 +
-                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
-                entry.cashback / 100);
+                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
+                (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
 
           return [index, entry.side === "lay" ? layReturn : backReturn];
         }),
@@ -417,14 +425,15 @@ function calculateSportsProfit(
           entry.effectiveOdd,
           entry.commission,
           entry.cashback,
+          entry.cashbackLossOnly,
         );
         const backReturn = entry.freebet
           ? entry.stake *
             ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
           : entry.stake *
             (1 +
-              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
-              entry.cashback / 100);
+              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
+              (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
 
         return [index, entry.side === "lay" ? layReturn : backReturn];
       }),
@@ -582,6 +591,7 @@ function createProtectionDraftRecord(
         commission: draft.commission,
         increase: draft.increase,
         cashback: draft.cashback,
+        cashbackLossOnly: draft.cashbackLossOnly,
         freebet: draft.freebet,
       });
     }
@@ -841,6 +851,9 @@ export function ProcedureModal({
   const [primaryCashback, setPrimaryCashback] = useState(
     defaultValues?.primaryCashback ?? "",
   );
+  const [primaryCashbackLossOnly, setPrimaryCashbackLossOnly] = useState(
+    Boolean(defaultValues?.primaryCashbackLossOnly),
+  );
   const [primaryFreebet, setPrimaryFreebet] = useState(
     Boolean(defaultValues?.primaryFreebet),
   );
@@ -862,6 +875,10 @@ export function ProcedureModal({
     useState(defaultValues?.collectionPrimaryIncrease ?? "");
   const [collectionPrimaryCashback, setCollectionPrimaryCashback] =
     useState(defaultValues?.collectionPrimaryCashback ?? "");
+  const [
+    collectionPrimaryCashbackLossOnly,
+    setCollectionPrimaryCashbackLossOnly,
+  ] = useState(Boolean(defaultValues?.collectionPrimaryCashbackLossOnly));
   const [collectionPrimaryFreebet, setCollectionPrimaryFreebet] = useState(
     Boolean(defaultValues?.collectionPrimaryFreebet),
   );
@@ -985,6 +1002,7 @@ export function ProcedureModal({
       commissionInput: primaryCommission,
       increaseInput: primaryIncrease,
       cashbackInput: primaryCashback,
+      cashbackLossOnly: primaryCashbackLossOnly,
       freebet: primaryFreebet,
     },
     ...protectionKeys.map((key) => ({
@@ -996,6 +1014,7 @@ export function ProcedureModal({
       commissionInput: protectionDrafts[key]?.commission ?? "",
       increaseInput: protectionDrafts[key]?.increase ?? "",
       cashbackInput: protectionDrafts[key]?.cashback ?? "",
+      cashbackLossOnly: Boolean(protectionDrafts[key]?.cashbackLossOnly),
       freebet: Boolean(protectionDrafts[key]?.freebet),
     })),
   ];
@@ -1009,6 +1028,7 @@ export function ProcedureModal({
       commissionInput: collectionPrimaryCommission,
       increaseInput: collectionPrimaryIncrease,
       cashbackInput: collectionPrimaryCashback,
+      cashbackLossOnly: collectionPrimaryCashbackLossOnly,
       freebet: collectionPrimaryFreebet,
     },
     ...collectionProtectionKeys.map((key) => ({
@@ -1020,6 +1040,9 @@ export function ProcedureModal({
       commissionInput: collectionProtectionDrafts[key]?.commission ?? "",
       increaseInput: collectionProtectionDrafts[key]?.increase ?? "",
       cashbackInput: collectionProtectionDrafts[key]?.cashback ?? "",
+      cashbackLossOnly: Boolean(
+        collectionProtectionDrafts[key]?.cashbackLossOnly,
+      ),
       freebet: Boolean(collectionProtectionDrafts[key]?.freebet),
     })),
   ];
@@ -1216,6 +1239,7 @@ export function ProcedureModal({
     commission,
     increase,
     cashback,
+    cashbackLossOnly,
     freebet,
     operationDate: detailOperationDate,
   }: {
@@ -1231,6 +1255,7 @@ export function ProcedureModal({
     commission: string;
     increase: string;
     cashback: string;
+    cashbackLossOnly: boolean;
     freebet: boolean;
     operationDate?: string;
   }): ProcedureShareEntryDetail {
@@ -1247,6 +1272,7 @@ export function ProcedureModal({
       commission: parseDecimalInput(commission),
       increase: parseDecimalInput(increase),
       cashback: parseDecimalInput(cashback),
+      cashbackLossOnly,
       freebet,
       operationDate: detailOperationDate ?? "",
     };
@@ -1295,6 +1321,7 @@ export function ProcedureModal({
       commission: string;
       increase: string;
       cashback: string;
+      cashbackLossOnly: boolean;
       freebet: boolean;
     };
     protections: Array<{
@@ -1317,6 +1344,7 @@ export function ProcedureModal({
         commission: primary.commission,
         increase: primary.increase,
         cashback: primary.cashback,
+        cashbackLossOnly: primary.cashbackLossOnly,
         freebet: primary.freebet,
         operationDate: detailOperationDate,
       }),
@@ -1334,6 +1362,7 @@ export function ProcedureModal({
           commission: draft.commission,
           increase: draft.increase,
           cashback: draft.cashback,
+          cashbackLossOnly: draft.cashbackLossOnly,
           freebet: draft.freebet,
           operationDate: detailOperationDate,
         }),
@@ -1361,6 +1390,7 @@ export function ProcedureModal({
             commission: "",
             increase: "",
             cashback: "",
+            cashbackLossOnly: false,
             freebet: false,
             operationDate: operationDateForSubmit,
           }),
@@ -1385,6 +1415,7 @@ export function ProcedureModal({
             commission: primaryCommission,
             increase: primaryIncrease,
             cashback: primaryCashback,
+            cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
           },
           protections: (isNormalBet ? [] : protectionKeys).map((key) => ({
@@ -1415,6 +1446,7 @@ export function ProcedureModal({
             commission: primaryCommission,
             increase: primaryIncrease,
             cashback: primaryCashback,
+            cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
           },
           protections: protectionKeys.map((key) => ({
@@ -1444,6 +1476,7 @@ export function ProcedureModal({
             commission: collectionPrimaryCommission,
             increase: collectionPrimaryIncrease,
             cashback: collectionPrimaryCashback,
+            cashbackLossOnly: collectionPrimaryCashbackLossOnly,
             freebet: collectionPrimaryFreebet,
           },
           protections: collectionProtectionKeys.map((key) => ({
@@ -1618,6 +1651,7 @@ export function ProcedureModal({
     commissionValue,
     increaseValue,
     cashbackValue,
+    cashbackLossOnlyChecked,
     freebetChecked,
     configOpen,
     onStakeChange,
@@ -1627,6 +1661,7 @@ export function ProcedureModal({
     onCommissionChange,
     onIncreaseChange,
     onCashbackChange,
+    onCashbackLossOnlyChange,
     onFreebetChange,
     onToggleConfig,
   }: {
@@ -1639,6 +1674,7 @@ export function ProcedureModal({
     commissionValue: string;
     increaseValue: string;
     cashbackValue: string;
+    cashbackLossOnlyChecked: boolean;
     freebetChecked: boolean;
     configOpen: boolean;
     onStakeChange: (value: string) => void;
@@ -1648,6 +1684,7 @@ export function ProcedureModal({
     onCommissionChange: (value: string) => void;
     onIncreaseChange: (value: string) => void;
     onCashbackChange: (value: string) => void;
+    onCashbackLossOnlyChange: (checked: boolean) => void;
     onFreebetChange: (checked: boolean) => void;
     onToggleConfig: () => void;
   }) {
@@ -1838,6 +1875,21 @@ export function ProcedureModal({
               />
             </label>
 
+            <label
+              className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-36 2xl:justify-center"
+              title="A casa so paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
+            >
+              <input
+                checked={cashbackLossOnlyChecked}
+                className="lz-checkbox"
+                onChange={(event) =>
+                  onCashbackLossOnlyChange(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>Cashback so na derrota</span>
+            </label>
+
             <label className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-28 2xl:justify-center">
               <input
                 checked={freebetChecked}
@@ -1871,6 +1923,7 @@ export function ProcedureModal({
     setPrimaryCommission("");
     setPrimaryIncrease("");
     setPrimaryCashback("");
+    setPrimaryCashbackLossOnly(false);
     setPrimaryFreebet(false);
     setProtectionDrafts({});
     setSportResultSelections([]);
@@ -1916,6 +1969,7 @@ export function ProcedureModal({
     setCollectionPrimaryCommission(primaryCommission);
     setCollectionPrimaryIncrease(primaryIncrease);
     setCollectionPrimaryCashback(primaryCashback);
+    setCollectionPrimaryCashbackLossOnly(primaryCashbackLossOnly);
     setCollectionPrimaryFreebet(primaryFreebet);
     setCollectionProtectionKeys(nextCollectionKeys);
     setCollectionProtectionDrafts(nextCollectionDrafts);
@@ -1948,6 +2002,7 @@ export function ProcedureModal({
     setPrimaryCommission(collectionPrimaryCommission);
     setPrimaryIncrease(collectionPrimaryIncrease);
     setPrimaryCashback(collectionPrimaryCashback);
+    setPrimaryCashbackLossOnly(collectionPrimaryCashbackLossOnly);
     setPrimaryFreebet(collectionPrimaryFreebet);
     setProtectionKeys(nextProtectionKeys);
     setProtectionDrafts(nextProtectionDrafts);
@@ -2276,6 +2331,9 @@ export function ProcedureModal({
     setPrimaryCommission(defaultValues?.primaryCommission ?? "");
     setPrimaryIncrease(defaultValues?.primaryIncrease ?? "");
     setPrimaryCashback(defaultValues?.primaryCashback ?? "");
+    setPrimaryCashbackLossOnly(
+      Boolean(defaultValues?.primaryCashbackLossOnly),
+    );
     setPrimaryFreebet(Boolean(defaultValues?.primaryFreebet));
     setCollectionPrimaryStake(
       defaultValues?.collectionPrimaryStake ??
@@ -2289,6 +2347,9 @@ export function ProcedureModal({
     );
     setCollectionPrimaryIncrease(defaultValues?.collectionPrimaryIncrease ?? "");
     setCollectionPrimaryCashback(defaultValues?.collectionPrimaryCashback ?? "");
+    setCollectionPrimaryCashbackLossOnly(
+      Boolean(defaultValues?.collectionPrimaryCashbackLossOnly),
+    );
     setCollectionPrimaryFreebet(Boolean(defaultValues?.collectionPrimaryFreebet));
     setProtectionDrafts(
       createProtectionDraftRecord(
@@ -2721,6 +2782,8 @@ export function ProcedureModal({
                               commissionValue: collectionPrimaryCommission,
                               increaseValue: collectionPrimaryIncrease,
                               cashbackValue: collectionPrimaryCashback,
+                              cashbackLossOnlyChecked:
+                                collectionPrimaryCashbackLossOnly,
                               freebetChecked: collectionPrimaryFreebet,
                               configOpen: Boolean(
                                 sportsConfigOpen["collection-primary"],
@@ -2735,6 +2798,8 @@ export function ProcedureModal({
                               onCommissionChange: setCollectionPrimaryCommission,
                               onIncreaseChange: setCollectionPrimaryIncrease,
                               onCashbackChange: setCollectionPrimaryCashback,
+                              onCashbackLossOnlyChange:
+                                setCollectionPrimaryCashbackLossOnly,
                               onFreebetChange: setCollectionPrimaryFreebet,
                               onToggleConfig: () =>
                                 toggleSportsConfig("collection-primary"),
@@ -2805,6 +2870,10 @@ export function ProcedureModal({
                                     collectionProtectionDrafts[key]?.increase ?? "",
                                   cashbackValue:
                                     collectionProtectionDrafts[key]?.cashback ?? "",
+                                  cashbackLossOnlyChecked: Boolean(
+                                    collectionProtectionDrafts[key]
+                                      ?.cashbackLossOnly,
+                                  ),
                                   freebetChecked: Boolean(
                                     collectionProtectionDrafts[key]?.freebet,
                                   ),
@@ -2855,6 +2924,12 @@ export function ProcedureModal({
                                       key,
                                       "cashback",
                                       value,
+                                    ),
+                                  onCashbackLossOnlyChange: (checked) =>
+                                    setCollectionProtectionDraftValue(
+                                      key,
+                                      "cashbackLossOnly",
+                                      checked,
                                     ),
                                   onFreebetChange: (checked) =>
                                     setCollectionProtectionDraftValue(
@@ -3033,6 +3108,7 @@ export function ProcedureModal({
                           commissionValue: primaryCommission,
                           increaseValue: primaryIncrease,
                           cashbackValue: primaryCashback,
+                          cashbackLossOnlyChecked: primaryCashbackLossOnly,
                           freebetChecked: primaryFreebet,
                           configOpen: Boolean(sportsConfigOpen["sports-primary"]),
                           onStakeChange: setPrimaryStake,
@@ -3045,6 +3121,7 @@ export function ProcedureModal({
                           onCommissionChange: setPrimaryCommission,
                           onIncreaseChange: setPrimaryIncrease,
                           onCashbackChange: setPrimaryCashback,
+                          onCashbackLossOnlyChange: setPrimaryCashbackLossOnly,
                           onFreebetChange: setPrimaryFreebet,
                           onToggleConfig: () =>
                             toggleSportsConfig("sports-primary"),
@@ -3112,6 +3189,9 @@ export function ProcedureModal({
                                     protectionDrafts[key]?.increase ?? "",
                                   cashbackValue:
                                     protectionDrafts[key]?.cashback ?? "",
+                                  cashbackLossOnlyChecked: Boolean(
+                                    protectionDrafts[key]?.cashbackLossOnly,
+                                  ),
                                   freebetChecked: Boolean(
                                     protectionDrafts[key]?.freebet,
                                   ),
@@ -3150,6 +3230,12 @@ export function ProcedureModal({
                                       key,
                                       "cashback",
                                       value,
+                                    ),
+                                  onCashbackLossOnlyChange: (checked) =>
+                                    setProtectionDraftValue(
+                                      key,
+                                      "cashbackLossOnly",
+                                      checked,
                                     ),
                                   onFreebetChange: (checked) =>
                                     setProtectionDraftValue(

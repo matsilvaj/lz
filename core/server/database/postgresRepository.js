@@ -167,6 +167,9 @@ function normalizeProcedureDetailEntries(entries) {
       commission: parseNumber(entry?.commission),
       increase: parseNumber(entry?.increase ?? entry?.aumento_percentual),
       cashback: parseNumber(entry?.cashback ?? entry?.cashback_percentual),
+      cashbackLossOnly: parseBoolean(
+        entry?.cashbackLossOnly ?? entry?.cashback_apenas_perda,
+      ),
       freebet: parseBoolean(entry?.freebet ?? entry?.freebet_somente_lucro),
       operationDate: parseText(entry?.operationDate ?? entry?.data_operacao).trim(),
     }))
@@ -356,6 +359,9 @@ function toDetailInput(entry) {
     commission: parseNumber(entry?.comissao_percentual ?? entry?.commission),
     increase: parseNumber(entry?.aumento_percentual ?? entry?.increase),
     cashback: parseNumber(entry?.cashback_percentual ?? entry?.cashback),
+    cashbackLossOnly: parseBoolean(
+      entry?.cashback_apenas_perda ?? entry?.cashbackLossOnly,
+    ),
     freebet: parseBoolean(entry?.freebet_somente_lucro ?? entry?.freebet),
     operationDate: parseText(entry?.data_operacao ?? entry?.operationDate).trim(),
   };
@@ -1353,6 +1359,7 @@ export class ProceduresPostgresRepository {
             comissao_percentual,
             aumento_percentual,
             cashback_percentual,
+            cashback_apenas_perda,
             freebet_somente_lucro,
             data_operacao
           )
@@ -1372,6 +1379,7 @@ export class ProceduresPostgresRepository {
             entry.comissao_percentual,
             entry.aumento_percentual,
             entry.cashback_percentual,
+            entry.cashback_apenas_perda,
             entry.freebet_somente_lucro,
             entry.data_operacao
           FROM unnest(
@@ -1388,7 +1396,8 @@ export class ProceduresPostgresRepository {
             $14::double precision[],
             $15::double precision[],
             $16::boolean[],
-            $17::text[]
+            $17::boolean[],
+            $18::text[]
           ) AS entry(
             escopo,
             tipo_entrada,
@@ -1402,6 +1411,7 @@ export class ProceduresPostgresRepository {
             comissao_percentual,
             aumento_percentual,
             cashback_percentual,
+            cashback_apenas_perda,
             freebet_somente_lucro,
             data_operacao
           )
@@ -1422,6 +1432,7 @@ export class ProceduresPostgresRepository {
           entries.map((entry) => entry.commission),
           entries.map((entry) => entry.increase),
           entries.map((entry) => entry.cashback),
+          entries.map((entry) => entry.cashbackLossOnly),
           entries.map((entry) => entry.freebet),
           entries.map((entry) => entry.operationDate),
         ],
@@ -1761,6 +1772,7 @@ export class ProceduresPostgresRepository {
                 commission: entry.comissao_percentual,
                 increase: entry.aumento_percentual,
                 cashback: entry.cashback_percentual,
+                cashbackLossOnly: entry.cashback_apenas_perda,
                 freebet: entry.freebet_somente_lucro,
               })),
               results: (procedure.resultados ?? []).map((result) => ({
@@ -1951,6 +1963,7 @@ export class ProceduresPostgresRepository {
             comissao_percentual,
             aumento_percentual,
             cashback_percentual,
+            cashback_apenas_perda,
             freebet_somente_lucro,
             data_operacao
           FROM procedimentos_entradas
@@ -1995,6 +2008,7 @@ export class ProceduresPostgresRepository {
         comissao_percentual: parseNumber(entry.comissao_percentual),
         aumento_percentual: parseNumber(entry.aumento_percentual),
         cashback_percentual: parseNumber(entry.cashback_percentual),
+        cashback_apenas_perda: parseBoolean(entry.cashback_apenas_perda),
         freebet_somente_lucro: parseBoolean(entry.freebet_somente_lucro),
         data_operacao: parseText(entry.data_operacao).trim(),
       });

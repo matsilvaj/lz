@@ -124,6 +124,7 @@ function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCa
     lineCount,
     lines: lines.map((selection, index) => ({
       aumento_percentual: "0",
+      cashback_apenas_perda: false,
       cashback_percentual: "0",
       comissao_percentual: "0",
       freebet: Boolean(selection.freebet),

@@ -41,6 +41,7 @@ type CalculatorLine = {
   aumento_percentual: string;
   comissao_percentual: string;
   cashback_percentual: string;
+  cashback_apenas_perda: boolean;
   freebet: boolean;
 };
 
@@ -50,9 +51,12 @@ type CalculatorResultLine = {
   lucro_liquido?: number;
   custo?: number;
   cashback?: number;
+  cashback_no_cenario?: number;
   retorno_bruto?: number;
   math?: {
     M?: number;
+    k?: number;
+    bGarantido?: number;
   };
 };
 
@@ -83,6 +87,7 @@ function createInitialLine(): CalculatorLine {
     aumento_percentual: "0",
     comissao_percentual: "0",
     cashback_percentual: "0",
+    cashback_apenas_perda: false,
     freebet: false,
   };
 }
@@ -147,6 +152,7 @@ function normalizeSharedCalculatorLine(line: SharedCalculatorLine): CalculatorLi
       line.cashback_percentual,
       initialLine.cashback_percentual,
     ),
+    cashback_apenas_perda: Boolean(line.cashback_apenas_perda),
     freebet: Boolean(line.freebet),
   };
 }
@@ -235,17 +241,22 @@ function calculateEffectiveOdd(line: CalculatorLine) {
   return 1 + (odd - 1) * (1 + toNumber(line.aumento_percentual) / 100);
 }
 
+// Espelha o calculateSurebet: retorno bruto por unidade de stake dividido pelo
+// custo liquido do credito que a casa garante. Cashback pago so na derrota nao
+// abate custo nenhum aqui, porque nao vale no cenario em que esta linha ganha.
 function calculateRealOdd(line: CalculatorLine) {
   const effectiveOdd = calculateEffectiveOdd(line);
   const commissionMultiplier = 1 - toNumber(line.comissao_percentual) / 100;
   const cashbackRate = toNumber(line.cashback_percentual) / 100;
+  const guaranteedCashback = line.cashback_apenas_perda ? 0 : cashbackRate;
 
   if (line.tipo === "L") {
-    return (
-      effectiveOdd -
-      1 +
-      commissionMultiplier -
-      (effectiveOdd - 1) * cashbackRate
+    const liability = effectiveOdd - 1;
+
+    return getRealOddRatio(
+      liability + commissionMultiplier,
+      liability,
+      liability * guaranteedCashback,
     );
   }
 
@@ -253,7 +264,21 @@ function calculateRealOdd(line: CalculatorLine) {
     return (effectiveOdd - 1) * commissionMultiplier;
   }
 
-  return 1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate;
+  return getRealOddRatio(
+    1 + (effectiveOdd - 1) * commissionMultiplier,
+    1,
+    guaranteedCashback,
+  );
+}
+
+function getRealOddRatio(
+  grossMultiplier: number,
+  costMultiplier: number,
+  guaranteedCashback: number,
+) {
+  const netCost = costMultiplier - guaranteedCashback;
+
+  return netCost > 0 ? grossMultiplier / netCost : grossMultiplier;
 }
 
 function roundCurrencyValue(value: number) {
@@ -719,6 +744,7 @@ export function CalculatorWorkspace({
         aumento_percentual: line.aumento_percentual,
         comissao_percentual: line.comissao_percentual,
         cashback_percentual: line.cashback_percentual,
+        cashback_apenas_perda: line.cashback_apenas_perda,
         freebet: line.freebet,
       })),
     };
@@ -772,6 +798,7 @@ export function CalculatorWorkspace({
         aumento_percentual: toNumber(line.aumento_percentual),
         comissao_percentual: toNumber(line.comissao_percentual),
         cashback_percentual: toNumber(line.cashback_percentual),
+        cashback_apenas_perda: line.cashback_apenas_perda,
         freebet: line.freebet,
       })),
       workspaceIndex,
@@ -815,6 +842,7 @@ export function CalculatorWorkspace({
       commission: formatProcedureNumber(line.comissao_percentual),
       increase: formatProcedureNumber(line.aumento_percentual),
       cashback: formatProcedureNumber(line.cashback_percentual),
+      cashbackLossOnly: line.cashback_apenas_perda,
       freebet: line.freebet,
     };
   });
@@ -827,6 +855,7 @@ export function CalculatorWorkspace({
     commission: "",
     increase: "",
     cashback: "",
+    cashbackLossOnly: false,
     freebet: false,
   };
   const procedureProtections = procedureEntries.slice(1);
@@ -867,6 +896,7 @@ export function CalculatorWorkspace({
       primaryCommission: procedurePrimary.commission,
       primaryIncrease: procedurePrimary.increase,
       primaryCashback: procedurePrimary.cashback,
+      primaryCashbackLossOnly: procedurePrimary.cashbackLossOnly,
       primaryFreebet: procedurePrimary.freebet,
       sportProtections: procedureProtections.map((entry) => ({
         stake: entry.stake,
@@ -876,6 +906,7 @@ export function CalculatorWorkspace({
         commission: entry.commission,
         increase: entry.increase,
         cashback: entry.cashback,
+        cashbackLossOnly: entry.cashbackLossOnly,
         freebet: entry.freebet,
       })),
       sportResultSelections: [],
@@ -887,6 +918,7 @@ export function CalculatorWorkspace({
       collectionPrimaryCommission: procedurePrimary.commission,
       collectionPrimaryIncrease: procedurePrimary.increase,
       collectionPrimaryCashback: procedurePrimary.cashback,
+      collectionPrimaryCashbackLossOnly: procedurePrimary.cashbackLossOnly,
       collectionPrimaryFreebet: procedurePrimary.freebet,
       collectionProtections: procedureProtections.map((entry) => ({
         stake: entry.stake,
@@ -896,6 +928,7 @@ export function CalculatorWorkspace({
         commission: entry.commission,
         increase: entry.increase,
         cashback: entry.cashback,
+        cashbackLossOnly: entry.cashbackLossOnly,
         freebet: entry.freebet,
       })),
       collectionResultSelections: [],
@@ -954,8 +987,11 @@ export function CalculatorWorkspace({
         {lines.map((line, index) => {
           const lineResult = calculation?.linhas?.[index];
           const lineProfit = Number(lineResult?.lucro_liquido ?? 0);
+          // O cashback que a casa nao paga quando esta linha ganha nao pode
+          // abater o investimento usado no ROI deste cenario.
           const lineInvestment =
-            Number(lineResult?.custo ?? 0) - Number(lineResult?.cashback ?? 0);
+            Number(lineResult?.custo ?? 0) -
+            Number(lineResult?.cashback_no_cenario ?? 0);
           const roundedLineProfit = roundCurrencyValue(lineProfit);
           const roundedLineInvestment = roundCurrencyValue(lineInvestment);
           const lineRoi =
@@ -967,7 +1003,13 @@ export function CalculatorWorkspace({
             toNumber(line.aumento_percentual) !== 0 ||
             toNumber(line.comissao_percentual) !== 0 ||
             toNumber(line.cashback_percentual) !== 0;
-          const realOddValue = lineResult?.math?.M ?? calculateRealOdd(line);
+          const realOddValue = lineResult?.math
+            ? getRealOddRatio(
+                Number(lineResult.math.M ?? 0),
+                Number(lineResult.math.k ?? 0),
+                Number(lineResult.math.bGarantido ?? 0),
+              )
+            : calculateRealOdd(line);
           const displayedStake =
             index === workspaceIndex
               ? line.stake
@@ -1140,6 +1182,31 @@ export function CalculatorWorkspace({
                         type="number"
                         value={line.cashback_percentual}
                       />
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                      <input
+                        checked={line.cashback_apenas_perda}
+                        className="lz-checkbox mt-0.5"
+                        onChange={(event) =>
+                          updateLine(index, {
+                            cashback_apenas_perda: event.target.checked,
+                          })
+                        }
+                        type="checkbox"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[var(--text-secondary)]">
+                          Cashback apenas se perder
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-[var(--text-dim)]">
+                          Marcado: o cashback fica fora da divisao dos stakes.
+                          Se esta casa ganhar, o lucro e o mesmo que seria sem
+                          cashback; o credito aparece so nos cenarios das outras
+                          casas. Desmarcado: a casa paga em qualquer resultado e
+                          o credito entra em todos os cenarios.
+                        </span>
+                      </span>
                     </label>
 
                     <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">

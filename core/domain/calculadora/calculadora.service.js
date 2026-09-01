@@ -9,8 +9,16 @@ import {
   roundTo,
 } from "../shared/normalizers.js";
 
+// O cashback tem dois regimes. O padrao e a casa pagar a promocao em qualquer
+// resultado, e nesse caso o credito vale em todos os cenarios. Marcada a opcao
+// "apenas se perder", a casa so paga quando aquela aposta perde: o credito sai
+// da divisao dos stakes e entra apenas nos cenarios das outras casas. Ausencia
+// do campo cai no padrao, entao parseBoolean ja resolve.
 export function normalizeSurebetLine(line) {
   return {
+    cashback_apenas_perda: parseBoolean(
+      line?.cashback_apenas_perda ?? line?.cashbackLossOnly,
+    ),
     odd: parseNumber(line?.odd),
     stake: parseNumber(line?.stake),
     responsabilidade: parseNumber(
@@ -89,17 +97,24 @@ export function calculateSurebet(
     const effectiveOdd =
       1 + (line.odd - 1) * (1 + line.aumento_percentual / 100);
 
+    // `M` e o retorno bruto por unidade de stake e e o que iguala os cenarios
+    // na hora de dividir os stakes. O cashback fica fora dele: quando a
+    // promocao so vale na derrota, ela nao pode financiar o cenario em que a
+    // propria casa ganha — esse cenario tem que fechar como se o cashback nao
+    // existisse, e o credito aparece inteiro nos cenarios das outras casas.
+    // `b` guarda o cashback para o calculo do valor recebido, e `bGarantido`
+    // so e diferente de zero quando a casa paga em qualquer resultado, unico
+    // caso em que o credito pode entrar no rateio.
     if (line.tipo === "L") {
+      const cashbackCredit = (effectiveOdd - 1) * (line.cashback_percentual / 100);
+
       return {
         ...line,
         odd_efetiva: effectiveOdd,
-        M:
-          effectiveOdd -
-          1 +
-          (1 - line.comissao_percentual / 100) -
-          (effectiveOdd - 1) * (line.cashback_percentual / 100),
+        M: effectiveOdd - 1 + (1 - line.comissao_percentual / 100),
         k: effectiveOdd - 1,
-        b: (effectiveOdd - 1) * (line.cashback_percentual / 100),
+        b: cashbackCredit,
+        bGarantido: line.cashback_apenas_perda ? 0 : cashbackCredit,
       };
     }
 
@@ -110,18 +125,19 @@ export function calculateSurebet(
         M: (effectiveOdd - 1) * (1 - line.comissao_percentual / 100),
         k: 0,
         b: 0,
+        bGarantido: 0,
       };
     }
+
+    const cashbackCredit = line.cashback_percentual / 100;
 
     return {
       ...line,
       odd_efetiva: effectiveOdd,
-      M:
-        1 +
-        (effectiveOdd - 1) * (1 - line.comissao_percentual / 100) -
-        line.cashback_percentual / 100,
+      M: 1 + (effectiveOdd - 1) * (1 - line.comissao_percentual / 100),
       k: 1,
-      b: line.cashback_percentual / 100,
+      b: cashbackCredit,
+      bGarantido: line.cashback_apenas_perda ? 0 : cashbackCredit,
     };
   });
 
@@ -135,13 +151,13 @@ export function calculateSurebet(
     for (let index = 1; index < calculations.length; index += 1) {
       const current = calculations[index];
       if (current.M > 0) {
-        sumW += (current.k - current.b) / current.M;
+        sumW += (current.k - current.bGarantido) / current.M;
       }
     }
 
     if (safeBaseIndex === 0) {
       const first = calculations[0];
-      const numerator = baseStake * (first.M - (first.k - first.b));
+      const numerator = baseStake * (first.M - (first.k - first.bGarantido));
       const otherNetReturn = sumW > 0 ? numerator / sumW : 0;
 
       for (let index = 1; index < calculations.length; index += 1) {
@@ -164,7 +180,7 @@ export function calculateSurebet(
 
       const first = calculations[0];
       const numerator = otherNetReturn * sumW;
-      const denominator = first.M - (first.k - first.b);
+      const denominator = first.M - (first.k - first.bGarantido);
       stakes[0] = denominator !== 0 ? numerator / denominator : 0;
     }
   } else {
@@ -196,8 +212,14 @@ export function calculateSurebet(
     const cost = calculation.tipo === "L" ? responsibility : finalStake * calculation.k;
     const cashback =
       (calculation.tipo === "L" ? rawStake : finalStake) * calculation.b;
+    // Cashback creditado no cenario em que esta propria linha ganha: zero
+    // quando a casa so paga na derrota.
+    const winCashback = calculation.cashback_apenas_perda ? 0 : cashback;
+    // O total de cashback entra no investimento efetivo de todos os cenarios,
+    // entao a linha que nao recebe o proprio credito devolve ele aqui.
     const grossReturn =
-      calculation.tipo === "L" ? rawStake * calculation.M : finalStake * calculation.M;
+      (calculation.tipo === "L" ? rawStake : finalStake) * calculation.M -
+      (cashback - winCashback);
 
     totalCost += cost;
     totalCashback += cashback;
@@ -213,14 +235,17 @@ export function calculateSurebet(
       retorno_bruto: grossReturn,
       custo: cost,
       cashback,
+      cashback_no_cenario: winCashback,
       freebet: calculation.freebet,
       aumento_percentual: calculation.aumento_percentual,
       comissao_percentual: calculation.comissao_percentual,
       cashback_percentual: calculation.cashback_percentual,
+      cashback_apenas_perda: calculation.cashback_apenas_perda,
       math: {
         M: calculation.M,
         k: calculation.k,
         b: calculation.b,
+        bGarantido: calculation.bGarantido,
       },
     });
   });

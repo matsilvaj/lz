@@ -105,6 +105,7 @@ type ProcedureEntryInput = {
   commission: number;
   increase: number;
   cashback: number;
+  cashbackLossOnly: boolean;
   freebet: boolean;
   operationDate: string;
 };
@@ -232,6 +233,9 @@ function parseProcedureDetails(
           commission: parseDetailNumber(entry.commission),
           increase: parseDetailNumber(entry.increase ?? entry.aumento_percentual),
           cashback: parseDetailNumber(entry.cashback ?? entry.cashback_percentual),
+          cashbackLossOnly: parseDetailBoolean(
+            entry.cashbackLossOnly ?? entry.cashback_apenas_perda,
+          ),
           freebet: parseDetailBoolean(entry.freebet ?? entry.freebet_somente_lucro),
           operationDate: formatOperationDateInput(
             parseText(rawOperationDate),
@@ -289,7 +293,16 @@ function calculateEntryBalance(
     return entry.freebet ? 0 : entry.value;
   }
 
-  if (entry.side === "lay" && !selectedResultKeys.has(entry.resultKey)) {
+  const cashbackRate = entry.cashback / 100;
+  const entryWon =
+    entry.side === "lay"
+      ? !selectedResultKeys.has(entry.resultKey)
+      : selectedResultKeys.has(entry.resultKey);
+  // Cashback pago em qualquer resultado entra no saldo tanto na vitoria quanto
+  // na derrota. Pago so na derrota, entra apenas quando esta entrada perde.
+  const cashbackApplies = entryWon ? !entry.cashbackLossOnly : true;
+
+  if (entry.side === "lay") {
     const baseOdd = entry.layOdd > 1 ? entry.layOdd : entry.odd;
     const effectiveOdd = calculateAdjustedOdd(baseOdd, entry.increase);
 
@@ -299,28 +312,33 @@ function calculateEntryBalance(
 
     const layStake = entry.value / (effectiveOdd - 1);
     const commissionMultiplier = 1 - entry.commission / 100;
-    const cashbackRate = entry.cashback / 100;
+    const cashbackAmount = cashbackApplies
+      ? layStake * (effectiveOdd - 1) * cashbackRate
+      : 0;
 
-    return layStake *
-      (effectiveOdd - 1 + commissionMultiplier - (effectiveOdd - 1) * cashbackRate);
-  }
-
-  if (entry.side !== "lay" && selectedResultKeys.has(entry.resultKey)) {
-    const effectiveOdd = calculateAdjustedOdd(entry.odd, entry.increase);
-    const commissionMultiplier = 1 - entry.commission / 100;
-    const cashbackRate = entry.cashback / 100;
-
-    if (entry.freebet) {
-      return entry.value * ((effectiveOdd - 1) * commissionMultiplier);
+    if (!entryWon) {
+      return cashbackAmount;
     }
 
-    return (
-      entry.value *
-      (1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate)
-    );
+    return layStake * (effectiveOdd - 1 + commissionMultiplier) + cashbackAmount;
   }
 
-  return 0;
+  const effectiveOdd = calculateAdjustedOdd(entry.odd, entry.increase);
+  const commissionMultiplier = 1 - entry.commission / 100;
+  const cashbackAmount = cashbackApplies ? entry.value * cashbackRate : 0;
+
+  if (!entryWon) {
+    return entry.freebet ? 0 : cashbackAmount;
+  }
+
+  if (entry.freebet) {
+    return entry.value * ((effectiveOdd - 1) * commissionMultiplier);
+  }
+
+  return (
+    entry.value * (1 + (effectiveOdd - 1) * commissionMultiplier) +
+    cashbackAmount
+  );
 }
 
 function calculateBookmakerBalanceImpacts(
