@@ -1184,10 +1184,10 @@ export function CalculatorWorkspace({
                       />
                     </label>
 
-                    <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
                       <input
                         checked={line.cashback_apenas_perda}
-                        className="lz-checkbox mt-0.5"
+                        className="lz-checkbox"
                         onChange={(event) =>
                           updateLine(index, {
                             cashback_apenas_perda: event.target.checked,
@@ -1195,17 +1195,8 @@ export function CalculatorWorkspace({
                         }
                         type="checkbox"
                       />
-                      <span className="min-w-0">
-                        <span className="block text-[var(--text-secondary)]">
-                          Cashback apenas se perder
-                        </span>
-                        <span className="mt-1 block text-xs leading-5 text-[var(--text-dim)]">
-                          Marcado: o cashback fica fora da divisao dos stakes.
-                          Se esta casa ganhar, o lucro e o mesmo que seria sem
-                          cashback; o credito aparece so nos cenarios das outras
-                          casas. Desmarcado: a casa paga em qualquer resultado e
-                          o credito entra em todos os cenarios.
-                        </span>
+                      <span className="text-[var(--text-secondary)]">
+                        Cashback apenas se perder
                       </span>
                     </label>
 
