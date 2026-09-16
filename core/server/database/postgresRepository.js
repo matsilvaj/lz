@@ -121,7 +121,7 @@ const PROCEDURE_DETAIL_SCOPES = new Set([
   "freebet_collection",
   "freebet_conversion",
 ]);
-const PROCEDURE_DETAIL_ROLES = new Set(["principal", "protecao"]);
+const PROCEDURE_DETAIL_ROLES = new Set(["principal", "protecao", "filha"]);
 
 function normalizeProcedureDetailScope(value) {
   const scope = parseText(value).trim();

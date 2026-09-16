@@ -1,7 +1,15 @@
 "use client";
 
 import { FREEBET_CONDITION_CONVERSION_ONLY, calculateSurebet } from "@/core";
-import { Plus, RotateCcw } from "lucide-react";
+import {
+  CornerDownRight,
+  Lock,
+  LockOpen,
+  Minus,
+  Plus,
+  RotateCcw,
+  Scissors,
+} from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -29,7 +37,11 @@ type CalculatorProcedureDefaults = ProcedureShareValues & {
   originIds?: number[];
 };
 
-type CalculatorLine = {
+type CalculatorLine = CalculatorLineFields & {
+  children: CalculatorLineFields[];
+};
+
+type CalculatorLineFields = {
   house: string;
   odd: string;
   stake: string;
@@ -50,10 +62,18 @@ type CalculatorResultLine = {
   custo?: number;
   cashback?: number;
   retorno_bruto?: number;
+  retorno_grupo?: number;
+  custo_grupo?: number;
+  cashback_grupo?: number;
+  filhas?: CalculatorResultLine[];
   math?: {
     M?: number;
   };
 };
+
+type MemberPath = { group: number; child: number | null };
+
+const MAX_CHILD_LINES = 5;
 
 type CalculatorResult = {
   linhas?: CalculatorResultLine[];
@@ -64,13 +84,13 @@ type CalculatorResult = {
 };
 
 type BookmakerAutocompleteInputProps = {
-  index: number;
+  placeholder: string;
   bookmakers: string[];
   onValueChange: (value: string) => void;
   value: string;
 };
 
-function createInitialLine(): CalculatorLine {
+function createInitialFields(): CalculatorLineFields {
   return {
     house: "",
     odd: "2",
@@ -84,6 +104,10 @@ function createInitialLine(): CalculatorLine {
     cashback_percentual: "0",
     freebet: false,
   };
+}
+
+function createInitialLine(): CalculatorLine {
+  return { ...createInitialFields(), children: [] };
 }
 
 function createConversionLine(house: string, freebetValue: number): CalculatorLine {
@@ -118,7 +142,49 @@ function toSharedString(value: unknown, fallback: string) {
 }
 
 function normalizeSharedCalculatorLine(line: SharedCalculatorLine): CalculatorLine {
-  const initialLine = createInitialLine();
+  const children = Array.isArray(line.filhas)
+    ? (line.filhas as SharedCalculatorLine[])
+        .filter((child) => child && typeof child === "object")
+        .slice(0, MAX_CHILD_LINES)
+        .map((child) => normalizeSharedCalculatorFields(child))
+    : [];
+
+  return { ...normalizeSharedCalculatorFields(line), children };
+}
+
+function toSharedFields(line: CalculatorLineFields): SharedCalculatorLine {
+  return {
+    house: line.house,
+    odd: line.odd,
+    stake: line.stake,
+    stakeEdited: line.stakeEdited,
+    tipo: line.tipo,
+    responsabilidade: line.responsabilidade,
+    responsabilidadeEdited: line.responsabilidadeEdited,
+    aumento_percentual: line.aumento_percentual,
+    comissao_percentual: line.comissao_percentual,
+    cashback_percentual: line.cashback_percentual,
+    freebet: line.freebet,
+  };
+}
+
+function toCalculationFields(line: CalculatorLineFields, locked: boolean) {
+  return {
+    odd: toNumber(line.odd),
+    stake: locked ? toNumber(line.stake) : 0,
+    tipo: line.tipo,
+    responsabilidade: toNumber(line.responsabilidade),
+    aumento_percentual: toNumber(line.aumento_percentual),
+    comissao_percentual: toNumber(line.comissao_percentual),
+    cashback_percentual: toNumber(line.cashback_percentual),
+    freebet: line.freebet,
+  };
+}
+
+function normalizeSharedCalculatorFields(
+  line: SharedCalculatorLine,
+): CalculatorLineFields {
+  const initialLine = createInitialFields();
 
   return {
     house: toSharedString(line.house, initialLine.house),
@@ -224,7 +290,7 @@ function formatProcedureNumber(value: unknown) {
   return String(Math.round(parsed * 100) / 100);
 }
 
-function calculateEffectiveOdd(line: CalculatorLine) {
+function calculateEffectiveOdd(line: CalculatorLineFields) {
   const odd = toNumber(line.odd);
 
   if (odd <= 1) {
@@ -234,7 +300,7 @@ function calculateEffectiveOdd(line: CalculatorLine) {
   return 1 + (odd - 1) * (1 + toNumber(line.aumento_percentual) / 100);
 }
 
-function calculateRealOdd(line: CalculatorLine) {
+function calculateRealOdd(line: CalculatorLineFields) {
   const effectiveOdd = calculateEffectiveOdd(line);
   const commissionMultiplier = 1 - toNumber(line.comissao_percentual) / 100;
   const cashbackRate = toNumber(line.cashback_percentual) / 100;
@@ -290,7 +356,7 @@ function getAllInitialSearchParams(
 }
 
 function BookmakerAutocompleteInput({
-  index,
+  placeholder,
   bookmakers,
   onValueChange,
   value,
@@ -386,7 +452,7 @@ function BookmakerAutocompleteInput({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder={`Casa ${index + 1}`}
+        placeholder={placeholder}
         ref={inputRef}
         role="combobox"
         type="text"
@@ -596,11 +662,168 @@ export function CalculatorWorkspace({
     appliedPresetRef.current = conversionPreset.key;
   }, [sharedPreset, conversionPreset]);
 
-  function updateLine(index: number, patch: Partial<CalculatorLine>) {
+  function mapMember(
+    path: MemberPath,
+    update: (member: CalculatorLineFields) => CalculatorLineFields,
+  ) {
     setLines((current) =>
-      current.map((line, lineIndex) =>
-        lineIndex === index ? { ...line, ...patch } : line,
-      ),
+      current.map((line, lineIndex) => {
+        if (lineIndex !== path.group) {
+          return line;
+        }
+
+        if (path.child === null) {
+          return { ...line, ...update(line), children: line.children };
+        }
+
+        return {
+          ...line,
+          children: line.children.map((child, childIndex) =>
+            childIndex === path.child ? update(child) : child,
+          ),
+        };
+      }),
+    );
+  }
+
+  function updateMember(path: MemberPath, patch: Partial<CalculatorLineFields>) {
+    mapMember(path, (member) => ({ ...member, ...patch }));
+  }
+
+  function updateLine(index: number, patch: Partial<CalculatorLineFields>) {
+    updateMember({ group: index, child: null }, patch);
+  }
+
+  function isMemberLocked(path: MemberPath, member: CalculatorLineFields) {
+    return path.group === workspaceIndex || member.stakeEdited;
+  }
+
+  function getDisplayedStake(path: MemberPath) {
+    const line = lines[path.group];
+    const member = path.child === null ? line : line?.children[path.child];
+    const result =
+      path.child === null
+        ? calculation?.linhas?.[path.group]
+        : calculation?.linhas?.[path.group]?.filhas?.[path.child];
+
+    if (!member) {
+      return "0";
+    }
+
+    if (isMemberLocked(path, member) || !result) {
+      return member.stake;
+    }
+
+    return formatCalculatedValue(result.stake);
+  }
+
+  function lockGroupMembers(
+    line: CalculatorLine,
+    groupIndex: number,
+    keep: (child: number | null) => boolean,
+  ): CalculatorLine {
+    const lockMember = (member: CalculatorLineFields, child: number | null) =>
+      keep(child) || member.stakeEdited
+        ? member
+        : {
+            ...member,
+            stake: getDisplayedStake({ group: groupIndex, child }),
+            stakeEdited: true,
+          };
+
+    return {
+      ...lockMember(line, null),
+      children: line.children.map((child, childIndex) => lockMember(child, childIndex)),
+    };
+  }
+
+  function toggleMemberLock(path: MemberPath) {
+    if (path.group === workspaceIndex) {
+      return;
+    }
+
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== path.group) {
+          return line;
+        }
+
+        const member = path.child === null ? line : line.children[path.child];
+
+        if (!member) {
+          return line;
+        }
+
+        if (!member.stakeEdited) {
+          const stake = getDisplayedStake(path);
+          return path.child === null
+            ? { ...line, stake, stakeEdited: true }
+            : {
+                ...line,
+                children: line.children.map((child, childIndex) =>
+                  childIndex === path.child ? { ...child, stake, stakeEdited: true } : child,
+                ),
+              };
+        }
+
+        const locked = lockGroupMembers(line, lineIndex, (child) => child === path.child);
+
+        return path.child === null
+          ? { ...locked, stakeEdited: false }
+          : {
+              ...locked,
+              children: locked.children.map((child, childIndex) =>
+                childIndex === path.child ? { ...child, stakeEdited: false } : child,
+              ),
+            };
+      }),
+    );
+  }
+
+  function addChildLine(groupIndex: number) {
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== groupIndex || line.children.length >= MAX_CHILD_LINES) {
+          return line;
+        }
+
+        const base = lineIndex === workspaceIndex;
+        const locked = base ? line : lockGroupMembers(line, lineIndex, () => false);
+
+        return {
+          ...locked,
+          children: [
+            ...locked.children,
+            {
+              ...createInitialFields(),
+              odd: line.odd,
+              stake: base ? "" : "0",
+              stakeEdited: base,
+            },
+          ],
+        };
+      }),
+    );
+  }
+
+  function removeChildLine(groupIndex: number, childIndex: number) {
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== groupIndex) {
+          return line;
+        }
+
+        const children = line.children.filter((_, index) => index !== childIndex);
+        const hasFreeMember =
+          !line.stakeEdited || children.some((child) => !child.stakeEdited);
+
+        return {
+          ...line,
+          stakeEdited:
+            lineIndex !== workspaceIndex && !hasFreeMember ? false : line.stakeEdited,
+          children,
+        };
+      }),
     );
   }
 
@@ -633,64 +856,49 @@ export function CalculatorWorkspace({
     setWorkspaceIndex((current) => Math.min(current, nextCount - 1));
   }
 
-  function toggleLineType(index: number) {
-    setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) {
-          return line;
-        }
+  function toggleLineType(path: MemberPath) {
+    mapMember(path, (member) => {
+      const nextType = member.tipo === "B" ? "L" : "B";
 
-        const nextType = line.tipo === "B" ? "L" : "B";
-
-        return {
-          ...line,
-          tipo: nextType,
-          responsabilidade: nextType === "B" ? "0" : line.responsabilidade,
-          responsabilidadeEdited: false,
-        };
-      }),
-    );
+      return {
+        ...member,
+        tipo: nextType,
+        responsabilidade: nextType === "B" ? "0" : member.responsabilidade,
+        responsabilidadeEdited: false,
+      };
+    });
   }
 
-  function handleStakeChange(index: number, value: string) {
-    setLines((current) =>
-      current.map((line, lineIndex) =>
-        lineIndex === index
-          ? {
-              ...line,
-              stake: value,
-              stakeEdited: lineIndex !== workspaceIndex,
-              responsabilidadeEdited:
-                line.tipo === "L" ? false : line.responsabilidadeEdited,
-            }
-          : line,
-      ),
-    );
+  function shouldLockOnEdit(path: MemberPath) {
+    return path.group !== workspaceIndex || path.child !== null;
   }
 
-  function handleResponsabilidadeChange(index: number, value: string) {
-    setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) {
-          return line;
-        }
+  function handleStakeChange(path: MemberPath, value: string) {
+    mapMember(path, (member) => ({
+      ...member,
+      stake: value,
+      stakeEdited: shouldLockOnEdit(path),
+      responsabilidadeEdited:
+        member.tipo === "L" ? false : member.responsabilidadeEdited,
+    }));
+  }
 
-        const odd = toNumber(line.odd);
-        const responsibility = toNumber(value);
-        const syncedStake =
+  function handleResponsabilidadeChange(path: MemberPath, value: string) {
+    mapMember(path, (member) => {
+      const odd = toNumber(member.odd);
+      const responsibility = toNumber(value);
+
+      return {
+        ...member,
+        responsabilidade: value,
+        responsabilidadeEdited: true,
+        stake:
           odd > 1 && value !== ""
             ? formatCalculatedValue(responsibility / (odd - 1))
-            : line.stake;
-
-        return {
-          ...line,
-          responsabilidade: value,
-          responsabilidadeEdited: true,
-          stake: syncedStake,
-          stakeEdited: lineIndex !== workspaceIndex,
-        };
-      }),
-    );
+            : member.stake,
+        stakeEdited: shouldLockOnEdit(path),
+      };
+    });
   }
 
   function fixStake(index: number, stake: string) {
@@ -700,6 +908,11 @@ export function CalculatorWorkspace({
         stake: lineIndex === index ? stake : line.stake,
         stakeEdited: false,
         responsabilidadeEdited: false,
+        children: line.children.map((child, childIndex) => ({
+          ...child,
+          stake: getDisplayedStake({ group: lineIndex, child: childIndex }),
+          stakeEdited: true,
+        })),
       })),
     );
     setWorkspaceIndex(index);
@@ -716,17 +929,8 @@ export function CalculatorWorkspace({
       workspaceIndex,
       configExpanded,
       lines: lines.slice(0, lineCount).map((line) => ({
-        house: line.house,
-        odd: line.odd,
-        stake: line.stake,
-        stakeEdited: line.stakeEdited,
-        tipo: line.tipo,
-        responsabilidade: line.responsabilidade,
-        responsabilidadeEdited: line.responsabilidadeEdited,
-        aumento_percentual: line.aumento_percentual,
-        comissao_percentual: line.comissao_percentual,
-        cashback_percentual: line.cashback_percentual,
-        freebet: line.freebet,
+        ...toSharedFields(line),
+        filhas: line.children.map(toSharedFields),
       })),
     };
     const params = new URLSearchParams();
@@ -771,15 +975,10 @@ export function CalculatorWorkspace({
   try {
     calculation = calculateSurebet(
       lines.map((line, index) => ({
-        odd: toNumber(line.odd),
-        stake:
-          index === workspaceIndex || line.stakeEdited ? toNumber(line.stake) : 0,
-        tipo: line.tipo,
-        responsabilidade: toNumber(line.responsabilidade),
-        aumento_percentual: toNumber(line.aumento_percentual),
-        comissao_percentual: toNumber(line.comissao_percentual),
-        cashback_percentual: toNumber(line.cashback_percentual),
-        freebet: line.freebet,
+        ...toCalculationFields(line, index === workspaceIndex || line.stakeEdited),
+        filhas: line.children.map((child) =>
+          toCalculationFields(child, index === workspaceIndex || child.stakeEdited),
+        ),
       })),
       workspaceIndex,
     ) as CalculatorResult;
@@ -789,18 +988,28 @@ export function CalculatorWorkspace({
   }
 
   const stakeTotal =
-    calculation?.linhas?.reduce((total, line) => total + Number(line.stake ?? 0), 0) ?? 0;
-  const hasLayLine = lines.some((line) => line.tipo === "L");
-  const columnsPerRow = Math.min(lineCount, maxCalculatorColumnsPerRow);
+    calculation?.linhas?.reduce(
+      (total, line) =>
+        total +
+        Number(line.stake ?? 0) +
+        (line.filhas ?? []).reduce((sum, child) => sum + Number(child.stake ?? 0), 0),
+      0,
+    ) ?? 0;
+  const hasLayLine = lines.some(
+    (line) => line.tipo === "L" || line.children.some((child) => child.tipo === "L"),
+  );
+  const totalColumns = lines.reduce((total, line) => total + 1 + line.children.length, 0);
+  const columnsPerRow = Math.min(totalColumns, maxCalculatorColumnsPerRow);
   const procedureLineOrder = [
     workspaceIndex,
     ...Array.from({ length: lineCount }, (_, index) => index).filter(
       (index) => index !== workspaceIndex,
     ),
   ];
-  const procedureEntries = procedureLineOrder.map((lineIndex) => {
-    const line = lines[lineIndex] ?? createInitialLine();
-    const resultLine = calculation?.linhas?.[lineIndex];
+  const toProcedureEntry = (
+    line: CalculatorLineFields,
+    resultLine: CalculatorResultLine | undefined,
+  ) => {
     const stake = resultLine?.stake ?? toNumber(line.stake);
     const responsibility =
       resultLine?.responsabilidade ?? toNumber(line.responsabilidade);
@@ -820,7 +1029,29 @@ export function CalculatorWorkspace({
       cashback: formatProcedureNumber(line.cashback_percentual),
       freebet: line.freebet,
     };
+  };
+  const procedureEntries = procedureLineOrder.map((lineIndex) => {
+    const line = lines[lineIndex] ?? createInitialLine();
+    const resultLine = calculation?.linhas?.[lineIndex];
+
+    return {
+      ...toProcedureEntry(line, resultLine),
+      children: line.children
+        .map((child, childIndex) =>
+          toProcedureEntry(child, resultLine?.filhas?.[childIndex]),
+        )
+        .filter((child) => child.stake !== ""),
+    };
   });
+  const procedureChildren = procedureEntries.reduce<
+    Record<string, ReturnType<typeof toProcedureEntry>[]>
+  >((record, entry, index) => {
+    if (entry.children.length > 0) {
+      record[index === 0 ? "principal" : `protection-${index - 1}`] = entry.children;
+    }
+
+    return record;
+  }, {});
   const procedurePrimary = procedureEntries[0] ?? {
     house: "",
     odd: "",
@@ -831,6 +1062,7 @@ export function CalculatorWorkspace({
     increase: "",
     cashback: "",
     freebet: false,
+    children: [],
   };
   const procedureProtections = procedureEntries.slice(1);
   const procedureSelectedHouses = procedureEntries.map((entry) => entry.house);
@@ -876,6 +1108,8 @@ export function CalculatorWorkspace({
       primaryIncrease: procedurePrimary.increase,
       primaryCashback: procedurePrimary.cashback,
       primaryFreebet: procedurePrimary.freebet,
+      sportChildren: procedureChildren,
+      collectionChildren: procedureChildren,
       sportProtections: procedureProtections.map((entry) => ({
         stake: entry.stake,
         odd: entry.odd,
@@ -929,6 +1163,273 @@ export function CalculatorWorkspace({
     openProcedureModal(Boolean(conversionPreset));
   }
 
+  function renderMemberInputs(
+    path: MemberPath,
+    member: CalculatorLineFields,
+    memberResult: CalculatorResultLine | undefined,
+    compact = false,
+  ) {
+    const inputPadding = compact ? "py-2.5" : "py-3";
+    const hasCustomConfig =
+      member.freebet ||
+      toNumber(member.aumento_percentual) !== 0 ||
+      toNumber(member.comissao_percentual) !== 0 ||
+      toNumber(member.cashback_percentual) !== 0;
+    const realOddValue = memberResult?.math?.M ?? calculateRealOdd(member);
+    const displayedStake = getDisplayedStake(path);
+    const displayedResponsabilidade =
+      member.responsabilidadeEdited || !memberResult
+        ? member.responsabilidade
+        : formatCalculatedValue(memberResult.responsabilidade);
+    const isBaseMother = path.group === workspaceIndex && path.child === null;
+    const isBaseGroup = path.group === workspaceIndex;
+    const locked = isMemberLocked(path, member);
+    const showLock = !isBaseMother;
+
+    return (
+      <div className="flex flex-col gap-4">
+        <label className="space-y-2 text-sm">
+          <span className="font-medium text-[var(--text-secondary)]">Odd</span>
+          <div className="relative">
+            <input
+              className={`lz-input w-full rounded-2xl px-3 ${inputPadding} text-white ${
+                hasCustomConfig ? "pr-[7.3rem]" : ""
+              }`}
+              onChange={(event) => updateMember(path, { odd: event.target.value })}
+              step="0.01"
+              type="number"
+              value={member.odd}
+            />
+            {hasCustomConfig ? (
+              <span className="pointer-events-none absolute right-2 top-1/2 inline-flex max-w-[6.7rem] -translate-y-1/2 items-center truncate rounded-xl border border-[rgba(255,119,163,0.28)] bg-[rgba(216,31,89,0.24)] px-2.5 py-1 text-[11px] font-semibold text-[#fff7fa] shadow-[0_10px_24px_rgba(216,31,89,0.14)] sm:text-xs">
+                Real: {formatRealOddValue(realOddValue)}
+              </span>
+            ) : null}
+          </div>
+        </label>
+
+        <div
+          className={
+            hasLayLine ? "flex min-h-[156px] flex-col justify-center gap-4" : "space-y-4"
+          }
+        >
+          {member.tipo === "L" ? (
+            <label className="space-y-2 text-sm">
+              <span className="font-medium text-[var(--text-secondary)]">Responsabilidade</span>
+              <input
+                className={`lz-input w-full rounded-2xl px-3 ${inputPadding} text-white`}
+                onChange={(event) =>
+                  handleResponsabilidadeChange(path, event.target.value)
+                }
+                step="0.01"
+                type="number"
+                value={displayedResponsabilidade}
+              />
+            </label>
+          ) : null}
+
+          <div className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--text-secondary)]">Stake</span>
+            <div className="flex gap-2">
+              <div className="relative w-full">
+                <input
+                  className={`lz-input w-full rounded-2xl px-3 ${inputPadding} text-white ${
+                    showLock ? "pr-10" : ""
+                  } ${
+                    showLock && locked && !isBaseGroup
+                      ? "border-[rgba(255,119,163,0.55)]! bg-[rgba(216,31,89,0.08)]!"
+                      : ""
+                  }`}
+                  onChange={(event) => handleStakeChange(path, event.target.value)}
+                  step="0.01"
+                  type="number"
+                  value={displayedStake}
+                />
+                {showLock ? (
+                  <button
+                    aria-label={locked ? "Liberar stake" : "Travar stake"}
+                    className={`absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg transition disabled:cursor-default ${
+                      locked
+                        ? "text-[#ff77a3]"
+                        : "text-[var(--text-dim)] hover:text-white"
+                    }`}
+                    disabled={isBaseGroup}
+                    onClick={() => toggleMemberLock(path)}
+                    title={
+                      isBaseGroup
+                        ? "Na casa base a stake é sempre digitada"
+                        : locked
+                          ? "Stake travada. Clique para calcular automaticamente"
+                          : "Stake calculada. Clique para travar"
+                    }
+                    type="button"
+                  >
+                    {locked ? (
+                      <Lock aria-hidden="true" className="h-4 w-4" />
+                    ) : (
+                      <LockOpen aria-hidden="true" className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : null}
+              </div>
+              <button
+                className="lz-button-secondary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
+                onClick={() => toggleLineType(path)}
+                type="button"
+              >
+                {member.tipo}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderHouseField(
+    value: string,
+    placeholder: string,
+    onValueChange: (house: string) => void,
+    compact = false,
+  ) {
+    return (
+      <div className="space-y-2 text-sm">
+        <span className="font-medium text-[var(--text-secondary)]">Casa</span>
+        <div className={`lz-input flex w-full rounded-2xl px-3 ${compact ? "py-2.5" : "py-3"}`}>
+          <BookmakerAutocompleteInput
+            bookmakers={bookmakers}
+            onValueChange={onValueChange}
+            placeholder={placeholder}
+            value={value}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function renderMemberConfig(
+    path: MemberPath,
+    member: CalculatorLineFields,
+    alwaysOpen = false,
+  ) {
+    const expanded = alwaysOpen || configExpanded;
+    const hasCustomConfig =
+      member.freebet ||
+      toNumber(member.aumento_percentual) !== 0 ||
+      toNumber(member.comissao_percentual) !== 0 ||
+      toNumber(member.cashback_percentual) !== 0;
+
+    return (
+      <div
+        className={`rounded-[24px] border p-3 transition ${
+          hasCustomConfig
+            ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
+            : "border-white/10 bg-white/4"
+        }`}
+      >
+        {alwaysOpen ? (
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-[var(--text-secondary)]">
+              Configurações
+            </p>
+            {hasCustomConfig ? (
+              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
+            ) : null}
+          </div>
+        ) : (
+        <button
+          aria-expanded={expanded}
+          className="flex w-full items-center justify-between gap-3"
+          onClick={() => setConfigExpanded((current) => !current)}
+          type="button"
+        >
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-[var(--text-secondary)]">
+              Configurações
+            </p>
+            {hasCustomConfig ? (
+              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
+            ) : null}
+          </div>
+            <svg
+              aria-hidden="true"
+              className={`h-4 w-4 shrink-0 text-[var(--text-dim)] transition ${
+                expanded ? "rotate-180" : ""
+              }`}
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <path
+                d="M6.75 9.75 12 15l5.25-5.25"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              />
+            </svg>
+        </button>
+        )}
+
+        {expanded ? (
+          <div className={alwaysOpen ? "mt-2.5 space-y-1.5" : "mt-3 space-y-2"}>
+            <label className={calculatorConfigFieldClass}>
+              <span className="min-w-0 text-[var(--text-secondary)]">Aumento (%)</span>
+              <input
+                className={calculatorConfigInputClass}
+                onChange={(event) =>
+                  updateMember(path, { aumento_percentual: event.target.value })
+                }
+                step="0.01"
+                type="number"
+                value={member.aumento_percentual}
+              />
+            </label>
+
+            <label className={calculatorConfigFieldClass}>
+              <span className="min-w-0 text-[var(--text-secondary)]">Comissão (%)</span>
+              <input
+                className={calculatorConfigInputClass}
+                onChange={(event) =>
+                  updateMember(path, { comissao_percentual: event.target.value })
+                }
+                step="0.01"
+                type="number"
+                value={member.comissao_percentual}
+              />
+            </label>
+
+            <label className={calculatorConfigFieldClass}>
+              <span className="min-w-0 text-[var(--text-secondary)]">Cashback (%)</span>
+              <input
+                className={calculatorConfigInputClass}
+                onChange={(event) =>
+                  updateMember(path, { cashback_percentual: event.target.value })
+                }
+                step="0.01"
+                type="number"
+                value={member.cashback_percentual}
+              />
+            </label>
+
+            <label className={`${calculatorConfigFieldClass} cursor-pointer`}>
+              <span className="min-w-0 text-[var(--text-secondary)]">Freebet</span>
+              <span className="flex justify-end pr-1">
+                <input
+                  checked={member.freebet}
+                  className="lz-checkbox"
+                  onChange={(event) =>
+                    updateMember(path, { freebet: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+              </span>
+            </label>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="lz-panel flex flex-wrap items-center gap-3 rounded-[28px] p-4">
@@ -953,13 +1454,13 @@ export function CalculatorWorkspace({
 
       <div className="overflow-x-auto pb-2">
         <div
-          className="grid items-stretch gap-4"
+          className="grid items-start gap-4"
           style={{
             gridTemplateColumns: `repeat(${columnsPerRow}, minmax(220px, 1fr))`,
             minWidth: `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
           }}
         >
-        {lines.map((line, index) => {
+        {lines.flatMap((line, index) => {
           const lineResult = calculation?.linhas?.[index];
           const lineProfit = Number(lineResult?.lucro_liquido ?? 0);
           const lineInvestment =
@@ -970,196 +1471,46 @@ export function CalculatorWorkspace({
             lineResult && roundedLineInvestment > 0
               ? (roundedLineProfit / roundedLineInvestment) * 100
               : 0;
-          const hasCustomConfig =
-            line.freebet ||
-            toNumber(line.aumento_percentual) !== 0 ||
-            toNumber(line.comissao_percentual) !== 0 ||
-            toNumber(line.cashback_percentual) !== 0;
-          const realOddValue = lineResult?.math?.M ?? calculateRealOdd(line);
-          const displayedStake =
-            index === workspaceIndex
-              ? line.stake
-              : line.stakeEdited
-                ? line.stake
-              : lineResult
-                ? formatCalculatedValue(lineResult.stake)
-                : line.stake;
-          const displayedResponsabilidade =
-            line.responsabilidadeEdited || !lineResult
-              ? line.responsabilidade
-              : formatCalculatedValue(lineResult.responsabilidade);
+          const motherPath: MemberPath = { group: index, child: null };
+          const childCount = line.children.length;
+          const houseLabel = line.house.trim() || `Casa ${index + 1}`;
 
-          return (
+          const motherColumn = (
             <div
-              className="lz-panel-subtle flex h-full min-w-0 flex-col gap-4 overflow-hidden rounded-[28px] p-4"
+              className="lz-panel-subtle flex min-w-0 flex-col gap-4 overflow-hidden rounded-[28px] p-4"
               key={`calculator-line-${index}`}
             >
-              <div className="flex items-center justify-between">
-                <BookmakerAutocompleteInput
-                  bookmakers={bookmakers}
-                  index={index}
-                  onValueChange={(house) => updateLine(index, { house })}
-                  value={line.house}
-                />
-              </div>
+              {renderHouseField(line.house, `Casa ${index + 1}`, (house) =>
+                updateLine(index, { house }),
+              )}
 
-              <div className="flex flex-1 flex-col gap-4">
-                <label className="space-y-2 text-sm">
-                  <span className="font-medium text-[var(--text-secondary)]">Odd</span>
-                  <div className="relative">
-                    <input
-                      className={`lz-input w-full rounded-2xl px-3 py-3 text-white ${
-                        hasCustomConfig ? "pr-[7.3rem]" : ""
-                      }`}
-                      onChange={(event) => updateLine(index, { odd: event.target.value })}
-                      step="0.01"
-                      type="number"
-                      value={line.odd}
-                    />
-                    {hasCustomConfig ? (
-                      <span className="pointer-events-none absolute right-2 top-1/2 inline-flex max-w-[6.7rem] -translate-y-1/2 items-center truncate rounded-xl border border-[rgba(255,119,163,0.28)] bg-[rgba(216,31,89,0.24)] px-2.5 py-1 text-[11px] font-semibold text-[#fff7fa] shadow-[0_10px_24px_rgba(216,31,89,0.14)] sm:text-xs">
-                        Real: {formatRealOddValue(realOddValue)}
-                      </span>
-                    ) : null}
-                  </div>
-                </label>
+              {renderMemberInputs(motherPath, line, lineResult)}
 
-                <div
-                  className={
-                    hasLayLine ? "flex min-h-[156px] flex-col justify-center gap-4" : "space-y-4"
-                  }
-                >
-                  {line.tipo === "L" ? (
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-[var(--text-secondary)]">Responsabilidade</span>
-                      <input
-                        className="lz-input w-full rounded-2xl px-3 py-3 text-white"
-                        onChange={(event) =>
-                          handleResponsabilidadeChange(index, event.target.value)
-                        }
-                        step="0.01"
-                        type="number"
-                        value={displayedResponsabilidade}
-                      />
-                    </label>
-                  ) : null}
+              {renderMemberConfig(motherPath, line)}
 
-                  <div className="space-y-2 text-sm">
-                    <span className="font-medium text-[var(--text-secondary)]">Stake</span>
-                    <div className="flex gap-2">
-                      <input
-                        className="lz-input w-full rounded-2xl px-3 py-3 text-white"
-                        onChange={(event) => handleStakeChange(index, event.target.value)}
-                        step="0.01"
-                        type="number"
-                        value={displayedStake}
-                      />
-                      <button
-                        className="lz-button-secondary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
-                        onClick={() => toggleLineType(index)}
-                        type="button"
-                      >
-                        {line.tipo}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={`rounded-[24px] border p-3 transition ${
-                  hasCustomConfig
+              <button
+                className={`flex w-full items-center justify-between gap-3 rounded-[24px] border px-3 py-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  childCount > 0
                     ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
-                    : "border-white/10 bg-white/4"
+                    : "border-white/10 bg-white/4 hover:border-white/20"
                 }`}
+                disabled={childCount >= MAX_CHILD_LINES}
+                onClick={() => addChildLine(index)}
+                type="button"
               >
-                <button
-                  aria-expanded={configExpanded}
-                  className="flex w-full items-center justify-between gap-3"
-                  onClick={() => setConfigExpanded((current) => !current)}
-                  type="button"
-                >
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-[var(--text-secondary)]">
-                      Configurações
-                    </p>
-                    {hasCustomConfig ? (
-                      <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
-                    ) : null}
-                  </div>
-                  <svg
-                    aria-hidden="true"
-                    className={`h-4 w-4 shrink-0 text-[var(--text-dim)] transition ${
-                      configExpanded ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      d="M6.75 9.75 12 15l5.25-5.25"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="1.8"
-                    />
-                  </svg>
-                </button>
-
-                {configExpanded ? (
-                  <div className="mt-3 space-y-3">
-                    <label className={calculatorConfigFieldClass}>
-                      <span className="min-w-0 text-[var(--text-secondary)]">Aumento (%)</span>
-                      <input
-                        className={calculatorConfigInputClass}
-                        onChange={(event) =>
-                          updateLine(index, { aumento_percentual: event.target.value })
-                        }
-                        step="0.01"
-                        type="number"
-                        value={line.aumento_percentual}
-                      />
-                    </label>
-
-                    <label className={calculatorConfigFieldClass}>
-                      <span className="min-w-0 text-[var(--text-secondary)]">Comissão (%)</span>
-                      <input
-                        className={calculatorConfigInputClass}
-                        onChange={(event) =>
-                          updateLine(index, { comissao_percentual: event.target.value })
-                        }
-                        step="0.01"
-                        type="number"
-                        value={line.comissao_percentual}
-                      />
-                    </label>
-
-                    <label className={calculatorConfigFieldClass}>
-                      <span className="min-w-0 text-[var(--text-secondary)]">Cashback (%)</span>
-                      <input
-                        className={calculatorConfigInputClass}
-                        onChange={(event) =>
-                          updateLine(index, { cashback_percentual: event.target.value })
-                        }
-                        step="0.01"
-                        type="number"
-                        value={line.cashback_percentual}
-                      />
-                    </label>
-
-                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
-                      <input
-                        checked={line.freebet}
-                        className="lz-checkbox"
-                        onChange={(event) =>
-                          updateLine(index, { freebet: event.target.checked })
-                        }
-                        type="checkbox"
-                      />
-                      <span className="text-[var(--text-secondary)]">Freebet</span>
-                    </label>
-                  </div>
-                ) : null}
-              </div>
+                <span className="inline-flex items-center gap-2 font-medium text-[var(--text-secondary)]">
+                  <Scissors aria-hidden="true" className="h-3.5 w-3.5" />
+                  Dividir
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
+                  {childCount === 0
+                    ? "Adicionar linha"
+                    : `${childCount} ${childCount === 1 ? "linha filha" : "linhas filhas"}`}
+                  {childCount < MAX_CHILD_LINES ? (
+                    <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                  ) : null}
+                </span>
+              </button>
 
               <div className="rounded-[24px] border border-white/10 bg-white/4 p-3">
                 <div className="mb-3">
@@ -1170,14 +1521,20 @@ export function CalculatorWorkspace({
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                    <span className="text-[var(--text-secondary)]">Retorno</span>
+                    <span className="font-semibold text-white">
+                      {formatCurrency(Number(lineResult?.retorno_bruto ?? 0))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
                     <span className="text-[var(--text-secondary)]">Lucro</span>
                     <span className={`font-semibold ${getProfitClass(lineProfit)}`}>
                       {formatCurrency(lineProfit)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
-                    <span className="text-[var(--text-secondary)]">Lucro %</span>
-                    <span className="font-semibold text-white">
+                    <span className="text-[var(--text-secondary)]">ROI</span>
+                    <span className={`font-semibold ${getProfitClass(lineRoi)}`}>
                       {formatPercent(lineRoi)}
                     </span>
                   </div>
@@ -1190,13 +1547,68 @@ export function CalculatorWorkspace({
                     ? "lz-button-primary"
                     : "lz-button-secondary"
                 }`}
-                onClick={() => fixStake(index, displayedStake)}
+                onClick={() => fixStake(index, getDisplayedStake(motherPath))}
                 type="button"
               >
                 {index === workspaceIndex ? "Stake Fixa" : "Fixar Stake"}
               </button>
             </div>
           );
+
+          const childColumns = line.children.map((child, childIndex) => {
+            const childPath: MemberPath = { group: index, child: childIndex };
+            const childResult = lineResult?.filhas?.[childIndex];
+
+            return (
+              <div
+                className="lz-panel-subtle relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-[28px] px-4 py-3.5 ring-1 ring-inset ring-[rgba(255,119,163,0.22)]"
+                key={`calculator-line-${index}-child-${childIndex}`}
+              >
+                <div className="-mb-2 flex items-center justify-between gap-3">
+                  <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-white">
+                    <CornerDownRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--text-dim)]" />
+                    <span className="shrink-0">Filha {childIndex + 1}</span>
+                    <span className="truncate text-xs font-normal text-[var(--text-dim)]">
+                      · {houseLabel}
+                    </span>
+                  </p>
+                  <button
+                    aria-label={`Remover linha filha ${childIndex + 1}`}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[rgba(255,107,133,0.26)] bg-[rgba(255,107,133,0.12)] text-[var(--negative)] transition hover:bg-[rgba(255,107,133,0.2)]"
+                    onClick={() => removeChildLine(index, childIndex)}
+                    type="button"
+                  >
+                    <Minus aria-hidden="true" className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {renderHouseField(
+                  child.house,
+                  "Casa filha",
+                  (house) => updateMember(childPath, { house }),
+                  true,
+                )}
+
+                {renderMemberInputs(childPath, child, childResult, true)}
+
+                <div className="rounded-[24px] border border-white/10 bg-white/4 p-3">
+                  <p className="mb-3 text-sm font-medium text-[var(--text-secondary)]">
+                    Resultado
+                  </p>
+                  <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm">
+                    <span className="text-[var(--text-secondary)]">Retorno</span>
+                    <span className="font-semibold text-white">
+                      {formatCurrency(Number(childResult?.retorno_bruto ?? 0))}
+                    </span>
+                  </div>
+                </div>
+
+                {renderMemberConfig(childPath, child, true)}
+              </div>
+            );
+          });
+
+          return [motherColumn, ...childColumns];
         })}
         </div>
       </div>

@@ -7,7 +7,14 @@ import {
   FREEBET_CONDITION_LOSS_ONLY,
   PROCEDURE_TYPES,
 } from "@/core";
-import { Plus, RotateCcw, Search, Settings } from "lucide-react";
+import {
+  CornerDownRight,
+  Plus,
+  RotateCcw,
+  Scissors,
+  Search,
+  Settings,
+} from "lucide-react";
 import {
   useMemo,
   useEffect,
@@ -33,6 +40,7 @@ import {
 } from "./ui";
 import { buildProcedureShareUrl } from "./procedure-share";
 import {
+  type ProcedureShareChildDraft,
   type ProcedureShareEntryDetail,
   type ProcedureShareResultDetail,
   type ProcedureShareValues,
@@ -54,9 +62,13 @@ type ProtectionDraft = {
   freebet: boolean;
 };
 type ProcedureStatus = "Pendente" | "Concluído";
+type ChildDraft = ProtectionDraft & { house: string };
+type ChildSection = "main" | "collection";
+type ChildRecord = Record<string, ChildDraft[]>;
 type HousePickerTarget = {
-  section: "main" | "collection";
+  section: ChildSection;
   index: number;
+  child?: { parent: string; index: number };
 };
 
 type ProcedureModalProps = {
@@ -137,7 +149,77 @@ const EXPENSE_PROCEDURE_OPTIONS = [{ value: "Gastos", label: "Gastos" }];
 
 const PROCEDURE_STATUS_OPTIONS: ProcedureStatus[] = ["Pendente", "Concluído"];
 const MAX_SPORT_PROTECTIONS = 11;
+const MAX_CHILD_ENTRIES = 5;
 const DEFAULT_BET_SIDE: BetSide = "back";
+
+function createChildRecord(
+  values: Record<string, ProcedureShareChildDraft[]> | undefined,
+): ChildRecord {
+  return Object.entries(values ?? {}).reduce<ChildRecord>((record, [parent, drafts]) => {
+    if (
+      (parent === "principal" || /^protection-\d+$/u.test(parent)) &&
+      Array.isArray(drafts) &&
+      drafts.length > 0
+    ) {
+      record[parent] = drafts.slice(0, MAX_CHILD_ENTRIES).map((draft) => ({
+        ...createProtectionDraft({ ...draft, side: draft.side === "lay" ? "lay" : "back" }),
+        house: draft.house ?? "",
+      }));
+    }
+
+    return record;
+  }, {});
+}
+
+function getActiveChildren(
+  children: ChildRecord,
+  protectionKeys: number[],
+  includeProtections: boolean,
+) {
+  const parents = [
+    "principal",
+    ...(includeProtections ? protectionKeys.map(getProtectionResultId) : []),
+  ];
+
+  return parents.flatMap((parent) =>
+    (children[parent] ?? []).map((child, index) => ({ parent, child, index })),
+  );
+}
+
+function hasChildInput(children: ChildRecord) {
+  return Object.values(children).some((list) =>
+    list.some(
+      (child) =>
+        child.stake.trim() !== "" ||
+        child.odd.trim() !== "" ||
+        child.house.trim() !== "",
+    ),
+  );
+}
+
+function remapChildRecord(
+  children: ChildRecord,
+  sourceKeys: number[],
+  targetKeys: number[],
+): ChildRecord {
+  return Object.entries(children).reduce<ChildRecord>((record, [parent, list]) => {
+    if (parent === "principal") {
+      record[parent] = list;
+      return record;
+    }
+
+    const sourceIndex = sourceKeys.findIndex(
+      (key) => getProtectionResultId(key) === parent,
+    );
+    const targetKey = targetKeys[sourceIndex];
+
+    if (targetKey !== undefined) {
+      record[getProtectionResultId(targetKey)] = list;
+    }
+
+    return record;
+  }, {});
+}
 
 function createProtectionDraft(
   draft: Partial<ProtectionDraft> = {},
@@ -451,6 +533,24 @@ function calculateSportsProfit(
   }, 0);
 
   return normalizeCurrencyAmount(totalReturn - investment);
+}
+
+function toChildCalculationEntries(
+  children: Array<{ parent: string; child: ChildDraft }>,
+) {
+  return children
+    .filter(({ child }) => parseDecimalInput(child.stake) > 0)
+    .map(({ parent, child }) => ({
+      resultId: parent as SportResultSelection,
+      stakeInput: child.stake,
+      oddInput: child.odd,
+      side: child.side,
+      layOddInput: child.layOdd,
+      commissionInput: child.commission,
+      increaseInput: child.increase,
+      cashbackInput: child.cashback,
+      freebet: child.freebet,
+    }));
 }
 
 function getSportCardClass(selected: boolean) {
@@ -896,6 +996,17 @@ export function ProcedureModal({
       getInitialCollectionProtectionDrafts(defaultValues, initialProcedureType),
     ),
   );
+  const [sportChildren, setSportChildren] = useState<ChildRecord>(
+    createChildRecord(defaultValues?.sportChildren),
+  );
+  const [collectionChildren, setCollectionChildren] = useState<ChildRecord>(
+    createChildRecord(
+      defaultValues?.collectionChildren ??
+        (isFreebetProcedureType(initialProcedureType)
+          ? defaultValues?.sportChildren
+          : undefined),
+    ),
+  );
   const [sportResultSelections, setSportResultSelections] = useState<
     SportResultSelection[]
   >(getInitialResultSelections(defaultValues?.sportResultSelections));
@@ -1018,6 +1129,9 @@ export function ProcedureModal({
       cashbackInput: protectionDrafts[key]?.cashback ?? "",
       freebet: Boolean(protectionDrafts[key]?.freebet),
     })),
+    ...toChildCalculationEntries(
+      getActiveChildren(sportChildren, protectionKeys, !isNormalBet),
+    ),
   ];
   const collectionEntries = [
     {
@@ -1042,8 +1156,12 @@ export function ProcedureModal({
       cashbackInput: collectionProtectionDrafts[key]?.cashback ?? "",
       freebet: Boolean(collectionProtectionDrafts[key]?.freebet),
     })),
+    ...toChildCalculationEntries(
+      getActiveChildren(collectionChildren, collectionProtectionKeys, true),
+    ),
   ];
   const hasSportsCalculationInput =
+    hasChildInput(sportChildren) ||
     primaryStake.trim() !== "" ||
     primaryOdd.trim() !== "" ||
     primaryLayOdd.trim() !== "" ||
@@ -1065,6 +1183,7 @@ export function ProcedureModal({
     ) ||
     sportResultSelections.length > 0;
   const hasCollectionCalculationInput =
+    hasChildInput(collectionChildren) ||
     collectionPrimaryStake.trim() !== "" ||
     collectionPrimaryOdd.trim() !== "" ||
     collectionPrimaryLayOdd.trim() !== "" ||
@@ -1156,10 +1275,25 @@ export function ProcedureModal({
       : (isFreebetType
           ? [
               ...(freebetCollectionBlocked ? [] : collectionHouses.slice(1)),
+              ...(freebetCollectionBlocked
+                ? []
+                : getActiveChildren(collectionChildren, collectionProtectionKeys, true).map(
+                    ({ child }) => child.house,
+                  )),
               ...selectedHouses.slice(1),
+              ...(freebetConversionBlocked
+                ? []
+                : getActiveChildren(sportChildren, protectionKeys, true).map(
+                    ({ child }) => child.house,
+                  )),
               selectedFreebetHouse,
             ]
-          : selectedHouses
+          : [
+              ...selectedHouses,
+              ...getActiveChildren(sportChildren, protectionKeys, !isNormalBet).map(
+                ({ child }) => child.house,
+              ),
+            ]
         )
           .filter(Boolean)
           .filter((house, index, houses) => houses.indexOf(house) === index)
@@ -1171,10 +1305,14 @@ export function ProcedureModal({
         ? entryProfitAmount.toFixed(2)
         : entryProfitValue;
   const selectedHousePickerValue = housePickerTarget
-    ? housePickerTarget.section === "collection"
-      ? collectionHouses[housePickerTarget.index]
-      : selectedHouses[housePickerTarget.index]
-      : "";
+    ? housePickerTarget.child
+      ? getChildRecord(housePickerTarget.section)[housePickerTarget.child.parent]?.[
+          housePickerTarget.child.index
+        ]?.house
+      : housePickerTarget.section === "collection"
+        ? collectionHouses[housePickerTarget.index]
+        : selectedHouses[housePickerTarget.index]
+    : "";
 
   useEffect(() => {
     if (!isReadOnly || !open) {
@@ -1296,14 +1434,126 @@ export function ProcedureModal({
     return results;
   }
 
+  function getChildRecord(section: ChildSection) {
+    return section === "collection" ? collectionChildren : sportChildren;
+  }
+
+  function updateChildRecord(
+    section: ChildSection,
+    update: (current: ChildRecord) => ChildRecord,
+  ) {
+    if (section === "collection") {
+      setCollectionChildren(update);
+    } else {
+      setSportChildren(update);
+    }
+  }
+
+  function addChildEntry(section: ChildSection, parent: string) {
+    updateChildRecord(section, (current) => {
+      const list = current[parent] ?? [];
+
+      if (list.length >= MAX_CHILD_ENTRIES) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [parent]: [...list, { ...createProtectionDraft(), house: "" }],
+      };
+    });
+  }
+
+  function removeChildEntry(section: ChildSection, parent: string, index: number) {
+    updateChildRecord(section, (current) => {
+      const list = (current[parent] ?? []).filter((_, childIndex) => childIndex !== index);
+      const next = { ...current };
+
+      if (list.length > 0) {
+        next[parent] = list;
+      } else {
+        delete next[parent];
+      }
+
+      return next;
+    });
+  }
+
+  function setChildValue<K extends keyof ChildDraft>(
+    section: ChildSection,
+    parent: string,
+    index: number,
+    field: K,
+    value: ChildDraft[K],
+  ) {
+    updateChildRecord(section, (current) => ({
+      ...current,
+      [parent]: (current[parent] ?? []).map((child, childIndex) =>
+        childIndex === index ? { ...child, [field]: value } : child,
+      ),
+    }));
+  }
+
+  function buildChildEntryDetails(
+    scope: ProcedureShareEntryDetail["scope"],
+    children: ChildDraft[] | undefined,
+    resultKey: string,
+    detailOperationDate: string | undefined,
+  ) {
+    return (children ?? []).slice(0, MAX_CHILD_ENTRIES).map((child, index) =>
+      buildEntryDetail({
+        scope,
+        role: "filha",
+        order: index + 1,
+        resultKey,
+        house: child.house,
+        stake: child.stake,
+        odd: child.odd,
+        side: child.side,
+        layOdd: child.layOdd,
+        commission: child.commission,
+        increase: child.increase,
+        cashback: child.cashback,
+        freebet: child.freebet,
+        operationDate: detailOperationDate,
+      }),
+    );
+  }
+
+  function toIndexedChildRecord(
+    children: ChildRecord,
+    keys: number[],
+    includeProtections: boolean,
+  ): Record<string, ProcedureShareChildDraft[]> {
+    const record: Record<string, ProcedureShareChildDraft[]> = {};
+
+    if (children.principal?.length) {
+      record.principal = children.principal;
+    }
+
+    if (includeProtections) {
+      keys.forEach((key, index) => {
+        const list = children[getProtectionResultId(key)];
+
+        if (list?.length) {
+          record[getProtectionResultId(index)] = list;
+        }
+      });
+    }
+
+    return record;
+  }
+
   function buildSportEntryDetails({
     scope,
     includePrimaryHouse,
     houses,
     primary,
     protections,
+    children,
     operationDate: detailOperationDate,
   }: {
+    children: ChildRecord;
     scope: ProcedureShareEntryDetail["scope"];
     includePrimaryHouse: boolean;
     houses: string[];
@@ -1340,7 +1590,8 @@ export function ProcedureModal({
         freebet: primary.freebet,
         operationDate: detailOperationDate,
       }),
-      ...protections.map(({ draft }, index) =>
+      ...buildChildEntryDetails(scope, children.principal, "principal", detailOperationDate),
+      ...protections.flatMap(({ key, draft }, index) => [
         buildEntryDetail({
           scope,
           role: "protecao",
@@ -1357,7 +1608,13 @@ export function ProcedureModal({
           freebet: draft.freebet,
           operationDate: detailOperationDate,
         }),
-      ),
+        ...buildChildEntryDetails(
+          scope,
+          children[getProtectionResultId(key)],
+          getProtectionResultId(index),
+          detailOperationDate,
+        ),
+      ]),
     ];
   }
 
@@ -1411,6 +1668,7 @@ export function ProcedureModal({
             key,
             draft: createProtectionDraft(protectionDrafts[key]),
           })),
+          children: sportChildren,
           operationDate: operationDateForSubmit,
         }),
         results: buildResultDetails(
@@ -1441,6 +1699,7 @@ export function ProcedureModal({
             key,
             draft: createProtectionDraft(protectionDrafts[key]),
           })),
+          children: sportChildren,
           operationDate: conversionDateForSubmit,
         });
     const conversionResults = freebetConversionBlocked
@@ -1470,6 +1729,7 @@ export function ProcedureModal({
             key,
             draft: createProtectionDraft(collectionProtectionDrafts[key]),
           })),
+          children: collectionChildren,
           operationDate: collectionDateForSubmit,
         });
     const collectionResultsForSubmit = freebetCollectionBlocked
@@ -1536,6 +1796,7 @@ export function ProcedureModal({
       sportProtections: (isNormalBet ? [] : protectionKeys).map((key) =>
         createProtectionDraft(protectionDrafts[key]),
       ),
+      sportChildren: toIndexedChildRecord(sportChildren, protectionKeys, !isNormalBet),
       sportResultSelections: buildResultDetails(
         "sports",
         sportResultSelections,
@@ -1551,6 +1812,11 @@ export function ProcedureModal({
       collectionPrimaryFreebet,
       collectionProtections: collectionProtectionKeys.map((key) =>
         createProtectionDraft(collectionProtectionDrafts[key]),
+      ),
+      collectionChildren: toIndexedChildRecord(
+        collectionChildren,
+        collectionProtectionKeys,
+        true,
       ),
       collectionResultSelections: freebetCollectionBlocked
         ? []
@@ -1807,6 +2073,118 @@ export function ProcedureModal({
     );
   }
 
+  function renderChildEntries(section: ChildSection, parent: string) {
+    const children = getChildRecord(section)[parent] ?? [];
+    const canAdd = !isReadOnly && children.length < MAX_CHILD_ENTRIES;
+
+    if (children.length === 0 && !canAdd) {
+      return null;
+    }
+
+    return (
+      <div className="mt-4 space-y-3">
+        {children.map((child, index) => {
+          const configKey = `${section}-child-${parent}-${index}`;
+
+          return (
+            <div
+              className="rounded-[20px] border border-[rgba(255,119,163,0.22)] bg-white/3 p-3"
+              key={configKey}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white">
+                  <CornerDownRight
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 text-[var(--text-dim)]"
+                  />
+                  Filha {index + 1}
+                </p>
+                {!isReadOnly ? (
+                  <button
+                    aria-label={`Remover filha ${index + 1}`}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.28)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
+                    onClick={() => removeChildEntry(section, parent, index)}
+                    type="button"
+                  >
+                    <CloseIcon className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2 text-sm sm:col-span-2">
+                  <span className="text-[var(--text-muted)]">Casa</span>
+                  <button
+                    className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
+                    onClick={() =>
+                      setHousePickerTarget({
+                        section,
+                        index: 0,
+                        child: { parent, index },
+                      })
+                    }
+                    type="button"
+                  >
+                    {child.house || "Escolher casa"}
+                  </button>
+                </div>
+
+                {renderSportsBetFields({
+                  stakeName: `${section}ChildStake`,
+                  oddName: `${section}ChildOdd`,
+                  stakeValue: child.stake,
+                  oddValue: child.odd,
+                  side: child.side,
+                  layOddValue: child.layOdd,
+                  commissionValue: child.commission,
+                  increaseValue: child.increase,
+                  cashbackValue: child.cashback,
+                  freebetChecked: child.freebet,
+                  configOpen: Boolean(sportsConfigOpen[configKey]),
+                  onStakeChange: (value) =>
+                    setChildValue(section, parent, index, "stake", value),
+                  onOddChange: (value) =>
+                    setChildValue(section, parent, index, "odd", value),
+                  onToggleSide: () =>
+                    setChildValue(
+                      section,
+                      parent,
+                      index,
+                      "side",
+                      child.side === "back" ? "lay" : "back",
+                    ),
+                  onLayOddChange: (value) =>
+                    setChildValue(section, parent, index, "layOdd", value),
+                  onCommissionChange: (value) =>
+                    setChildValue(section, parent, index, "commission", value),
+                  onIncreaseChange: (value) =>
+                    setChildValue(section, parent, index, "increase", value),
+                  onCashbackChange: (value) =>
+                    setChildValue(section, parent, index, "cashback", value),
+                  onFreebetChange: (checked) =>
+                    setChildValue(section, parent, index, "freebet", checked),
+                  onToggleConfig: () => toggleSportsConfig(configKey),
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {canAdd ? (
+          <button
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-white/20 hover:text-white"
+            onClick={() => addChildEntry(section, parent)}
+            type="button"
+          >
+            <Scissors aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>Dividir</span>
+            <Plus aria-hidden="true" className="h-3 w-3" />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   function getNextProtectionKey() {
     protectionKeyRef.current += 1;
     return protectionKeyRef.current;
@@ -1827,6 +2205,7 @@ export function ProcedureModal({
     setPrimaryCashback("");
     setPrimaryFreebet(false);
     setProtectionDrafts({});
+    setSportChildren({});
     setSportResultSelections([]);
     setSportsConfigOpen({});
   }
@@ -1873,6 +2252,9 @@ export function ProcedureModal({
     setCollectionPrimaryFreebet(primaryFreebet);
     setCollectionProtectionKeys(nextCollectionKeys);
     setCollectionProtectionDrafts(nextCollectionDrafts);
+    setCollectionChildren(
+      remapChildRecord(sportChildren, protectionKeys, nextCollectionKeys),
+    );
     setCollectionResultSelections([...sportResultSelections]);
     setCollectionHouses([...selectedHouses]);
     setCollectionDate((current) => current || operationDate);
@@ -1905,6 +2287,9 @@ export function ProcedureModal({
     setPrimaryFreebet(collectionPrimaryFreebet);
     setProtectionKeys(nextProtectionKeys);
     setProtectionDrafts(nextProtectionDrafts);
+    setSportChildren(
+      remapChildRecord(collectionChildren, collectionProtectionKeys, nextProtectionKeys),
+    );
     setSportResultSelections([...collectionResultSelections]);
     setSelectedHouses([...collectionHouses]);
     setGameValue((current) => current || collectionGameValue);
@@ -2034,6 +2419,11 @@ export function ProcedureModal({
 
   function removeProtection(key: number, protectionIndex: number) {
     setProtectionKeys((current) => current.filter((item) => item !== key));
+    setSportChildren((current) => {
+      const next = { ...current };
+      delete next[getProtectionResultId(key)];
+      return next;
+    });
     setProtectionDrafts((current) => {
       const next = { ...current };
       delete next[key];
@@ -2056,6 +2446,11 @@ export function ProcedureModal({
     setCollectionProtectionKeys((current) =>
       current.filter((item) => item !== key),
     );
+    setCollectionChildren((current) => {
+      const next = { ...current };
+      delete next[getProtectionResultId(key)];
+      return next;
+    });
     setCollectionProtectionDrafts((current) => {
       const next = { ...current };
       delete next[key];
@@ -2259,6 +2654,13 @@ export function ProcedureModal({
       createProtectionDraftRecord(
         nextCollectionProtectionKeys,
         getInitialCollectionProtectionDrafts(defaultValues, nextType),
+      ),
+    );
+    setSportChildren(createChildRecord(defaultValues?.sportChildren));
+    setCollectionChildren(
+      createChildRecord(
+        defaultValues?.collectionChildren ??
+          (isFreebetProcedureType(nextType) ? defaultValues?.sportChildren : undefined),
       ),
     );
     setSportResultSelections(
@@ -2690,6 +3092,8 @@ export function ProcedureModal({
                                 toggleSportsConfig("collection-primary"),
                             })}
                           </div>
+
+                          {renderChildEntries("collection", "principal")}
                         </div>
 
                         {collectionProtectionKeys.map((key, index) => {
@@ -2818,6 +3222,8 @@ export function ProcedureModal({
                                     ),
                                 })}
                               </div>
+
+                              {renderChildEntries("collection", protectionResultId)}
                             </div>
                           );
                         })}
@@ -2995,6 +3401,8 @@ export function ProcedureModal({
                             toggleSportsConfig("sports-primary"),
                         })}
                       </div>
+
+                      {renderChildEntries("main", "principal")}
                     </div>
 
                     {!isNormalBet
@@ -3108,6 +3516,8 @@ export function ProcedureModal({
                                     ),
                                 })}
                               </div>
+
+                              {renderChildEntries("main", protectionResultId)}
                             </div>
                           );
                         })
@@ -3425,7 +3835,15 @@ export function ProcedureModal({
                 return;
               }
 
-              if (housePickerTarget.section === "collection") {
+              if (housePickerTarget.child) {
+                setChildValue(
+                  housePickerTarget.section,
+                  housePickerTarget.child.parent,
+                  housePickerTarget.child.index,
+                  "house",
+                  "",
+                );
+              } else if (housePickerTarget.section === "collection") {
                 clearCollectionHouseAtIndex(housePickerTarget.index);
               } else {
                 clearSelectedHouseAtIndex(housePickerTarget.index);
@@ -3437,7 +3855,15 @@ export function ProcedureModal({
                 return;
               }
 
-              if (housePickerTarget.section === "collection") {
+              if (housePickerTarget.child) {
+                setChildValue(
+                  housePickerTarget.section,
+                  housePickerTarget.child.parent,
+                  housePickerTarget.child.index,
+                  "house",
+                  value,
+                );
+              } else if (housePickerTarget.section === "collection") {
                 setCollectionHouseAtIndex(housePickerTarget.index, value);
               } else {
                 setSelectedHouseAtIndex(housePickerTarget.index, value);

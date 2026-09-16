@@ -89,7 +89,7 @@ function parseProtections(formData: FormData) {
 }
 
 type ProcedureDetailScope = "sports" | "freebet_collection" | "freebet_conversion";
-type ProcedureDetailRole = "principal" | "protecao";
+type ProcedureDetailRole = "principal" | "protecao" | "filha";
 type ProcedureDetailSide = "back" | "lay";
 
 type ProcedureEntryInput = {
@@ -129,7 +129,34 @@ const PROCEDURE_DETAIL_SCOPES = new Set([
   "freebet_collection",
   "freebet_conversion",
 ]);
-const PROCEDURE_DETAIL_ROLES = new Set(["principal", "protecao"]);
+const PROCEDURE_DETAIL_ROLES = new Set(["principal", "protecao", "filha"]);
+const MAX_CHILD_ENTRIES_PER_PARENT = 5;
+
+function limitChildEntries(entries: ProcedureEntryInput[]) {
+  const parentKeys = new Set(
+    entries
+      .filter((entry) => entry.role !== "filha")
+      .map((entry) => `${entry.scope}:${entry.resultKey}`),
+  );
+  const childCounts = new Map<string, number>();
+
+  return entries.filter((entry) => {
+    if (entry.role !== "filha") {
+      return true;
+    }
+
+    const parentKey = `${entry.scope}:${entry.resultKey}`;
+    const count = childCounts.get(parentKey) ?? 0;
+
+    if (!parentKeys.has(parentKey) || count >= MAX_CHILD_ENTRIES_PER_PARENT) {
+      return false;
+    }
+
+    childCounts.set(parentKey, count + 1);
+    entry.order = count + 1;
+    return true;
+  });
+}
 
 function parseDetailNumber(value: unknown) {
   return parseLimitedNumber(
@@ -258,7 +285,7 @@ function parseProcedureDetails(
       })
       .filter((result): result is ProcedureResultInput => result !== null);
 
-    return { entries, results };
+    return { entries: limitChildEntries(entries), results };
   } catch {
     return { entries: [], results: [] };
   }

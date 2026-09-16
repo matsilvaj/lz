@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { buildChildDraftsFromEntries } from "../_components/procedure-children";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { ProcedureMultipleSlot } from "../_components/procedure-result-display";
 import {
@@ -609,6 +610,11 @@ function buildProcedureDefaultValues(
     primaryCashback: formatDraftNumber(conversionPrimary?.cashback_percentual),
     primaryFreebet: Boolean(conversionPrimary?.freebet_somente_lucro),
     sportProtections: conversionProtections.map(toProtectionDraft),
+    sportChildren: buildChildDraftsFromEntries(procedure.entradas, "freebet_conversion"),
+    collectionChildren: buildChildDraftsFromEntries(
+      procedure.entradas,
+      "freebet_collection",
+    ),
     sportResultSelections: getResultsByScope(procedure, "freebet_conversion"),
     collectionDate: getDateInputByScope(procedure, "freebet_collection"),
     conversionDate: getDateInputByScope(procedure, "freebet_conversion"),

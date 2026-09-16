@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
+import { buildChildDraftsFromEntries } from "../_components/procedure-children";
 import { ProcedureModal } from "../_components/procedure-modal";
 import {
   type ProcedureShareProtectionDraft,
@@ -234,6 +235,7 @@ function buildDetailedDefaultValues(
     primaryCashback: formatDraftNumber(conversionPrimary?.cashback_percentual),
     primaryFreebet: Boolean(conversionPrimary?.freebet_somente_lucro),
     sportProtections: conversionProtections.map(toProtectionDraft),
+    sportChildren: buildChildDraftsFromEntries(procedure.entradas, conversionScope),
     sportResultSelections: getResultsByScope(procedure, conversionScope),
   };
 
@@ -286,6 +288,10 @@ function buildDetailedDefaultValues(
     ),
     collectionPrimaryFreebet: Boolean(collectionPrimary?.freebet_somente_lucro),
     collectionProtections: collectionProtections.map(toProtectionDraft),
+    collectionChildren: buildChildDraftsFromEntries(
+      procedure.entradas,
+      "freebet_collection",
+    ),
     collectionResultSelections: getResultsByScope(
       procedure,
       "freebet_collection",

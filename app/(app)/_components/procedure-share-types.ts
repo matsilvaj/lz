@@ -9,9 +9,13 @@ export type ProcedureShareProtectionDraft = {
   freebet?: boolean;
 };
 
+export type ProcedureShareChildDraft = ProcedureShareProtectionDraft & {
+  house?: string;
+};
+
 export type ProcedureShareEntryDetail = {
   scope: "sports" | "freebet_collection" | "freebet_conversion";
-  role: "principal" | "protecao";
+  role: "principal" | "protecao" | "filha";
   order: number;
   resultKey: string;
   house?: string;
@@ -60,6 +64,7 @@ export type ProcedureShareValues = {
   primaryCashback?: string;
   primaryFreebet?: boolean;
   sportProtections?: ProcedureShareProtectionDraft[];
+  sportChildren?: Record<string, ProcedureShareChildDraft[]>;
   sportResultSelections?: string[];
   collectionPrimaryStake?: string;
   collectionPrimaryOdd?: string;
@@ -70,6 +75,7 @@ export type ProcedureShareValues = {
   collectionPrimaryCashback?: string;
   collectionPrimaryFreebet?: boolean;
   collectionProtections?: ProcedureShareProtectionDraft[];
+  collectionChildren?: Record<string, ProcedureShareChildDraft[]>;
   collectionResultSelections?: string[];
   collectionDate?: string;
   conversionDate?: string;

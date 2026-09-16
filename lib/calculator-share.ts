@@ -2,6 +2,7 @@ export type SharedCalculatorLine = {
   aumento_percentual?: unknown;
   cashback_percentual?: unknown;
   comissao_percentual?: unknown;
+  filhas?: unknown;
   freebet?: unknown;
   house?: unknown;
   odd?: unknown;
