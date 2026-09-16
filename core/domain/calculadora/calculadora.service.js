@@ -143,6 +143,121 @@ function hasChildLines(lines) {
   return lines.some((line) => Array.isArray(line?.filhas) && line.filhas.length > 0);
 }
 
+export function normalizeProfitTarget(target) {
+  const mode = parseText(target?.modo).trim();
+  const value = parseNumber(target?.valor);
+
+  if (mode === "zerar") {
+    return { modo: "zerar", valor: 0 };
+  }
+
+  if (mode === "valor" || mode === "percentual") {
+    return { modo: mode, valor: value };
+  }
+
+  return { modo: "normal", valor: 0 };
+}
+
+function hasProfitTargets(lines) {
+  return lines.some((line) => normalizeProfitTarget(line?.lucro_alvo).modo !== "normal");
+}
+
+// Lucro de cada resultado = alpha + beta * P, onde P é o lucro das casas em "normal".
+function getProfitCoefficients(target) {
+  if (target.modo === "zerar") {
+    return { alpha: 0, beta: 0 };
+  }
+
+  if (target.modo === "valor") {
+    return { alpha: target.valor, beta: 0 };
+  }
+
+  if (target.modo === "percentual") {
+    return { alpha: 0, beta: target.valor / 100 };
+  }
+
+  return { alpha: 0, beta: 1 };
+}
+
+// Resolve I (investimento efetivo) e P com: retorno da base = I + lucro da base, e
+// I = custos travados + soma dos custos das linhas livres (lineares no retorno de cada grupo).
+function solveGroupStakes(groups, targets, baseIndex) {
+  const stakes = groups.map((group) => group.map((member) => Math.max(member.stake, 0)));
+  const netCostFactor = (member) => member.k - member.b;
+  const baseReturn = groups[baseIndex].reduce(
+    (total, member, index) => total + stakes[baseIndex][index] * member.M,
+    0,
+  );
+  let fixedCost = 0;
+  let freeWeight = 0;
+  let constantTerm = 0;
+  let profitTerm = 0;
+  const freeGroups = [];
+
+  groups.forEach((group, groupIndex) => {
+    const freeIndexes =
+      groupIndex === baseIndex
+        ? []
+        : group
+            .map((member, index) => (stakes[groupIndex][index] <= 0 && member.M > 0 ? index : -1))
+            .filter((index) => index >= 0);
+    const lockedReturn = group.reduce(
+      (total, member, index) => total + stakes[groupIndex][index] * member.M,
+      0,
+    );
+
+    fixedCost += group.reduce(
+      (total, member, index) => total + stakes[groupIndex][index] * netCostFactor(member),
+      0,
+    );
+
+    if (freeIndexes.length === 0) {
+      return;
+    }
+
+    const weight = freeIndexes.reduce(
+      (total, index) =>
+        total + netCostFactor(group[index]) / group[index].M / freeIndexes.length,
+      0,
+    );
+    const { alpha, beta } = getProfitCoefficients(targets[groupIndex]);
+
+    freeWeight += weight;
+    constantTerm += weight * (alpha - lockedReturn);
+    profitTerm += weight * beta;
+    freeGroups.push({ groupIndex, freeIndexes, lockedReturn, alpha, beta });
+  });
+
+  const base = getProfitCoefficients(targets[baseIndex]);
+  const remainingWeight = 1 - freeWeight;
+  const denominator = base.beta * remainingWeight + profitTerm;
+  let profit = 0;
+  let investment;
+
+  if (Math.abs(denominator) > 1e-9) {
+    profit =
+      ((baseReturn - base.alpha) * remainingWeight - (fixedCost + constantTerm)) /
+      denominator;
+    investment = baseReturn - base.alpha - base.beta * profit;
+  } else {
+    investment =
+      Math.abs(remainingWeight) > 1e-9
+        ? (fixedCost + constantTerm) / remainingWeight
+        : baseReturn - base.alpha;
+  }
+
+  for (const { groupIndex, freeIndexes, lockedReturn, alpha, beta } of freeGroups) {
+    const groupReturn = investment + alpha + beta * profit;
+    const share = Math.max(groupReturn - lockedReturn, 0) / freeIndexes.length;
+
+    for (const index of freeIndexes) {
+      stakes[groupIndex][index] = share / groups[groupIndex][index].M;
+    }
+  }
+
+  return stakes;
+}
+
 // Cada linha mãe e suas filhas cobrem o mesmo resultado: o retorno do grupo é a soma.
 // Na casa base todas as stakes são digitadas; nas demais, stake 0 significa linha livre.
 function calculateSurebetWithChildren(lines, baseIndex) {
@@ -159,32 +274,11 @@ function calculateSurebetWithChildren(lines, baseIndex) {
     throw new Error("Informe um stake base válido para calcular a surebet.");
   }
 
-  const targetNetReturn = baseGroup.reduce(
-    (total, member) => total + Math.max(member.stake, 0) * member.M,
-    0,
+  const groupStakes = solveGroupStakes(
+    groups,
+    lines.map((line) => normalizeProfitTarget(line?.lucro_alvo)),
+    safeBaseIndex,
   );
-  const groupStakes = groups.map((group, groupIndex) => {
-    const stakes = group.map((member) => Math.max(member.stake, 0));
-
-    if (groupIndex === safeBaseIndex) {
-      return stakes;
-    }
-
-    const freeIndexes = group
-      .map((member, memberIndex) => (stakes[memberIndex] <= 0 && member.M > 0 ? memberIndex : -1))
-      .filter((memberIndex) => memberIndex >= 0);
-    const lockedReturn = group.reduce(
-      (total, member, memberIndex) => total + stakes[memberIndex] * member.M,
-      0,
-    );
-    const remainingReturn = Math.max(targetNetReturn - lockedReturn, 0);
-
-    for (const memberIndex of freeIndexes) {
-      stakes[memberIndex] = remainingReturn / freeIndexes.length / group[memberIndex].M;
-    }
-
-    return stakes;
-  });
 
   let totalCost = 0;
   let totalCashback = 0;
@@ -252,7 +346,10 @@ export function calculateSurebet(
     throw new Error("Informe ao menos uma linha para calcular a surebet.");
   }
 
-  if (!String(model).includes(SUREBET_MODEL_ZERO_ZERO) && hasChildLines(lines)) {
+  if (
+    !String(model).includes(SUREBET_MODEL_ZERO_ZERO) &&
+    (hasChildLines(lines) || hasProfitTargets(lines))
+  ) {
     return calculateSurebetWithChildren(lines, baseIndex);
   }
 

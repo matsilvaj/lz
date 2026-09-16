@@ -41,6 +41,42 @@ test("base child stake is always typed and adds to the target return", () => {
   assert.equal(result.linhas[1].stake, 78);
 });
 
+test("percentage profit target keeps the base at a share of the other profit", () => {
+  const result = calculateSurebet([
+    { odd: 2, stake: 100, lucro_alvo: { modo: "percentual", valor: 50 } },
+    { odd: 2.5, stake: 0 },
+  ]);
+
+  assert.equal(result.linhas[1].stake, 85.71);
+  assert.equal(round(result.linhas[0].lucro_liquido), 14.29);
+  assert.ok(Math.abs(result.linhas[1].lucro_liquido - 28.56) <= 0.01);
+});
+
+test("fixed and zero profit targets set the exact profit of that house", () => {
+  const fixed = calculateSurebet([
+    { odd: 2, stake: 100 },
+    { odd: 2.5, stake: 0, lucro_alvo: { modo: "valor", valor: 10 } },
+  ]);
+  const zero = calculateSurebet([
+    { odd: 2, stake: 100 },
+    { odd: 2.5, stake: 0, lucro_alvo: { modo: "zerar" } },
+  ]);
+
+  assert.equal(round(fixed.linhas[1].lucro_liquido), 10);
+  assert.equal(round(zero.linhas[1].lucro_liquido), 0);
+  assert.ok(zero.linhas[0].lucro_liquido > 20);
+});
+
+test("normal profit target matches the original surebet", () => {
+  const result = calculateSurebet([
+    { odd: 2, stake: 100, lucro_alvo: { modo: "normal" } },
+    { odd: 2.5, stake: 0, lucro_alvo: { modo: "percentual", valor: 100 } },
+  ]);
+
+  assert.equal(result.linhas[1].stake, 80);
+  assert.equal(round(result.lucro_liquido), 20);
+});
+
 test("child lines are limited to five per house", () => {
   const result = calculateSurebet([
     { odd: 2, stake: 100 },

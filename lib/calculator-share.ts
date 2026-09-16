@@ -5,6 +5,7 @@ export type SharedCalculatorLine = {
   filhas?: unknown;
   freebet?: unknown;
   house?: unknown;
+  lucro_alvo?: unknown;
   odd?: unknown;
   responsabilidade?: unknown;
   responsabilidadeEdited?: unknown;

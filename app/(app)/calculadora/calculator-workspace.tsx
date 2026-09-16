@@ -9,9 +9,17 @@ import {
   Plus,
   RotateCcw,
   Scissors,
+  Target,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { ProcedureShareValues } from "../_components/procedure-share-types";
 
@@ -37,8 +45,14 @@ type CalculatorProcedureDefaults = ProcedureShareValues & {
   originIds?: number[];
 };
 
+type ProfitTargetMode = "normal" | "zerar" | "valor";
+type ProfitTargetUnit = "R$" | "%";
+
 type CalculatorLine = CalculatorLineFields & {
   children: CalculatorLineFields[];
+  targetMode: ProfitTargetMode;
+  targetUnit: ProfitTargetUnit;
+  targetValue: string;
 };
 
 type CalculatorLineFields = {
@@ -107,7 +121,42 @@ function createInitialFields(): CalculatorLineFields {
 }
 
 function createInitialLine(): CalculatorLine {
-  return { ...createInitialFields(), children: [] };
+  return {
+    ...createInitialFields(),
+    children: [],
+    targetMode: "normal",
+    targetUnit: "R$",
+    targetValue: "",
+  };
+}
+
+function toProfitTarget(line: CalculatorLine) {
+  if (line.targetMode === "zerar") {
+    return { modo: "zerar", valor: 0 };
+  }
+
+  if (line.targetMode === "valor" && line.targetValue.trim() !== "") {
+    return {
+      modo: line.targetUnit === "%" ? "percentual" : "valor",
+      valor: toNumber(line.targetValue),
+    };
+  }
+
+  return { modo: "normal", valor: 0 };
+}
+
+function getProfitTargetLabel(line: CalculatorLine) {
+  if (line.targetMode === "zerar") {
+    return "Zerar";
+  }
+
+  if (line.targetMode === "valor" && line.targetValue.trim() !== "") {
+    return line.targetUnit === "%"
+      ? `${line.targetValue}% do lucro`
+      : formatCurrency(toNumber(line.targetValue));
+  }
+
+  return "Normal";
 }
 
 function createConversionLine(house: string, freebetValue: number): CalculatorLine {
@@ -149,7 +198,20 @@ function normalizeSharedCalculatorLine(line: SharedCalculatorLine): CalculatorLi
         .map((child) => normalizeSharedCalculatorFields(child))
     : [];
 
-  return { ...normalizeSharedCalculatorFields(line), children };
+  const target =
+    line.lucro_alvo && typeof line.lucro_alvo === "object"
+      ? (line.lucro_alvo as Record<string, unknown>)
+      : {};
+  const targetMode: ProfitTargetMode =
+    target.modo === "zerar" || target.modo === "valor" ? target.modo : "normal";
+
+  return {
+    ...normalizeSharedCalculatorFields(line),
+    children,
+    targetMode,
+    targetUnit: target.unidade === "%" ? "%" : "R$",
+    targetValue: toSharedString(target.valor, ""),
+  };
 }
 
 function toSharedFields(line: CalculatorLineFields): SharedCalculatorLine {
@@ -322,7 +384,7 @@ function calculateRealOdd(line: CalculatorLineFields) {
 }
 
 function roundCurrencyValue(value: number) {
-  return Math.round(value * 100) / 100;
+  return Number(value.toFixed(2));
 }
 
 const calculatorConfigFieldClass =
@@ -353,6 +415,72 @@ function getAllInitialSearchParams(
   }
 
   return value ? [value] : [];
+}
+
+function OptionHint({
+  description,
+  icon,
+  title,
+}: {
+  description: string;
+  icon: ReactNode;
+  title: string;
+}) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+
+  function show() {
+    const rect = anchorRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    const width = 300;
+    setPosition({
+      left: Math.min(Math.max(rect.left - 12, 12), window.innerWidth - width - 12),
+      top: rect.bottom + 10,
+    });
+  }
+
+  return (
+    <>
+      <span
+        aria-label={title}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:border-white/20 hover:text-white"
+        onBlur={() => setPosition(null)}
+        onFocus={show}
+        onMouseEnter={show}
+        onMouseLeave={() => setPosition(null)}
+        ref={anchorRef}
+        role="img"
+        tabIndex={0}
+      >
+        {icon}
+      </span>
+
+      {position && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[95] flex w-[300px] gap-3 rounded-[20px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+              role="tooltip"
+              style={{ left: position.left, top: position.top }}
+            >
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[rgba(255,119,163,0.24)] bg-[rgba(216,31,89,0.14)] text-[#ff9bbd]">
+                {icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-white">{title}</span>
+                <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">
+                  {description}
+                </span>
+              </span>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
 }
 
 function BookmakerAutocompleteInput({
@@ -623,6 +751,7 @@ export function CalculatorWorkspace({
       ? [createConversionLine(conversionPreset.house, conversionPreset.freebetValue), createInitialLine()]
       : [createInitialLine(), createInitialLine()],
   );
+  const [targetPanelIndex, setTargetPanelIndex] = useState<number | null>(null);
   const [procedureModalOpen, setProcedureModalOpen] = useState(false);
   const [procedureModalKey, setProcedureModalKey] = useState(0);
   const [procedureChoiceOpen, setProcedureChoiceOpen] = useState(false);
@@ -694,6 +823,17 @@ export function CalculatorWorkspace({
     updateMember({ group: index, child: null }, patch);
   }
 
+  function updateProfitTarget(
+    index: number,
+    patch: Partial<Pick<CalculatorLine, "targetMode" | "targetUnit" | "targetValue">>,
+  ) {
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line,
+      ),
+    );
+  }
+
   function isMemberLocked(path: MemberPath, member: CalculatorLineFields) {
     return path.group === workspaceIndex || member.stakeEdited;
   }
@@ -732,6 +872,7 @@ export function CalculatorWorkspace({
           };
 
     return {
+      ...line,
       ...lockMember(line, null),
       children: line.children.map((child, childIndex) => lockMember(child, childIndex)),
     };
@@ -931,6 +1072,11 @@ export function CalculatorWorkspace({
       lines: lines.slice(0, lineCount).map((line) => ({
         ...toSharedFields(line),
         filhas: line.children.map(toSharedFields),
+        lucro_alvo: {
+          modo: line.targetMode,
+          unidade: line.targetUnit,
+          valor: line.targetValue,
+        },
       })),
     };
     const params = new URLSearchParams();
@@ -976,6 +1122,7 @@ export function CalculatorWorkspace({
     calculation = calculateSurebet(
       lines.map((line, index) => ({
         ...toCalculationFields(line, index === workspaceIndex || line.stakeEdited),
+        lucro_alvo: toProfitTarget(line),
         filhas: line.children.map((child) =>
           toCalculationFields(child, index === workspaceIndex || child.stakeEdited),
         ),
@@ -1286,6 +1433,124 @@ export function CalculatorWorkspace({
     );
   }
 
+  function renderProfitTarget(index: number, line: CalculatorLine) {
+    const open = targetPanelIndex === index;
+    const active = line.targetMode !== "normal";
+    const hasFreeStake =
+      index === workspaceIndex ||
+      !line.stakeEdited ||
+      line.children.some((child) => !child.stakeEdited);
+    const options: Array<{ mode: ProfitTargetMode; label: string }> = [
+      { mode: "normal", label: "Lucro normal" },
+      { mode: "zerar", label: "Zerar lucro" },
+      { mode: "valor", label: "Deixar lucro" },
+    ];
+
+    return (
+      <div
+        className={`rounded-[24px] border p-3 transition ${
+          active
+            ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
+            : "border-white/10 bg-white/4"
+        }`}
+      >
+        <button
+          aria-expanded={open}
+          className="flex w-full items-center justify-between gap-3 text-sm"
+          onClick={() => setTargetPanelIndex(open ? null : index)}
+          type="button"
+        >
+          <span className="inline-flex items-center gap-2 font-medium text-[var(--text-secondary)]">
+            <OptionHint
+              description="Define quanto esta casa deve lucrar se bater: normal, zerado, um valor em R$ ou uma % do lucro das outras casas."
+              icon={<Target aria-hidden="true" className="h-3.5 w-3.5" />}
+              title="Lucro alvo"
+            />
+            Lucro alvo
+            {active ? (
+              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
+            ) : null}
+          </span>
+          <span
+            className={`truncate text-xs ${active ? "text-[#ff9bbd]" : "text-[var(--text-dim)]"}`}
+          >
+            {getProfitTargetLabel(line)}
+          </span>
+        </button>
+
+        {open ? (
+          <div className="mt-3 space-y-1.5">
+            <p className="text-xs text-[var(--text-dim)]">
+              Quanto de lucro esta casa deve ficar?
+            </p>
+            {options.map((option) => {
+              const selected = line.targetMode === option.mode;
+
+              return (
+                <div
+                  className={`rounded-2xl border px-3 py-2.5 text-sm transition ${
+                    selected
+                      ? "border-[rgba(255,119,163,0.4)] bg-[rgba(216,31,89,0.1)]"
+                      : "border-white/10 bg-white/4 hover:border-white/20"
+                  }`}
+                  key={option.mode}
+                >
+                  <label className="flex cursor-pointer items-center gap-2.5">
+                    <input
+                      checked={selected}
+                      className="accent-[#ff77a3]"
+                      name={`profit-target-${index}`}
+                      onChange={() => updateProfitTarget(index, { targetMode: option.mode })}
+                      type="radio"
+                    />
+                    <span className="text-[var(--text-secondary)]">{option.label}</span>
+                  </label>
+
+                  {selected && option.mode === "valor" ? (
+                    <div className="mt-2.5 flex gap-2">
+                      <input
+                        className="lz-input min-w-0 flex-1 rounded-xl px-3 py-2 text-sm text-white"
+                        onChange={(event) =>
+                          updateProfitTarget(index, { targetValue: event.target.value })
+                        }
+                        placeholder={line.targetUnit === "%" ? "50" : "0,00"}
+                        step="0.01"
+                        type="number"
+                        value={line.targetValue}
+                      />
+                      <div className="flex shrink-0 rounded-xl border border-white/10 bg-white/4 p-0.5">
+                        {(["R$", "%"] as const).map((unit) => (
+                          <button
+                            className={`rounded-lg px-2.5 text-xs font-semibold transition ${
+                              line.targetUnit === unit
+                                ? "lz-button-primary"
+                                : "text-[var(--text-dim)] hover:text-white"
+                            }`}
+                            key={unit}
+                            onClick={() => updateProfitTarget(index, { targetUnit: unit })}
+                            type="button"
+                          >
+                            {unit}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {active && !hasFreeStake ? (
+          <p className="mt-2 text-xs text-[var(--warning)]">
+            Destrave uma stake desta casa para aplicar o lucro alvo.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderHouseField(
     value: string,
     placeholder: string,
@@ -1499,7 +1764,11 @@ export function CalculatorWorkspace({
                 type="button"
               >
                 <span className="inline-flex items-center gap-2 font-medium text-[var(--text-secondary)]">
-                  <Scissors aria-hidden="true" className="h-3.5 w-3.5" />
+                  <OptionHint
+                    description="Adiciona mais apostas na mesma linha: todas compartilham o mesmo resultado."
+                    icon={<Scissors aria-hidden="true" className="h-3.5 w-3.5" />}
+                    title="Dividir casa"
+                  />
                   Dividir
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
@@ -1511,6 +1780,8 @@ export function CalculatorWorkspace({
                   ) : null}
                 </span>
               </button>
+
+              {renderProfitTarget(index, line)}
 
               <div className="rounded-[24px] border border-white/10 bg-white/4 p-3">
                 <div className="mb-3">
