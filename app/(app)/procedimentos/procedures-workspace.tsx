@@ -3,24 +3,41 @@
 import {
   CASINO_PROCEDURE_TYPES,
   PROCEDURE_STATUS_DONE,
+  PROCEDURE_STATUS_PENDING,
   PROCEDURE_STATUSES,
   PROCEDURE_TYPES,
 } from "@/core";
-import { RotateCcw, Search, SlidersHorizontal } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   type MouseEvent as ReactMouseEvent,
   useDeferredValue,
   useEffect,
+  useOptimistic,
   useRef,
   useState,
   useTransition,
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useToast } from "@/app/_components/toast-provider";
+
+import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { DatePickerField } from "../_components/date-picker-field";
+import { updateProcedureStatusAction } from "../procedure-actions";
 import { ProcedureModal } from "../_components/procedure-modal";
+import {
+  MULTIPLE_OPTIONS,
+  ProcedureDateDisplay,
+  ProcedureHousesDisplay,
+} from "../_components/procedure-result-display";
 import {
   decodeProcedureSharePayload,
   PROCEDURE_SHARE_PARAM,
@@ -79,6 +96,7 @@ type ProceduresWorkspaceProps = {
     types: string[];
     houses: string[];
     statuses: string[];
+    multiples: string[];
     dateFrom: string;
     dateTo: string;
   };
@@ -134,10 +152,6 @@ function getProfitClass(value: number) {
   return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
 }
 
-function getProcedureStatusTone(status: string) {
-  return status === PROCEDURE_STATUS_DONE ? "positive" : "warning";
-}
-
 function getProcedureStatusLabel(status: string | null | undefined) {
   return status?.trim() || PROCEDURE_STATUS_DONE;
 }
@@ -154,78 +168,116 @@ function hasProcedureScopeResult(procedure: ProcedureRow, scope: string) {
   return (procedure.resultados ?? []).some((result) => result.escopo === scope);
 }
 
-function getProcedureScopeDate(procedure: ProcedureRow, scope: string) {
-  const scopeEntries = (procedure.entradas ?? []).filter(
-    (entry) => entry.escopo === scope,
+function ProcedureStatusToggle({ procedure }: { procedure: ProcedureRow }) {
+  const router = useRouter();
+  const { showToast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [status, setStatus] = useOptimistic(
+    getProcedureStatusLabel(procedure.status_procedimento),
   );
-  const entryDate = scopeEntries
-    .map((entry) => entry.data_operacao)
-    .find((date) => String(date ?? "").trim());
+  const done = status === PROCEDURE_STATUS_DONE;
+  const toneClass = done
+    ? "border-[rgba(73,212,166,0.2)] bg-[rgba(73,212,166,0.12)] text-[var(--positive)]"
+    : "border-[rgba(255,190,115,0.2)] bg-[rgba(255,190,115,0.12)] text-[var(--warning)]";
+  const baseClass = `inline-flex rounded-full border px-3 py-1 text-xs font-medium ${toneClass}`;
 
-  if (entryDate) {
-    return entryDate;
+  if (isFreebetProcedure(procedure.tipo_procedimento)) {
+    return <span className={baseClass}>{status}</span>;
   }
 
-  if (scopeEntries.length > 0 && hasProcedureScopeResult(procedure, scope)) {
-    return procedure.data_operacao;
+  function requestToggle() {
+    const isCasino =
+      procedure.tipo_procedimento === "Cassino" ||
+      (CASINO_PROCEDURE_TYPES as readonly string[]).includes(
+        procedure.tipo_procedimento,
+      );
+    const hasResult = hasProcedureScopeResult(procedure, "sports");
+    const needsConfirmation = !isCasino && (done ? hasResult : !hasResult);
+
+    if (needsConfirmation) {
+      setConfirmOpen(true);
+      return;
+    }
+
+    applyToggle();
   }
 
-  if (scopeEntries.length > 0) {
-    return "";
-  }
+  function applyToggle() {
+    const next = done ? PROCEDURE_STATUS_PENDING : PROCEDURE_STATUS_DONE;
+    setConfirmOpen(false);
 
-  if (
-    (scope === "freebet_collection" &&
-      procedure.tipo_procedimento === "Coletar Freebet") ||
-    (scope === "freebet_conversion" &&
-      procedure.tipo_procedimento === "Converter Freebet")
-  ) {
-    return procedure.data_operacao;
-  }
-
-  return "";
-}
-
-function getProcedureDateItems(procedure: ProcedureRow) {
-  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
-    return [{ label: "", value: procedure.data_operacao }];
-  }
-
-  return [
-    {
-      label: "Coleta",
-      value: getProcedureScopeDate(procedure, "freebet_collection"),
-    },
-    {
-      label: "Conversão",
-      value: getProcedureScopeDate(procedure, "freebet_conversion"),
-    },
-  ].filter((item) => item.value);
-}
-
-function ProcedureDateDisplay({ procedure }: { procedure: ProcedureRow }) {
-  const dateItems = getProcedureDateItems(procedure);
-
-  if (dateItems.length === 0) {
-    return <span className="text-[var(--text-dim)]">-</span>;
-  }
-
-  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
-    return <span>{dateItems[0]?.value ?? "-"}</span>;
+    startTransition(async () => {
+      setStatus(next);
+      try {
+        await updateProcedureStatusAction(procedure.id, next);
+        router.refresh();
+      } catch {
+        showToast({
+          title: "Não foi possível alterar o status.",
+          tone: "error",
+        });
+      }
+    });
   }
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      {dateItems.map((item) => (
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]"
-          key={item.label}
-        >
-          <span className="text-[var(--text-dim)]">{item.label}</span>
-          <span>{item.value}</span>
-        </span>
-      ))}
-    </div>
+    <span data-procedure-row-action onClick={(event) => event.stopPropagation()}>
+      <span
+        aria-disabled={isPending}
+        className={`${baseClass} cursor-pointer select-none transition hover:brightness-125 ${
+          isPending ? "opacity-60" : ""
+        }`}
+        onClick={() => {
+          if (!isPending) {
+            requestToggle();
+          }
+        }}
+        title="Clique para alterar o status"
+      >
+        {status}
+      </span>
+
+      <ConfirmationDialog
+        centered
+        description={
+          done
+            ? "Este procedimento já tem resultado selecionado. Deseja voltar o status para pendente mesmo assim?"
+            : "Este procedimento ainda não tem resultado selecionado. Deseja marcar como concluído mesmo assim?"
+        }
+        icon={
+          done ? (
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(255,190,115,0.25)] bg-[rgba(255,190,115,0.12)] text-[var(--warning)]">
+              <Clock aria-hidden="true" className="h-6 w-6" />
+            </span>
+          ) : (
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(73,212,166,0.25)] bg-[rgba(73,212,166,0.12)] text-[var(--positive)]">
+              <CheckCircle2 aria-hidden="true" className="h-6 w-6" />
+            </span>
+          )
+        }
+        onOpenChange={setConfirmOpen}
+        open={confirmOpen}
+        title={done ? "Voltar para pendente?" : "Concluir sem resultado?"}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-semibold"
+            onClick={() => setConfirmOpen(false)}
+            type="button"
+          >
+            Cancelar
+          </button>
+          <button
+            className="lz-button-primary rounded-full px-4 py-2.5 text-sm font-semibold"
+            onClick={applyToggle}
+            type="button"
+          >
+            {done ? "Marcar pendente" : "Marcar concluído"}
+          </button>
+        </div>
+      </ConfirmationDialog>
+    </span>
   );
 }
 
@@ -297,6 +349,7 @@ export function ProceduresWorkspace({
   const selectedTypes = filters.types;
   const selectedHouses = filters.houses;
   const selectedStatuses = filters.statuses;
+  const selectedMultiples = filters.multiples;
   const dateFrom = filters.dateFrom;
   const dateTo = filters.dateTo;
   const sharedProcedureParam = searchParams.get(PROCEDURE_SHARE_PARAM) ?? "";
@@ -400,6 +453,7 @@ export function ProceduresWorkspace({
     selectedTypes.length +
     selectedHouses.length +
     selectedStatuses.length +
+    selectedMultiples.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
   const hasAnyFilter = hasSearchFilter || activeFiltersCount > 0;
@@ -453,7 +507,7 @@ export function ProceduresWorkspace({
     }
 
     updateParams((params) => {
-      for (const key of ["q", "type", "house", "status", "from", "to", "page"]) {
+      for (const key of ["q", "type", "house", "status", "multiple", "from", "to", "page"]) {
         params.delete(key);
       }
     });
@@ -679,6 +733,43 @@ export function ProceduresWorkspace({
             </div>
           </div>
 
+          <div className="min-w-0 space-y-3 lg:order-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-white">Resultados múltiplos</p>
+              {selectedMultiples.length > 0 ? (
+                <button
+                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
+                  onClick={() => updateRepeatedFilter("multiple", [])}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>Limpar</span>
+                </button>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {MULTIPLE_OPTIONS.map((option) => {
+                const active = selectedMultiples.includes(option.value);
+
+                return (
+                  <button
+                    className={`rounded-full px-3 py-2 text-sm transition ${
+                      active ? "lz-button-primary" : "lz-button-secondary"
+                    }`}
+                    key={option.value}
+                    onClick={() =>
+                      toggleFilterValue("multiple", option.value, selectedMultiples)
+                    }
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="min-w-0 space-y-3 lg:order-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Casas</p>
@@ -852,9 +943,6 @@ export function ProceduresWorkspace({
             <div className="grid gap-4 md:hidden">
               {procedureRows.map((procedure) => {
                 const resultValue = normalizeMoney(procedure.lucro_real);
-                const statusLabel = getProcedureStatusLabel(
-                  procedure.status_procedimento,
-                );
 
                 return (
                 <article
@@ -890,7 +978,9 @@ export function ProceduresWorkspace({
                     </div>
                     <div>
                       <p className="text-[var(--text-dim)]">Casas</p>
-                      <p className="mt-1 text-white">{procedure.casas_envolvidas || "-"}</p>
+                      <p className="mt-1 text-white">
+                        <ProcedureHousesDisplay procedure={procedure} />
+                      </p>
                     </div>
                   </div>
 
@@ -900,9 +990,7 @@ export function ProceduresWorkspace({
                         Status
                       </p>
                       <div className="mt-2">
-                        <StatusTag tone={getProcedureStatusTone(statusLabel)}>
-                          {statusLabel}
-                        </StatusTag>
+                        <ProcedureStatusToggle procedure={procedure} />
                       </div>
                     </div>
                     <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
@@ -938,9 +1026,6 @@ export function ProceduresWorkspace({
                 <tbody>
                   {procedureRows.map((procedure) => {
                     const resultValue = normalizeMoney(procedure.lucro_real);
-                    const statusLabel = getProcedureStatusLabel(
-                      procedure.status_procedimento,
-                    );
 
                     return (
                     <tr
@@ -968,12 +1053,10 @@ export function ProceduresWorkspace({
                         {procedure.jogo_time_pa || "-"}
                       </td>
                       <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
-                        {procedure.casas_envolvidas || "-"}
+                        <ProcedureHousesDisplay procedure={procedure} />
                       </td>
                       <td className="px-3 py-4 text-center">
-                        <StatusTag tone={getProcedureStatusTone(statusLabel)}>
-                          {statusLabel}
-                        </StatusTag>
+                        <ProcedureStatusToggle procedure={procedure} />
                       </td>
                       <td
                         className={`px-3 py-4 text-center font-semibold ${getProfitClass(resultValue)}`}

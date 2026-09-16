@@ -10,6 +10,7 @@ export function normalizeText(value: FormDataEntryValue | string | null, maxLeng
   return String(value ?? "")
     .trim()
     .replace(/\s+/g, " ")
+    .replace(/\p{Cc}/gu, "")
     .slice(0, maxLength);
 }
 

@@ -528,6 +528,14 @@ export function CalculatorWorkspace({
 
     return {
       key: `shared:${sharedValue}`,
+      eventName:
+        typeof payload.eventName === "string"
+          ? payload.eventName
+              .replace(/\p{Cc}/gu, "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 180)
+          : "",
       lineCount: nextLineCount,
       workspaceIndex: clampInteger(payload.workspaceIndex, 0, nextLineCount - 1),
       configExpanded: Boolean(payload.configExpanded),
@@ -832,9 +840,14 @@ export function CalculatorWorkspace({
   function buildProcedureDefaultValues(asFreebetConversion: boolean) {
     const freebetHouse = conversionPreset?.house ?? procedurePrimary.house;
     const freebetValue = conversionPreset?.freebetValue;
+    const eventName = sharedPreset?.eventName ?? "";
+    const isConversion = asFreebetConversion || Boolean(conversionPreset);
 
     return {
       version: 1,
+      game: eventName,
+      collectionGame: isConversion ? "" : eventName,
+      conversionGame: isConversion ? eventName : "",
       procedureType:
         asFreebetConversion || conversionPreset ? "Converter Freebet" : "SureBet",
       houses: procedureSelectedHouses.filter(Boolean).join(", "),

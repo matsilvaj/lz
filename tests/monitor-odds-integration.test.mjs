@@ -80,11 +80,10 @@ test("monitor odds repository reads only public monitor views", () => {
     "bookmaker_league_links",
   ];
 
-  assert.match(oddsRepository, /\.from\("public_odds_fixtures"\)/);
-  assert.match(oddsRepository, /\.from\("public_odds_snapshot"\)/);
-  assert.doesNotMatch(oddsRepository, /\.from\("public_odds_feed"\)/);
-  assert.doesNotMatch(oddsRepository, /public_odds_feed_compact/);
-  assert.match(oddsRepository, /\.from\("public_odds_feed_status"\)/);
+  assert.match(oddsRepository, /\.from\("public_jogos_com_cotacoes"\)/);
+  assert.match(oddsRepository, /\.from\("public_snapshot_cotacoes"\)/);
+  assert.doesNotMatch(oddsRepository, /\.from\("public_feed_cotacoes"\)/);
+  assert.match(oddsRepository, /\.from\("public_status_feed_cotacoes"\)/);
 
   for (const table of forbiddenTables) {
     assert.equal(oddsRepository.includes(table), false, `${table} must not be queried`);

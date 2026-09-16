@@ -8,6 +8,10 @@ import { PROCEDURE_STATUS_DONE } from "@/core";
 
 import { LzSelect } from "../_components/lz-select";
 import { ProcedureModal } from "../_components/procedure-modal";
+import {
+  ProcedureDateDisplay,
+  ProcedureHousesDisplay,
+} from "../_components/procedure-result-display";
 import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
 import {
   buildProcedureDefaultValues,
@@ -105,85 +109,6 @@ function normalizeMoney(value: number) {
 
 function formatOperationCount(count: number) {
   return `${count} ${count === 1 ? "operação" : "operações"}`;
-}
-
-function hasProcedureScopeResult(procedure: HistoryOperation, scope: string) {
-  return (procedure.resultados ?? []).some((result) => result.escopo === scope);
-}
-
-function getProcedureScopeDate(procedure: HistoryOperation, scope: string) {
-  const scopeEntries = (procedure.entradas ?? []).filter(
-    (entry) => entry.escopo === scope,
-  );
-  const entryDate = scopeEntries
-    .map((entry) => entry.data_operacao)
-    .find((date) => String(date ?? "").trim());
-
-  if (entryDate) {
-    return entryDate;
-  }
-
-  if (scopeEntries.length > 0 && hasProcedureScopeResult(procedure, scope)) {
-    return procedure.data_operacao;
-  }
-
-  if (scopeEntries.length > 0) {
-    return "";
-  }
-
-  if (
-    (scope === "freebet_collection" &&
-      procedure.tipo_procedimento === "Coletar Freebet") ||
-    (scope === "freebet_conversion" &&
-      procedure.tipo_procedimento === "Converter Freebet")
-  ) {
-    return procedure.data_operacao;
-  }
-
-  return "";
-}
-
-function getProcedureDateItems(procedure: HistoryOperation) {
-  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
-    return [{ label: "", value: procedure.data_operacao }];
-  }
-
-  return [
-    {
-      label: "Coleta",
-      value: getProcedureScopeDate(procedure, "freebet_collection"),
-    },
-    {
-      label: "Conversão",
-      value: getProcedureScopeDate(procedure, "freebet_conversion"),
-    },
-  ].filter((item) => item.value);
-}
-
-function ProcedureDateDisplay({ procedure }: { procedure: HistoryOperation }) {
-  const dateItems = getProcedureDateItems(procedure);
-
-  if (dateItems.length === 0) {
-    return <span className="text-[var(--text-dim)]">-</span>;
-  }
-
-  if (!isFreebetProcedure(procedure.tipo_procedimento)) {
-    return <span>{dateItems[0]?.value ?? "-"}</span>;
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      {dateItems.map((item) => (
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]"
-          key={item.label}
-        >
-          <span className="text-[var(--text-dim)]">{item.label}</span>
-          <span>{item.value}</span>
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function getDisplayGame(operation: HistoryOperation) {
@@ -361,7 +286,7 @@ export function HistoryWorkspace({
                       <div>
                         <p className="text-[var(--text-dim)]">Casas</p>
                         <p className="mt-1 text-white">
-                          {operation.casas_envolvidas || "-"}
+                          <ProcedureHousesDisplay procedure={operation} />
                         </p>
                       </div>
                     </div>
@@ -433,7 +358,7 @@ export function HistoryWorkspace({
                         </td>
                         <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
                           <span className="block truncate">
-                            {operation.casas_envolvidas || "-"}
+                            <ProcedureHousesDisplay procedure={operation} />
                           </span>
                         </td>
                         <td className="px-3 py-4 text-center">

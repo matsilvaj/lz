@@ -414,8 +414,10 @@ function getCalculatorMeta(marketLabel: string) {
 function getOpportunityCalculatorSelections(
   fixtureId: string,
   opportunity: DuploOpportunity,
+  eventName?: string,
 ): CalculatorSelectionLine[] {
   return opportunity.lines.map((line) => ({
+    eventName,
     house: line.bookmakerName,
     id: createCalculatorSelectionId([
       fixtureId,
@@ -1434,6 +1436,7 @@ export function DoubleMonitorWorkspace() {
     const selections = getOpportunityCalculatorSelections(
       row.event.fixture_id,
       row.opportunity,
+      formatFixtureTeams(row.event).label,
     );
 
     setCalculatorSelections((current) => {

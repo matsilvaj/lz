@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ProcedureModal } from "../_components/procedure-modal";
+import { ProcedureMultipleSlot } from "../_components/procedure-result-display";
 import {
   type ProcedureShareProtectionDraft,
   type ProcedureShareValues,
@@ -1171,9 +1172,10 @@ export function FreebetsWorkspace({
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                            {item.texto_data}
-                          </p>
+                          <div className="flex items-center text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+                            <ProcedureMultipleSlot procedure={editableProcedure} />
+                            <span>{item.texto_data}</span>
+                          </div>
                           <p className="mt-2 text-lg font-semibold text-white">{item.casa}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1247,7 +1249,10 @@ export function FreebetsWorkspace({
                           onClick={() => openProcedureEditor(editableProcedure, editScope)}
                         >
                           <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
-                            {item.texto_data}
+                            <div className="flex items-center">
+                              <ProcedureMultipleSlot procedure={editableProcedure} />
+                              <span className="flex-1 text-center">{item.texto_data}</span>
+                            </div>
                           </td>
                           <td className="px-3 py-4 text-center font-semibold text-white">
                             {item.casa}

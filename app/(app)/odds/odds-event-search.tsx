@@ -1239,6 +1239,7 @@ function getOddCalculatorSelection(
   fixtureId: string,
   odd: OddsFeedItem,
   conversionContext: CalculatorConversionContext | null = null,
+  eventName?: string,
 ): CalculatorSelectionLine {
   const house = formatBookmakerName(odd.bookmaker_name);
   const lineSelectionLabel = selectionLabel(odd.selection);
@@ -1246,6 +1247,7 @@ function getOddCalculatorSelection(
   const freebet = isConversionFreebetHouse(odd, conversionContext);
 
   return {
+    eventName,
     freebet,
     house,
     id: createCalculatorSelectionId([
@@ -1268,11 +1270,13 @@ function getOpportunityCalculatorSelections(
   fixtureId: string,
   opportunity: DuploOpportunity,
   conversionContext: CalculatorConversionContext | null = null,
+  eventName?: string,
 ): CalculatorSelectionLine[] {
   return opportunity.lines.map((line) => {
     const freebet = isConversionFreebetLine(line, conversionContext);
 
     return {
+      eventName,
       freebet,
       house: line.bookmakerName,
       id: createCalculatorSelectionId([
@@ -2511,6 +2515,7 @@ export function OddsEventDetails({
       currentEvent.fixture_id,
       odd,
       conversionContext,
+      formatFixtureTeams(currentEvent).label,
     );
 
     setCalculatorSelections((current) =>
@@ -2525,6 +2530,7 @@ export function OddsEventDetails({
       currentEvent.fixture_id,
       opportunity,
       conversionContext,
+      formatFixtureTeams(currentEvent).label,
     );
 
     setCalculatorSelections((current) => {

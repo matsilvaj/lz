@@ -2132,6 +2132,29 @@ export class ProceduresPostgresRepository {
       conditions.push(`status_procedimento = ANY(${addParam(statuses)}::text[])`);
     }
 
+    const multiples = [
+      ...new Set(
+        normalizeTextArray(filters.multiples)
+          .map((value) => Number(value))
+          .filter((value) => value >= 2 && value <= 4),
+      ),
+    ];
+
+    if (multiples.length > 0) {
+      conditions.push(`
+        EXISTS (
+          SELECT 1
+          FROM procedimentos_resultados pr
+          WHERE pr.procedimento_id = procedimentos_historico.id
+            AND pr.user_id = $1
+            AND pr.base_id = $2
+            AND pr.resultado_chave <> 'defeat'
+          GROUP BY pr.escopo
+          HAVING LEAST(COUNT(*), 4) = ANY(${addParam(multiples)}::int[])
+        )
+      `);
+    }
+
     if (dateFrom) {
       conditions.push(buildDateCondition(">=", addParam(dateFrom)));
     }
@@ -2304,6 +2327,19 @@ export class ProceduresPostgresRepository {
           AND base_id = $4
       `,
       [parseBoolean(hitDouble), procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
+    );
+  }
+
+  async updateProcedureStatus(procedureId, status, userId, workspaceId, executor = this.db) {
+    await executor.query(
+      `
+        UPDATE procedimentos_historico
+        SET status_procedimento = $1
+        WHERE id = $2
+          AND user_id = $3
+          AND base_id = $4
+      `,
+      [status, procedureId, normalizeUserId(userId), parseNumber(workspaceId)],
     );
   }
 

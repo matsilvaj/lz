@@ -37,6 +37,7 @@ export default async function ProceduresPage({
     types: getSearchParamValues(params.type),
     houses: getSearchParamValues(params.house),
     statuses: getAllowedSearchParamValues(params.status, PROCEDURE_STATUSES),
+    multiples: getAllowedSearchParamValues(params.multiple, ["2", "3", "4"]),
     dateFrom: getSearchParamValue(params.from),
     dateTo: getSearchParamValue(params.to),
     page: Number(getSearchParamValue(params.page)),
@@ -52,6 +53,7 @@ export default async function ProceduresPage({
         types: filters.types,
         houses: filters.houses,
         statuses: filters.statuses,
+        multiples: filters.multiples,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       }}

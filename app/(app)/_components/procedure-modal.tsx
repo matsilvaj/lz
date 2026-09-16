@@ -23,6 +23,7 @@ import { useToast } from "@/app/_components/toast-provider";
 
 import { copyTextToClipboard } from "./clipboard";
 import { DatePickerField } from "./date-picker-field";
+import { EventAutocompleteInput } from "./event-autocomplete-input";
 import { LzSelect } from "./lz-select";
 import {
   ChevronDownIcon,
@@ -2126,7 +2127,12 @@ export function ProcedureModal({
   }
 
   function toggleSportResultSelection(value: SportResultSelection) {
-    setSportResultSelections((current) => getNextResultSelections(current, value));
+    const next = getNextResultSelections(sportResultSelections, value);
+    setSportResultSelections(next);
+
+    if (!isFreebetType) {
+      setProcedureStatus(next.length > 0 ? "Concluído" : "Pendente");
+    }
   }
 
   function toggleCollectionResultSelection(value: SportResultSelection) {
@@ -2501,13 +2507,9 @@ export function ProcedureModal({
                 {supportsGame && !isFreebetType ? (
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-white">Jogo</span>
-                    <input
-                      className="lz-input w-full rounded-2xl px-3 py-3"
-                      maxLength={120}
+                    <EventAutocompleteInput
                       name="game"
-                      onChange={(event) => setGameValue(event.target.value)}
-                      placeholder="Ex.: Barcelona x Real Madrid"
-                      type="text"
+                      onChange={setGameValue}
                       value={gameValue}
                     />
                   </label>
@@ -2639,13 +2641,8 @@ export function ProcedureModal({
 
                         <label className="space-y-2 text-sm">
                           <span className="font-medium text-white">Jogo</span>
-                          <input
-                            className="lz-input w-full rounded-2xl px-3 py-3"
-                            onChange={(event) =>
-                              setCollectionGameValue(event.target.value)
-                            }
-                            placeholder="Ex.: Barcelona x Real Madrid"
-                            type="text"
+                          <EventAutocompleteInput
+                            onChange={setCollectionGameValue}
                             value={collectionGameValue}
                           />
                         </label>
@@ -2937,13 +2934,8 @@ export function ProcedureModal({
 
                       <label className="space-y-2 text-sm">
                         <span className="font-medium text-white">Jogo</span>
-                        <input
-                          className="lz-input w-full rounded-2xl px-3 py-3"
-                          onChange={(event) =>
-                            setConversionGameValue(event.target.value)
-                          }
-                          placeholder="Ex.: Barcelona x Real Madrid"
-                          type="text"
+                        <EventAutocompleteInput
+                          onChange={setConversionGameValue}
                           value={conversionGameValue}
                         />
                       </label>

@@ -438,6 +438,13 @@ function applyFreebetLifecycle(
   details: ProcedureDetailsInput,
 ) {
   if (procedureType !== "Coletar Freebet") {
+    if (
+      !isFreebetProcedureType(procedureType) &&
+      getDetailResultKeysByScope(details, "sports").length > 0
+    ) {
+      return { ...payload, status_procedimento: PROCEDURE_STATUS_DONE };
+    }
+
     return payload;
   }
 
@@ -785,6 +792,51 @@ export async function updateProcedureDoubleStatusAction(
 
   revalidateApplication();
 }
+export async function updateProcedureStatusAction(
+  procedureId: number | string,
+  status: string,
+) {
+  const { activeWorkspace, user } = await requireWorkspaceContext();
+  const repository = getProceduresRepository();
+  const parsedProcedureId = parsePositiveInteger(procedureId);
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:write",
+    limit: 80,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    throw new Error("Rate limit exceeded.");
+  }
+
+  if (
+    parsedProcedureId <= 0 ||
+    (status !== PROCEDURE_STATUS_DONE && status !== PROCEDURE_STATUS_PENDING)
+  ) {
+    throw new Error("Invalid procedure status.");
+  }
+
+  const current = await repository.getProcedureById(
+    parsedProcedureId,
+    user.id,
+    activeWorkspace.id,
+  );
+
+  if (!current || isFreebetProcedureType(parseText(current.tipo_procedimento))) {
+    throw new Error("Procedure status cannot be changed.");
+  }
+
+  await repository.updateProcedureStatus(
+    parsedProcedureId,
+    status,
+    user.id,
+    activeWorkspace.id,
+  );
+
+  revalidateApplication();
+}
+
 export async function deleteProcedureAction(procedureId: number | string) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();

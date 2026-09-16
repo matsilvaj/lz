@@ -7,15 +7,19 @@ import { CloseIcon } from "./ui";
 
 type ConfirmationDialogProps = {
   children: ReactNode;
+  centered?: boolean;
   description?: string;
+  icon?: ReactNode;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;
 };
 
 export function ConfirmationDialog({
+  centered = false,
   children,
   description,
+  icon,
   onOpenChange,
   open,
   title,
@@ -61,6 +65,25 @@ export function ConfirmationDialog({
         ref={dialogRef}
         role="dialog"
       >
+        {centered ? (
+          <div className="relative flex flex-col items-center text-center">
+            <button
+              aria-label="Fechar"
+              className="absolute -right-1 -top-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
+              onClick={() => onOpenChange(false)}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+            {icon ? <div className="mt-2">{icon}</div> : null}
+            <h2 className="mt-4 text-lg font-semibold tracking-tight text-white">{title}</h2>
+            {description ? (
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--text-muted)]">
+                {description}
+              </p>
+            ) : null}
+          </div>
+        ) : (
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold tracking-tight text-white">{title}</h2>
@@ -80,8 +103,9 @@ export function ConfirmationDialog({
             <CloseIcon />
           </button>
         </div>
+        )}
 
-        <div className="mt-5">{children}</div>
+        <div className={centered ? "mt-6" : "mt-5"}>{children}</div>
       </div>
     </div>,
     document.body,

@@ -14,6 +14,7 @@ export type SharedCalculatorLine = {
 
 export type SharedCalculatorPayload = {
   configExpanded?: boolean;
+  eventName?: unknown;
   lineCount?: number;
   lines?: SharedCalculatorLine[];
   version?: number;

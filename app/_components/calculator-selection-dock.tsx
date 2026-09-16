@@ -11,6 +11,7 @@ import {
 } from "@/lib/calculator-share";
 
 export type CalculatorSelectionLine = {
+  eventName?: string;
   freebet?: boolean;
   house: string;
   id: string;
@@ -121,6 +122,7 @@ function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCa
 
   return {
     configExpanded: false,
+    eventName: lines.find((selection) => selection.eventName?.trim())?.eventName?.trim(),
     lineCount,
     lines: lines.map((selection, index) => ({
       aumento_percentual: "0",

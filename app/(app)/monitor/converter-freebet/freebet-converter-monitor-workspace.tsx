@@ -747,6 +747,7 @@ function getSignalRows(
 function getOpportunityCalculatorSelections(
   fixtureId: string,
   opportunity: FreebetConversionOpportunity,
+  eventName?: string,
 ): CalculatorSelectionLine[] {
   const calculatorLines = [
     ...opportunity.lines.filter((line) => line.role === "freebet"),
@@ -754,6 +755,7 @@ function getOpportunityCalculatorSelections(
   ];
 
   return calculatorLines.map((line) => ({
+    eventName,
     freebet: line.role === "freebet",
     house: line.bookmakerName,
     id: createCalculatorSelectionId([
@@ -2042,6 +2044,7 @@ export function FreebetConverterMonitorWorkspace({
     const selections = getOpportunityCalculatorSelections(
       row.event.fixture_id,
       row.opportunity,
+      formatFixtureTeams(row.event).label,
     );
 
     setCalculatorSelections((current) => {
