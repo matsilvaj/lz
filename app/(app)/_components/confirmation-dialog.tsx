@@ -50,7 +50,7 @@ export function ConfirmationDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-black/65 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (!dialogRef.current?.contains(event.target as Node)) {
           onOpenChange(false);

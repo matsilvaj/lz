@@ -241,7 +241,7 @@ export function HistoryWorkspace({
 
                 return (
                   <article
-                    className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(255,107,151,0.55)]"
+                    className="cursor-pointer rounded-[24px] border border-white/10 bg-white/5 p-4 transition hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(255,107,151,0.55)]"
                     key={operation.id}
                     onClick={() => openOperationDetails(operation)}
                     onKeyDown={(event) =>
@@ -251,17 +251,14 @@ export function HistoryWorkspace({
                     tabIndex={0}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                          <ProcedureDateDisplay compact procedure={operation} />
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <StatusTag>
                             {getProcedureTypeLabel(operation.tipo_procedimento)}
                           </StatusTag>
-                          <StatusTag tone={getProcedureStatusTone(statusLabel)}>
-                            {statusLabel}
-                          </StatusTag>
+                        </div>
+                        <div className="text-xs text-[var(--text-secondary)]">
+                          <ProcedureDateDisplay compact procedure={operation} />
                         </div>
                       </div>
 
@@ -278,26 +275,22 @@ export function HistoryWorkspace({
                       </div>
                     </div>
 
-                    <div className="mt-4 space-y-3 text-sm">
-                      <div>
-                        <p className="text-[var(--text-dim)]">Evento</p>
-                        <p className="mt-1 text-white">{getDisplayGame(operation)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[var(--text-dim)]">Casas</p>
-                        <p className="mt-1 text-white">
-                          <ProcedureHousesDisplay procedure={operation} />
-                        </p>
-                      </div>
+                    <div className="mt-3 space-y-1.5 text-sm">
+                      <p className="truncate font-medium text-white">
+                        {getDisplayGame(operation) === "-"
+                          ? "Sem evento"
+                          : getDisplayGame(operation)}
+                      </p>
+                      <p className="text-[var(--text-secondary)]">
+                        <ProcedureHousesDisplay procedure={operation} />
+                      </p>
                     </div>
 
-                    <div className="mt-4 rounded-[22px] border border-white/10 bg-white/4 p-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                        Resultado R$
-                      </p>
-                      <p
-                        className={`mt-2 text-lg font-semibold ${getProfitClass(resultValue)}`}
-                      >
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                      <StatusTag tone={getProcedureStatusTone(statusLabel)}>
+                        {statusLabel}
+                      </StatusTag>
+                      <p className={`text-base font-semibold ${getProfitClass(resultValue)}`}>
                         {formatCurrency(resultValue)}
                       </p>
                     </div>

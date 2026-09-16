@@ -554,7 +554,7 @@ function toChildCalculationEntries(
 }
 
 function getSportCardClass(selected: boolean) {
-  return `rounded-[24px] border p-4 transition ${
+  return `min-w-0 rounded-[20px] border p-3 transition sm:rounded-[24px] sm:p-4 ${
     selected
       ? "border-[rgba(216,31,89,0.72)] bg-[rgba(216,31,89,0.12)] shadow-[0_0_0_1px_rgba(216,31,89,0.22),0_18px_48px_rgba(216,31,89,0.12)]"
       : "border-white/10 bg-[rgba(255,255,255,0.035)]"
@@ -1972,7 +1972,7 @@ export function ProcedureModal({
           </span>
           <div className="flex gap-2">
             <input
-              className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
+              className="lz-input w-0 min-w-0 flex-1 rounded-2xl px-3 py-3"
               inputMode="decimal"
               name={oddName}
               onChange={(event) => {
@@ -1995,7 +1995,7 @@ export function ProcedureModal({
             />
             <button
               aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
-              className="lz-button-primary min-w-12 rounded-2xl px-3 py-3 text-sm font-bold transition"
+              className="lz-button-primary w-11 shrink-0 rounded-2xl px-0 py-3 text-sm font-bold transition sm:w-12"
               onClick={onToggleSide}
               title={isLay ? "Lay" : "Back"}
               type="button"
@@ -2005,7 +2005,7 @@ export function ProcedureModal({
             <button
               aria-expanded={configOpen}
               aria-label="Configurações da entrada"
-              className={`inline-flex min-w-12 items-center justify-center rounded-2xl border px-3 py-3 transition ${
+              className={`inline-flex w-11 shrink-0 items-center justify-center rounded-2xl border px-0 py-3 transition sm:w-12 ${
                 configOpen || hasCustomConfig
                   ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
                   : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
@@ -2107,7 +2107,7 @@ export function ProcedureModal({
                 ) : null}
               </div>
 
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                 <div className="space-y-2 text-sm sm:col-span-2">
                   <span className="text-[var(--text-muted)]">Casa</span>
                   <button
@@ -2721,10 +2721,10 @@ export function ProcedureModal({
 
       {open && typeof document !== "undefined"
         ? createPortal(
-            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-4 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-2 backdrop-blur-sm sm:p-4">
           <div className="flex min-h-full items-start justify-center py-2 md:py-4">
-          <div className="lz-panel w-full max-w-7xl rounded-[34px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] md:[zoom:0.8]">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="lz-panel w-full min-w-0 max-w-7xl rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[34px] md:[zoom:0.8]">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5 sm:px-6 sm:py-4">
               <h2 className="text-lg font-semibold text-white">{title}</h2>
 
               <button
@@ -2739,7 +2739,7 @@ export function ProcedureModal({
 
             <form
               action={mode === "edit" ? updateProcedureAction : saveProcedureAction}
-              className="space-y-6 px-6 py-6"
+              className="space-y-5 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-6"
               onChangeCapture={handleReadOnlyFormInteraction}
               onClickCapture={handleReadOnlyFormInteraction}
               onInputCapture={handleReadOnlyFormInteraction}
@@ -2915,7 +2915,7 @@ export function ProcedureModal({
               </div>
 
               {isFreebetType ? (
-                <div className="grid gap-4 rounded-[24px] border border-white/10 bg-white/4 p-4 md:grid-cols-2">
+                <div className="grid gap-4 rounded-[20px] border border-white/10 bg-white/4 p-3 sm:rounded-[24px] sm:p-4 md:grid-cols-2">
                   <div className="space-y-2 text-sm">
                     <span className="font-medium text-white">Casa da freebet</span>
                     <button
@@ -2966,7 +2966,7 @@ export function ProcedureModal({
               <input name="note" type="hidden" value={noteValue} />
 
               {noteExpanded ? (
-                <div className="space-y-3 rounded-[24px] border border-white/10 bg-white/4 p-4">
+                <div className="space-y-3 rounded-[20px] border border-white/10 bg-white/4 p-3 sm:rounded-[24px] sm:p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-white">Observações</p>
                     {!isReadOnly ? (
@@ -3000,7 +3000,7 @@ export function ProcedureModal({
               )}
 
               {showFreebetCollectionSection ? (
-                <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-4">
+                <div className="space-y-4 rounded-[20px] border border-white/10 bg-white/4 p-3 sm:rounded-[24px] sm:p-4">
                   <button
                     aria-label={
                       freebetCollectionExpanded ? "Fechar coleta" : "Abrir coleta"
@@ -3028,7 +3028,7 @@ export function ProcedureModal({
 
                   {freebetCollectionExpanded ? (
                     <>
-                      <div className="grid gap-4 md:grid-cols-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
                         <label className="space-y-2 text-sm">
                           <span className="font-medium text-white">Data da coleta</span>
                           <DatePickerField
@@ -3046,7 +3046,7 @@ export function ProcedureModal({
                         </label>
                       </div>
 
-                      <div className="grid gap-4 xl:grid-cols-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:gap-4 xl:grid-cols-2">
                         <div
                           className={getSportCardClass(
                             collectionResultSelections.includes("principal"),
@@ -3058,7 +3058,7 @@ export function ProcedureModal({
                             </p>
                           </div>
 
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                             {renderSportsBetFields({
                               stakeName: "collectionPrimaryStake",
                               oddName: "collectionPrimaryOdd",
@@ -3120,7 +3120,7 @@ export function ProcedureModal({
                                 ) : null}
                               </div>
 
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
                                   <button
@@ -3281,13 +3281,13 @@ export function ProcedureModal({
                   className={
                     isFreebetType
                       ? "space-y-4"
-                      : "space-y-4 rounded-[26px] border border-white/10 bg-white/4 p-4"
+                      : "space-y-4 rounded-[22px] border border-white/10 bg-white/4 p-3 sm:rounded-[26px] sm:p-4"
                   }
                 >
                   <div
                     className={
                       isFreebetType
-                        ? "space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-4"
+                        ? "space-y-4 rounded-[20px] border border-white/10 bg-white/4 p-3 sm:rounded-[24px] sm:p-4"
                         : "space-y-4"
                     }
                   >
@@ -3325,7 +3325,7 @@ export function ProcedureModal({
                   {!isFreebetType || freebetConversionExpanded ? (
                     <>
                   {isFreebetType ? (
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
                       <label className="space-y-2 text-sm">
                         <span className="font-medium text-white">Data da conversão</span>
                         <DatePickerField
@@ -3344,7 +3344,7 @@ export function ProcedureModal({
                     </div>
                   ) : null}
 
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:gap-4 xl:grid-cols-2">
                     <div
                       className={getSportCardClass(
                         sportResultSelections.includes("principal"),
@@ -3354,7 +3354,7 @@ export function ProcedureModal({
                         <p className="text-sm font-semibold text-white">Principal</p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                         {!isFreebetType ? (
                           <div className="space-y-2 text-sm sm:col-span-2">
                             <span className="text-[var(--text-muted)]">Casa</span>
@@ -3428,7 +3428,7 @@ export function ProcedureModal({
                                 ) : null}
                               </div>
 
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
                                   <button
@@ -3625,7 +3625,7 @@ export function ProcedureModal({
                   </div>
 
                   {isFreebetType ? (
-                    <div className="space-y-4 rounded-[26px] border border-white/10 bg-white/4 p-4">
+                    <div className="space-y-4 rounded-[22px] border border-white/10 bg-white/4 p-3 sm:rounded-[26px] sm:p-4">
                       <div
                         className={`grid gap-3 ${
                           freebetVisibleScope === "all"
@@ -3701,7 +3701,7 @@ export function ProcedureModal({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4 rounded-[26px] border border-white/10 bg-white/4 p-4">
+                <div className="space-y-4 rounded-[22px] border border-white/10 bg-white/4 p-3 sm:rounded-[26px] sm:p-4">
                   {selectedGroup === "expenses" ? (
                     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
                       <label className="space-y-2 text-sm">
@@ -3729,7 +3729,7 @@ export function ProcedureModal({
                       </label>
                     </div>
                   ) : (
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
                       <div className="space-y-2 text-sm">
                         <span className="font-medium text-white">Casa</span>
                         <button
@@ -3792,11 +3792,11 @@ export function ProcedureModal({
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center justify-end gap-2 sm:gap-3">
                 {!isReadOnly ? (
                   <button
                     aria-label="Copiar link do procedimento"
-                    className="lz-button-secondary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+                    className="lz-button-secondary inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full p-0"
                     onClick={handleCopyProcedure}
                     title="Copiar link"
                     type="button"
@@ -3805,7 +3805,7 @@ export function ProcedureModal({
                   </button>
                 ) : null}
                 <button
-                  className="lz-button-secondary rounded-full px-4 py-2.5 text-sm font-medium"
+                  className="lz-button-secondary h-11 shrink-0 rounded-full px-4 text-sm font-medium"
                   data-readonly-allowed="true"
                   onClick={() => setOpen(false)}
                   type="button"
@@ -3814,7 +3814,7 @@ export function ProcedureModal({
                 </button>
                 {!isReadOnly ? (
                   <FormSubmitButton
-                    className="lz-button-primary rounded-full px-5 py-2.5 text-sm font-semibold"
+                    className="lz-button-primary h-11 min-w-0 flex-1 whitespace-nowrap rounded-full px-5 text-sm font-semibold sm:flex-none"
                     pendingLabel={mode === "edit" ? "Salvando..." : "Criando..."}
                   >
                     {submitLabel}

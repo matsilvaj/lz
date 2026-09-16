@@ -946,7 +946,7 @@ export function ProceduresWorkspace({
 
                 return (
                 <article
-                  className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
+                  className="cursor-pointer rounded-[24px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
                   key={procedure.id}
                   onClick={(event) => handleProcedureClick(event, procedure.id)}
                   onContextMenu={(event) =>
@@ -954,55 +954,41 @@ export function ProceduresWorkspace({
                   }
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                        <ProcedureDateDisplay compact procedure={procedure} />
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <StatusTag>
                           {getProcedureTypeLabel(procedure.tipo_procedimento)}
                         </StatusTag>
                         {procedure.observacao?.trim() ? (
-                          <StatusTag tone="warning">Com observação</StatusTag>
+                          <span
+                            className="h-2 w-2 rounded-full bg-[var(--accent-soft)]"
+                            title="Com observação"
+                          />
                         ) : null}
+                      </div>
+                      <div className="text-xs text-[var(--text-secondary)]">
+                        <ProcedureDateDisplay compact procedure={procedure} />
                       </div>
                     </div>
 
                     <ProcedureRowActions bookmakers={bookmakers} procedure={procedure} />
                   </div>
 
-                  <div className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <p className="text-[var(--text-dim)]">Evento</p>
-                      <p className="mt-1 text-white">{procedure.jogo_time_pa || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-dim)]">Casas</p>
-                      <p className="mt-1 text-white">
-                        <ProcedureHousesDisplay procedure={procedure} />
-                      </p>
-                    </div>
+                  <div className="mt-3 space-y-1.5 text-sm">
+                    <p className="truncate font-medium text-white">
+                      {procedure.jogo_time_pa || "Sem evento"}
+                    </p>
+                    <p className="text-[var(--text-secondary)]">
+                      <ProcedureHousesDisplay procedure={procedure} />
+                    </p>
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                        Status
-                      </p>
-                      <div className="mt-2">
-                        <ProcedureStatusToggle procedure={procedure} />
-                      </div>
-                    </div>
-                    <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                        Resultado R$
-                      </p>
-                      <p className={`mt-2 text-lg font-semibold ${getProfitClass(resultValue)}`}>
-                        {formatCurrency(resultValue)}
-                      </p>
-                    </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                    <ProcedureStatusToggle procedure={procedure} />
+                    <p className={`text-base font-semibold ${getProfitClass(resultValue)}`}>
+                      {formatCurrency(resultValue)}
+                    </p>
                   </div>
-
                 </article>
                 );
               })}
