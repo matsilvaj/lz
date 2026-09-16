@@ -1995,11 +1995,7 @@ export function ProcedureModal({
             />
             <button
               aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
-              className={`min-w-12 rounded-2xl px-3 py-3 text-sm font-bold transition ${
-                isLay
-                  ? "border border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.18)] text-white shadow-[0_12px_32px_rgba(216,31,89,0.16)]"
-                  : "lz-button-secondary"
-              }`}
+              className="lz-button-primary min-w-12 rounded-2xl px-3 py-3 text-sm font-bold transition"
               onClick={onToggleSide}
               title={isLay ? "Lay" : "Back"}
               type="button"

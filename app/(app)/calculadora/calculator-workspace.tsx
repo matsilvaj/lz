@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  type CSSProperties,
   type ReactNode,
   useEffect,
   useId,
@@ -86,6 +87,18 @@ type CalculatorResultLine = {
 };
 
 type MemberPath = { group: number; child: number | null };
+
+type CalculatorDraft = {
+  savedAt: number;
+  presetKey: string;
+  lineCount: number;
+  workspaceIndex: number;
+  configExpanded: boolean;
+  lines: SharedCalculatorLine[];
+};
+
+const CALCULATOR_DRAFT_KEY = "lz:calculator-draft";
+const CALCULATOR_DRAFT_TTL_MS = 15 * 60 * 1000;
 
 const MAX_CHILD_LINES = 5;
 
@@ -791,6 +804,78 @@ export function CalculatorWorkspace({
     appliedPresetRef.current = conversionPreset.key;
   }, [sharedPreset, conversionPreset]);
 
+  const draftPresetKey = sharedPreset?.key ?? conversionPreset?.key ?? "";
+  const draftReadyRef = useRef(false);
+
+  // Navegadores móveis descartam abas em segundo plano; o rascunho restaura o cálculo ao recarregar.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(CALCULATOR_DRAFT_KEY);
+        const draft = raw ? (JSON.parse(raw) as CalculatorDraft) : null;
+
+        if (
+          draft &&
+          draft.presetKey === draftPresetKey &&
+          Date.now() - Number(draft.savedAt) < CALCULATOR_DRAFT_TTL_MS &&
+          Array.isArray(draft.lines) &&
+          draft.lines.length >= 2
+        ) {
+          const restoredLines = draft.lines
+            .slice(0, 10)
+            .map((line) => normalizeSharedCalculatorLine(line));
+          const restoredCount = clampInteger(draft.lineCount, 2, restoredLines.length);
+
+          setLines(restoredLines.slice(0, restoredCount));
+          setLineCount(restoredCount);
+          setWorkspaceIndex(clampInteger(draft.workspaceIndex, 0, restoredCount - 1));
+          setConfigExpanded(Boolean(draft.configExpanded));
+        } else if (raw) {
+          window.localStorage.removeItem(CALCULATOR_DRAFT_KEY);
+        }
+      } catch {
+        // Armazenamento indisponível (modo privado): segue sem rascunho.
+      }
+
+      draftReadyRef.current = true;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [draftPresetKey]);
+
+  useEffect(() => {
+    if (!draftReadyRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      try {
+        const draft: CalculatorDraft = {
+          savedAt: Date.now(),
+          presetKey: draftPresetKey,
+          lineCount,
+          workspaceIndex,
+          configExpanded,
+          lines: lines.slice(0, lineCount).map((line) => ({
+            ...toSharedFields(line),
+            filhas: line.children.map(toSharedFields),
+            lucro_alvo: {
+              modo: line.targetMode,
+              unidade: line.targetUnit,
+              valor: line.targetValue,
+            },
+          })),
+        };
+
+        window.localStorage.setItem(CALCULATOR_DRAFT_KEY, JSON.stringify(draft));
+      } catch {
+        // Armazenamento indisponível: ignora.
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [configExpanded, draftPresetKey, lineCount, lines, workspaceIndex]);
+
   function mapMember(
     path: MemberPath,
     update: (member: CalculatorLineFields) => CalculatorLineFields,
@@ -969,6 +1054,12 @@ export function CalculatorWorkspace({
   }
 
   function resetCalculator() {
+    try {
+      window.localStorage.removeItem(CALCULATOR_DRAFT_KEY);
+    } catch {
+      // Armazenamento indisponível: nada a limpar.
+    }
+
     if (conversionPreset || sharedPreset) {
       appliedPresetRef.current = null;
       router.replace(pathname);
@@ -1420,8 +1511,10 @@ export function CalculatorWorkspace({
                 ) : null}
               </div>
               <button
-                className="lz-button-secondary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
+                aria-label={member.tipo === "L" ? "Alternar para back" : "Alternar para lay"}
+                className="lz-button-primary min-w-11 rounded-2xl px-3 py-2.5 text-sm font-semibold"
                 onClick={() => toggleLineType(path)}
+                title={member.tipo === "L" ? "Lay" : "Back"}
                 type="button"
               >
                 {member.tipo}
@@ -1717,13 +1810,16 @@ export function CalculatorWorkspace({
         />
       </div>
 
-      <div className="overflow-x-auto pb-2">
+      <div className="pb-2 lg:overflow-x-auto">
         <div
-          className="grid items-start gap-4"
-          style={{
-            gridTemplateColumns: `repeat(${columnsPerRow}, minmax(220px, 1fr))`,
-            minWidth: `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
-          }}
+          className="grid grid-cols-1 items-start gap-4 sm:[grid-template-columns:repeat(var(--calc-cols-sm),minmax(0,1fr))] lg:min-w-[var(--calc-min-width)] lg:[grid-template-columns:repeat(var(--calc-cols),minmax(220px,1fr))]"
+          style={
+            {
+              "--calc-cols": columnsPerRow,
+              "--calc-cols-sm": Math.min(columnsPerRow, 2),
+              "--calc-min-width": `${columnsPerRow * 220 + (columnsPerRow - 1) * 16}px`,
+            } as CSSProperties
+          }
         >
         {lines.flatMap((line, index) => {
           const lineResult = calculation?.linhas?.[index];
@@ -1771,7 +1867,7 @@ export function CalculatorWorkspace({
                   />
                   Dividir
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[var(--text-dim)]">
                   {childCount === 0
                     ? "Adicionar linha"
                     : `${childCount} ${childCount === 1 ? "linha filha" : "linhas filhas"}`}
@@ -1891,19 +1987,21 @@ export function CalculatorWorkspace({
         </div>
       ) : calculation ? (
         <div className="lz-panel space-y-4 rounded-[30px] p-5">
-          <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex items-center gap-2 sm:justify-end sm:gap-3">
             <button
-              className="lz-button-secondary inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium"
+              aria-label="Limpar cálculo"
+              className="lz-button-secondary inline-flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full p-0 text-sm font-medium sm:order-1 sm:w-auto sm:px-4"
               onClick={resetCalculator}
+              title="Limpar"
               type="button"
             >
               <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-              <span>Limpar</span>
+              <span className="hidden sm:inline">Limpar</span>
             </button>
 
             <button
               aria-label="Copiar cálculo"
-              className="lz-button-secondary inline-flex h-11 w-11 items-center justify-center rounded-full p-0 text-[var(--text-secondary)] transition"
+              className="lz-button-secondary inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full p-0 text-[var(--text-secondary)] transition sm:order-2"
               onClick={copyCalculationLink}
               title="Copiar cálculo"
               type="button"
@@ -1912,12 +2010,12 @@ export function CalculatorWorkspace({
             </button>
 
             <button
-              className="lz-button-primary inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
+              className="lz-button-primary order-first inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold sm:order-3 sm:flex-none"
               onClick={handleNewProcedureClick}
               type="button"
             >
-              <Plus aria-hidden="true" className="h-4 w-4" />
-              <span>Novo procedimento</span>
+              <Plus aria-hidden="true" className="h-4 w-4 shrink-0" />
+              <span className="truncate">Novo procedimento</span>
             </button>
           </div>
 
@@ -1963,24 +2061,24 @@ export function CalculatorWorkspace({
             </div>
           </ConfirmationDialog>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="lz-panel-subtle rounded-[24px] p-4">
+          <div className="grid gap-2 sm:grid-cols-3 sm:gap-4">
+            <div className="lz-panel-subtle flex min-w-0 items-center justify-between gap-3 rounded-[20px] px-4 py-3 sm:block sm:rounded-[24px] sm:p-4">
               <p className="text-sm font-medium text-[var(--text-dim)]">Stake total</p>
-              <p className="mt-2 text-xl font-semibold text-white md:text-2xl">
+              <p className="text-base font-semibold text-white sm:mt-2 sm:text-xl md:text-2xl">
                 {formatCurrency(stakeTotal)}
               </p>
             </div>
 
-            <div className="lz-panel-subtle rounded-[24px] p-4">
+            <div className="lz-panel-subtle flex min-w-0 items-center justify-between gap-3 rounded-[20px] px-4 py-3 sm:block sm:rounded-[24px] sm:p-4">
               <p className="text-sm font-medium text-[var(--text-dim)]">Lucro</p>
-              <p className={`mt-2 text-xl font-semibold ${getProfitClass(calculation.lucro_liquido)} md:text-2xl`}>
+              <p className={`text-base font-semibold sm:mt-2 sm:text-xl ${getProfitClass(calculation.lucro_liquido)} md:text-2xl`}>
                 {formatCurrency(calculation.lucro_liquido)}
               </p>
             </div>
 
-            <div className="lz-panel-subtle rounded-[24px] p-4">
+            <div className="lz-panel-subtle flex min-w-0 items-center justify-between gap-3 rounded-[20px] px-4 py-3 sm:block sm:rounded-[24px] sm:p-4">
               <p className="text-sm font-medium text-[var(--text-dim)]">Lucro %</p>
-              <p className="mt-2 text-xl font-semibold text-white md:text-2xl">
+              <p className="text-base font-semibold text-white sm:mt-2 sm:text-xl md:text-2xl">
                 {calculation.lucro_percentual.toFixed(2)}%
               </p>
             </div>

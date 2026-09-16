@@ -253,7 +253,7 @@ export function HistoryWorkspace({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                          <ProcedureDateDisplay procedure={operation} />
+                          <ProcedureDateDisplay compact procedure={operation} />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <StatusTag>

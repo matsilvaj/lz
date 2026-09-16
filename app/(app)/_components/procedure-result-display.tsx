@@ -206,11 +206,43 @@ function getProcedureScopeDate(procedure: ResultDisplayProcedure, scope: string)
 }
 
 export function ProcedureDateDisplay({
+  compact = false,
   procedure,
 }: {
+  compact?: boolean;
   procedure: ResultDisplayProcedure;
 }) {
   const multiples = getProcedureMultiples(procedure);
+
+  if (compact) {
+    const tags = [...multiples.values()];
+    const best = tags.reduce<ProcedureMultiple | undefined>(
+      (current, item) => (!current || item.count > current.count ? item : current),
+      undefined,
+    );
+    const dates = isFreebetProcedure(procedure.tipo_procedimento)
+      ? [
+          ["Coleta", getProcedureScopeDate(procedure, "freebet_collection")],
+          ["Conversão", getProcedureScopeDate(procedure, "freebet_conversion")],
+        ].filter(([, value]) => value)
+      : [["", procedure.data_operacao]];
+
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {best ? (
+          <ProcedureMultipleTag
+            multiple={{ ...best, houses: [...new Set(tags.flatMap((item) => item.houses))] }}
+          />
+        ) : null}
+        {dates.map(([label, value]) => (
+          <span key={label || "date"}>
+            {label ? <span className="text-[var(--text-dim)]">{label} </span> : null}
+            {value || "-"}
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   if (!isFreebetProcedure(procedure.tipo_procedimento)) {
     return (

@@ -566,8 +566,8 @@ export function ProceduresWorkspace({
       ) : null}
 
       <div className="lz-panel flex flex-col gap-3 rounded-[28px] p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="w-full min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="w-full min-w-0 sm:w-auto sm:min-w-[220px] sm:flex-1">
             <input
               className="lz-input h-13 w-full rounded-full px-5 text-sm"
               defaultValue={filters.searchText}
@@ -580,7 +580,7 @@ export function ProceduresWorkspace({
           </div>
 
           <button
-            className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-medium transition ${
+            className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition sm:py-3 ${
               filtersOpen || activeFiltersCount > 0 ? "lz-button-primary" : "lz-button-secondary"
             }`}
             onClick={() => setFiltersOpen((current) => !current)}
@@ -596,7 +596,7 @@ export function ProceduresWorkspace({
 
               return (
                 <button
-                  className={`rounded-full px-4 py-3 text-sm font-medium transition ${
+                  className={`rounded-full px-4 py-2.5 text-sm font-medium transition sm:py-3 ${
                     active ? "lz-button-primary" : "lz-button-secondary"
                   }`}
                   key={`quick-status-${status}`}
@@ -623,7 +623,7 @@ export function ProceduresWorkspace({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
           {isPending ? (
             <span className="self-center text-sm text-[var(--text-dim)]">
               Atualizando...
@@ -633,7 +633,7 @@ export function ProceduresWorkspace({
           <ProcedureModal
             bookmakers={bookmakers}
             returnTo="/procedimentos"
-            triggerClassName="lz-button-primary rounded-full px-4 py-3 text-sm font-semibold"
+            triggerClassName="lz-button-primary w-full rounded-full px-4 py-3 text-sm font-semibold sm:w-auto"
             triggerLabel="Novo procedimento"
           />
         </div>
@@ -956,7 +956,7 @@ export function ProceduresWorkspace({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                        <ProcedureDateDisplay procedure={procedure} />
+                        <ProcedureDateDisplay compact procedure={procedure} />
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <StatusTag>
