@@ -60,7 +60,7 @@ export function ConfirmationDialog({
     >
       <div
         aria-modal="true"
-        className="lz-panel w-full max-w-md rounded-[28px] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:p-6"
+        className="lz-panel max-h-[calc(100dvh-32px)] w-full max-w-md overflow-y-auto rounded-[28px] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:p-6"
         onMouseDown={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"

@@ -1233,6 +1233,18 @@ export function CalculatorWorkspace({
         (line.filhas ?? []).reduce((sum, child) => sum + Number(child.stake ?? 0), 0),
       0,
     ) ?? 0;
+  const freebetStakeTotal =
+    calculation?.linhas?.reduce((total, resultLine, index) => {
+      const line = lines[index];
+      const motherStake = line?.freebet ? Number(resultLine.stake ?? 0) : 0;
+      const childStake = (resultLine.filhas ?? []).reduce(
+        (sum, child, childIndex) =>
+          line?.children[childIndex]?.freebet ? sum + Number(child.stake ?? 0) : sum,
+        0,
+      );
+
+      return total + motherStake + childStake;
+    }, 0) ?? 0;
   const hasLayLine = lines.some(
     (line) => line.tipo === "L" || line.children.some((child) => child.tipo === "L"),
   );
@@ -1828,10 +1840,14 @@ export function CalculatorWorkspace({
             Number(lineResult?.custo ?? 0) - Number(lineResult?.cashback ?? 0);
           const roundedLineProfit = roundCurrencyValue(lineProfit);
           const roundedLineInvestment = roundCurrencyValue(lineInvestment);
-          const lineRoi =
-            lineResult && roundedLineInvestment > 0
-              ? (roundedLineProfit / roundedLineInvestment) * 100
-              : 0;
+          const lineFreebetStake = line.freebet ? Number(lineResult?.stake ?? 0) : 0;
+          const lineRoi = !lineResult
+            ? 0
+            : lineFreebetStake > 0
+              ? (roundedLineProfit / lineFreebetStake) * 100
+              : roundedLineInvestment > 0
+                ? (roundedLineProfit / roundedLineInvestment) * 100
+                : 0;
           const motherPath: MemberPath = { group: index, child: null };
           const childCount = line.children.length;
           const houseLabel = line.house.trim() || `Casa ${index + 1}`;
@@ -2078,9 +2094,17 @@ export function CalculatorWorkspace({
 
             <div className="lz-panel-subtle flex min-w-0 items-center justify-between gap-3 rounded-[20px] px-4 py-3 sm:block sm:rounded-[24px] sm:p-4">
               <p className="text-sm font-medium text-[var(--text-dim)]">Lucro %</p>
-              <p className="text-base font-semibold text-white sm:mt-2 sm:text-xl md:text-2xl">
-                {calculation.lucro_percentual.toFixed(2)}%
-              </p>
+              <div className="text-right sm:text-left">
+                <p className="text-base font-semibold text-white sm:mt-2 sm:text-xl md:text-2xl">
+                  {calculation.lucro_percentual.toFixed(2)}%
+                </p>
+                {freebetStakeTotal > 0 ? (
+                  <p className="text-xs text-[var(--text-dim)]">
+                    {((calculation.lucro_liquido / freebetStakeTotal) * 100).toFixed(2)}% de
+                    conversão
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>

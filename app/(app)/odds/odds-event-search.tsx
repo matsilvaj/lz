@@ -5,6 +5,7 @@ import {
   ArrowUpDown,
   Check,
   ChevronDown,
+  Gift,
   RotateCcw,
   SlidersHorizontal,
   X,
@@ -42,7 +43,13 @@ import {
   formatCompetitionName,
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
-import { getFreebetConversionBookmakerKey } from "@/lib/monitor-odds/freebet-conversion";
+import {
+  buildFreebetConversionAnalysis,
+  formatFreebetConversionPercent,
+  getFreebetConversionBookmakerKey,
+  type FreebetConversionMode,
+  type FreebetConversionOpportunity,
+} from "@/lib/monitor-odds/freebet-conversion";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -1063,7 +1070,7 @@ function selectionLabel(value: string) {
 }
 
 function formatOdd(value: number | undefined) {
-  return value ? value.toFixed(2) : "-";
+  return value ? value.toFixed(3) : "-";
 }
 
 function formatCurrency(value: number) {
@@ -1981,31 +1988,37 @@ function OddsTable({
 
             return (
               <div
-                className={`${oddsTableGridClass} rounded-2xl p-1.5 ${
-                  freebetRow
-                    ? "border border-[rgba(191,219,254,0.42)] bg-[rgba(59,130,246,0.11)] shadow-[0_0_20px_rgba(147,197,253,0.08)]"
-                    : "bg-white/[0.026]"
-                }`}
+                className={`${oddsTableGridClass} rounded-2xl bg-white/[0.026] p-1.5`}
                 key={row.key}
               >
-                <BookmakerEventLink
-                  bookmakerName={row.bookmakerName}
-                  className={`min-w-0 truncate px-2 text-xs font-medium no-underline transition ${
-                    eventUrl
-                      ? "text-white hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                      : "text-white"
-                  }`}
-                  eventUrl={eventUrl}
-                >
-                  {row.bookmakerName}
-                </BookmakerEventLink>
+                <span className="flex min-w-0 items-center gap-2 px-2">
+                  <BookmakerEventLink
+                    bookmakerName={row.bookmakerName}
+                    className={`min-w-0 truncate text-xs font-medium no-underline transition ${
+                      eventUrl
+                        ? "text-white hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                        : "text-white"
+                    }`}
+                    eventUrl={eventUrl}
+                  >
+                    {row.bookmakerName}
+                  </BookmakerEventLink>
+                  {freebetRow ? (
+                    <>
+                      <Gift
+                        aria-label="Freebet"
+                        className="h-3.5 w-3.5 shrink-0 text-[#ff9bbd] sm:hidden"
+                      />
+                      <span className="hidden sm:inline-flex">
+                        <FreebetTag />
+                      </span>
+                    </>
+                  ) : null}
+                </span>
                 {selections.map((selection) => {
                   const odd = row.odds[selection];
                   const selected = odd ? isOddSelected(odd) : false;
                   const highlighted = odd?.price === highestPrices[selection];
-                  const freebetOdd = odd
-                    ? isConversionFreebetHouse(odd, conversionContext)
-                    : false;
 
                   return (
                     <button
@@ -2013,9 +2026,7 @@ function OddsTable({
                       className={`${oddsBoxClass} text-[13px] font-semibold text-white transition ${
                         selected
                           ? "border border-[rgba(191,219,254,0.72)] bg-[rgba(59,130,246,0.18)] shadow-[0_0_18px_rgba(147,197,253,0.16)]"
-                          : freebetOdd
-                            ? "border border-[rgba(191,219,254,0.52)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_18px_rgba(147,197,253,0.1)]"
-                            : highlighted
+                          : highlighted
                             ? "border border-[rgba(255,139,187,0.45)] bg-[rgba(255,139,187,0.16)] shadow-[0_0_18px_rgba(255,139,187,0.08)]"
                             : "border border-transparent bg-white/[0.04]"
                       } ${
@@ -2188,15 +2199,35 @@ function getDuploProfitClass(value: number) {
   return value > 0 ? "text-emerald-400" : "text-rose-400";
 }
 
+function FreebetTag() {
+  return (
+    <span className="shrink-0 rounded-full border border-[rgba(255,119,163,0.32)] bg-[rgba(216,31,89,0.16)] px-2 py-0.5 text-[10px] font-semibold text-[#ff9bbd]">
+      Freebet
+    </span>
+  );
+}
+
 function DuploLineBadge({
+  freebet = false,
   line,
 }: {
+  freebet?: boolean;
   line: DuploOpportunity["lines"][number];
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2.5">
+    <div
+      className={`min-w-0 rounded-2xl border px-3 py-2.5 ${
+        freebet
+          ? "border-[rgba(255,119,163,0.42)] bg-[rgba(216,31,89,0.1)]"
+          : "border-white/8 bg-white/[0.035]"
+      }`}
+      title={freebet ? `${line.bookmakerName} · Freebet` : undefined}
+    >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {freebet ? (
+            <Gift aria-label="Freebet" className="h-3.5 w-3.5 shrink-0 text-[#ff9bbd]" />
+          ) : null}
           <BookmakerEventLink
             bookmakerName={line.bookmakerName}
             className="min-w-0 truncate text-xs font-semibold text-white no-underline transition hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
@@ -2210,8 +2241,8 @@ function DuploLineBadge({
             </span>
           ) : null}
         </span>
-        <span className="text-sm font-semibold text-white">
-          {line.odd.toFixed(2)}
+        <span className="shrink-0 text-sm font-semibold text-white">
+          {line.odd.toFixed(3)}
         </span>
       </div>
     </div>
@@ -2299,6 +2330,141 @@ function DuploTopList({
           </p>
         )}
       </div>
+    </section>
+  );
+}
+
+const CONVERSION_MODE_SECTIONS: Array<{ mode: FreebetConversionMode; title: string }> = [
+  { mode: "pa_um_lado", title: "Top 5 - PA para 1 dos lados" },
+  { mode: "pa_dois_lados", title: "Top 5 - PA para os Dois lados" },
+];
+
+function getConversionCalculatorSelections(
+  fixtureId: string,
+  opportunity: FreebetConversionOpportunity,
+  eventName?: string,
+): CalculatorSelectionLine[] {
+  return [
+    ...opportunity.lines.filter((line) => line.role === "freebet"),
+    ...opportunity.lines.filter((line) => line.role !== "freebet"),
+  ].map((line) => ({
+    eventName,
+    freebet: line.role === "freebet",
+    house: line.bookmakerName,
+    id: createCalculatorSelectionId([
+      fixtureId,
+      line.bookmakerSlug || line.bookmakerName,
+      line.selectionLabel,
+      line.paCategory,
+      line.role,
+    ]),
+    odd: line.odd,
+    pa: line.paCategory === "COM_PA",
+    selectionKey: line.selectionLabel,
+    selectionLabel: line.selectionLabel,
+    stake: line.role === "freebet" ? opportunity.freebetValue : undefined,
+  }));
+}
+
+function ConversionEventAnalysis({
+  conversionContext,
+  event,
+  onToggleOpportunity,
+  selectedIds,
+}: {
+  conversionContext: CalculatorConversionContext;
+  event: OddsEvent;
+  onToggleOpportunity: (opportunity: FreebetConversionOpportunity) => void;
+  selectedIds: ReadonlySet<string>;
+}) {
+  const analysis = buildFreebetConversionAnalysis(event, {
+    freebetHouse: conversionContext.house,
+    freebetValue: conversionContext.freebetValue,
+    maxOdd: conversionContext.maxOdd,
+    minOdd: conversionContext.minOdd,
+  });
+
+  return (
+    <section className="grid gap-3 xl:grid-cols-2">
+      {CONVERSION_MODE_SECTIONS.map((section) => {
+        const opportunities = analysis.all
+          .filter((opportunity) => opportunity.mode === section.mode)
+          .slice(0, 5);
+
+        return (
+          <div
+            className="rounded-[22px] border border-white/10 bg-white/[0.025] p-4"
+            key={section.mode}
+          >
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
+              {section.title}
+            </h3>
+
+            <div className="mt-4 space-y-2">
+              {opportunities.length ? (
+                opportunities.map((opportunity, index) => {
+                  const selected = getConversionCalculatorSelections(
+                    event.fixture_id,
+                    opportunity,
+                  ).every((selection) => selectedIds.has(selection.id));
+
+                  return (
+                    <div
+                      aria-pressed={selected}
+                      className={`grid cursor-pointer gap-3 rounded-2xl border p-3 transition lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center ${
+                        selected
+                          ? "border-[rgba(191,219,254,0.66)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_20px_rgba(147,197,253,0.12)]"
+                          : "border-white/8 bg-white/[0.024] hover:border-[rgba(255,139,187,0.24)] hover:bg-white/[0.04]"
+                      }`}
+                      key={`${section.mode}-${index}`}
+                      onClick={() => onToggleOpportunity(opportunity)}
+                      onKeyDown={(keyboardEvent: ReactKeyboardEvent<HTMLDivElement>) => {
+                        if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
+                          return;
+                        }
+
+                        keyboardEvent.preventDefault();
+                        onToggleOpportunity(opportunity);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-xs font-semibold text-[var(--text-secondary)]">
+                        {index + 1}
+                      </span>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {opportunity.lines.map((line, lineIndex) => (
+                          <DuploLineBadge
+                            freebet={line.role === "freebet"}
+                            key={`${line.bookmakerSlug}-${line.selectionLabel}-${lineIndex}`}
+                            line={line}
+                          />
+                        ))}
+                      </div>
+                      <span className="flex items-baseline justify-between gap-2 lg:flex-col lg:items-end lg:gap-0.5">
+                        <span
+                          className={`text-sm font-semibold ${getDuploProfitClass(
+                            opportunity.conversionPercent,
+                          )}`}
+                        >
+                          {formatFreebetConversionPercent(opportunity.conversionPercent)}
+                        </span>
+                        <span className="text-[11px] font-semibold text-[var(--text-dim)]">
+                          {formatCurrency(opportunity.profitAmount)}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-[var(--text-muted)]">
+                  Sem combinações com {conversionContext.house} como freebet.
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -2545,6 +2711,25 @@ export function OddsEventDetails({
     });
   }
 
+  function handleToggleConversionOpportunity(opportunity: FreebetConversionOpportunity) {
+    const selections = getConversionCalculatorSelections(
+      currentEvent.fixture_id,
+      opportunity,
+      formatFixtureTeams(currentEvent).label,
+    );
+
+    setCalculatorSelections((current) => {
+      const currentIds = new Set(current.map((selection) => selection.id));
+      const selected = selections.every((selection) => currentIds.has(selection.id));
+
+      return selected
+        ? current.filter(
+            (selection) => !selections.some((item) => item.id === selection.id),
+          )
+        : mergeCalculatorSelections(current, selections, { replaceAll: true });
+    });
+  }
+
   function handleRemoveCalculatorSelection(id: string) {
     setCalculatorSelections((current) =>
       current.filter((selection) => selection.id !== id),
@@ -2576,19 +2761,26 @@ export function OddsEventDetails({
                 Odds atualizadas às {lastOddsUpdateLabel}
               </p>
             ) : null}
-            {conversionContext ? (
-              <p className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-semibold text-[var(--text-secondary)]">
-                <span className="truncate">
-                  Conversao Freebet: {conversionContext.house}
-                </span>
-                <span className="shrink-0 text-[var(--text-dim)]">
-                  {formatCurrency(conversionContext.freebetValue)}
-                </span>
-              </p>
-            ) : null}
           </div>
 
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
+            {conversionContext ? (
+              <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-[rgba(255,119,163,0.3)] bg-[rgba(216,31,89,0.12)] px-3 py-2 sm:mr-1">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(255,119,163,0.3)] bg-[rgba(216,31,89,0.18)] text-[#ff9bbd]">
+                  <Gift aria-hidden="true" className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white">
+                    Conversão de freebet
+                  </span>
+                  <span className="block truncate text-xs text-[var(--text-secondary)]">
+                    {conversionContext.house} ·{" "}
+                    {formatCurrency(conversionContext.freebetValue)}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+
             <Link
               className="lz-button-secondary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition sm:w-auto"
               href={effectiveBackHref}
@@ -2628,12 +2820,21 @@ export function OddsEventDetails({
         />
       ) : null}
 
-      <DuploEventAnalysis
-        conversionContext={conversionContext}
-        event={filteredCurrentEvent}
-        onToggleOpportunity={handleToggleCalculatorOpportunity}
-        selectedIds={selectedCalculatorIds}
-      />
+      {conversionContext ? (
+        <ConversionEventAnalysis
+          conversionContext={conversionContext}
+          event={filteredCurrentEvent}
+          onToggleOpportunity={handleToggleConversionOpportunity}
+          selectedIds={selectedCalculatorIds}
+        />
+      ) : (
+        <DuploEventAnalysis
+          conversionContext={conversionContext}
+          event={filteredCurrentEvent}
+          onToggleOpportunity={handleToggleCalculatorOpportunity}
+          selectedIds={selectedCalculatorIds}
+        />
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <OddsTable

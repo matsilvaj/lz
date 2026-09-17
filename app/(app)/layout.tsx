@@ -5,6 +5,7 @@ import { type ReactNode } from "react";
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 
 import { AppNavigation } from "./_components/app-navigation";
+import { ConverterStateGuard } from "./_components/converter-state-guard";
 import { ThemeToggle } from "./_components/theme-toggle";
 import { WorkspaceSwitcher } from "./_components/workspace-switcher";
 import { WorkspaceLoadingBoundary } from "./_components/workspace-loading-boundary";
@@ -53,6 +54,8 @@ export default async function ProtectedAppLayout({
           </div>
         </div>
       </header>
+
+      <ConverterStateGuard />
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
         <WorkspaceLoadingBoundary key={activeWorkspace.id}>

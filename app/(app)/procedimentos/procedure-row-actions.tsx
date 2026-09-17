@@ -646,8 +646,8 @@ export function ProcedureRowActions({
         : null}
 
       {noteOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="lz-panel w-full max-w-lg rounded-[30px] p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4">
+          <div className="lz-panel max-h-[calc(100dvh-24px)] w-full max-w-lg overflow-y-auto rounded-[26px] p-5 sm:rounded-[30px] sm:p-6">
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-lg font-semibold text-white">Observação</h3>
               <button

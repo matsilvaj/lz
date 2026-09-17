@@ -29,6 +29,8 @@ export type CalculatorConversionContext = {
   freebetCondition?: string;
   freebetValue: number;
   house: string;
+  maxOdd?: number;
+  minOdd?: number;
   originIds: number[];
 };
 
@@ -91,7 +93,7 @@ export function mergeCalculatorSelections(
 }
 
 function formatCalculatorOdd(value: number) {
-  return Number.isFinite(value) ? value.toFixed(2) : "0";
+  return Number.isFinite(value) ? value.toFixed(3) : "0";
 }
 
 function formatCalculatorStake(value: number | undefined, fallback: string) {
@@ -177,14 +179,23 @@ function getDockProfitPercent(
       })),
       0,
     ) as { lucro_liquido?: number; lucro_percentual?: number };
-    const profitAmount = Number(calculation.lucro_liquido ?? 0);
-    const defaultProfitPercent = Number(calculation.lucro_percentual ?? 0);
+    const freebetStake = lines.reduce(
+      (total, selection, index) =>
+        selection.freebet
+          ? total +
+            Number(
+              selection.stake ??
+                (index === 0 ? conversionContext?.freebetValue ?? 100 : 0),
+            )
+          : total,
+      0,
+    );
+    const profitPercent =
+      freebetStake > 0
+        ? (Number(calculation.lucro_liquido ?? 0) / freebetStake) * 100
+        : Number(calculation.lucro_percentual ?? 0);
 
-    if (conversionContext?.freebetValue) {
-      return (profitAmount / conversionContext.freebetValue) * 100;
-    }
-
-    return Number.isFinite(defaultProfitPercent) ? defaultProfitPercent : null;
+    return Number.isFinite(profitPercent) ? profitPercent : null;
   } catch {
     return null;
   }
@@ -211,6 +222,14 @@ export function appendConversionContextParams(
     params.set("conversionBatchId", conversionContext.conversionBatchId);
   }
 
+  if (conversionContext.minOdd) {
+    params.set("minOdd", String(conversionContext.minOdd));
+  }
+
+  if (conversionContext.maxOdd) {
+    params.set("maxOdd", String(conversionContext.maxOdd));
+  }
+
   for (const originId of conversionContext.originIds) {
     params.append("originIds", String(originId));
   }
@@ -235,12 +254,17 @@ export function parseConversionContextParams(
     return null;
   }
 
+  const minOdd = Number(params.get("minOdd") ?? 0);
+  const maxOdd = Number(params.get("maxOdd") ?? 0);
+
   return {
     conversionBatchId: params.get("conversionBatchId") ?? undefined,
     entryValue: Number.isFinite(entryValue) ? entryValue : 0,
     freebetCondition: params.get("freebetCondition") ?? undefined,
     freebetValue,
     house,
+    maxOdd: Number.isFinite(maxOdd) && maxOdd > 0 ? maxOdd : undefined,
+    minOdd: Number.isFinite(minOdd) && minOdd > 0 ? minOdd : undefined,
     originIds,
   };
 }
@@ -499,7 +523,9 @@ export function CalculatorSelectionDock({
             <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2">
               {profitPercent !== null ? (
                 <div className="flex items-center justify-between gap-3 text-xs font-semibold">
-                  <span className="text-[var(--text-muted)]">Lucro %</span>
+                  <span className="text-[var(--text-muted)]">
+                    {hasFreebetSelection ? "Conversão %" : "Lucro %"}
+                  </span>
                   <span className={`tabular-nums ${getProfitClassName(profitPercent)}`}>
                     {formatProfitPercent(profitPercent)}
                   </span>

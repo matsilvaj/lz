@@ -713,7 +713,7 @@ function FiltersDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[170] flex items-center justify-center overflow-hidden bg-black/65 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[170] flex items-center justify-center overflow-hidden bg-black/65 p-3 backdrop-blur-md sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -722,7 +722,7 @@ function FiltersDialog({
     >
       <div
         aria-modal="true"
-        className="lz-floating-panel max-h-[calc(100vh-48px)] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.48)]"
+        className="lz-floating-panel max-h-[calc(100dvh-24px)] w-full min-w-0 max-w-3xl overflow-y-auto rounded-[24px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.48)] sm:max-h-[calc(100dvh-48px)] sm:rounded-[28px] sm:p-5"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
@@ -730,18 +730,19 @@ function FiltersDialog({
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
               Filtros
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-white">
+            <h2 className="mt-1 text-lg font-semibold text-white sm:text-xl">
               Monitor de duplo
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
-              className="inline-flex h-11 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-4 text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              aria-label="Limpar filtros"
+              className="inline-flex h-11 w-11 items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white sm:w-auto sm:px-4"
               onClick={onReset}
               type="button"
             >
               <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-              <span>Limpar filtros</span>
+              <span className="hidden sm:inline">Limpar filtros</span>
             </button>
             <button
               aria-label="Fechar filtros"
@@ -1041,7 +1042,7 @@ function OpportunityLineMini({
           ) : null}
         </span>
         <span className="text-sm font-semibold text-white">
-          {line.odd.toFixed(2)}
+          {line.odd.toFixed(3)}
         </span>
       </div>
     </div>

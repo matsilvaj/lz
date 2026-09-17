@@ -748,8 +748,8 @@ function HousePickerDialog({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
-      <div className="lz-panel w-full max-w-xl rounded-[32px] shadow-[0_30px_90px_rgba(0,0,0,0.5)]">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-4">
+      <div className="lz-panel max-h-[calc(100dvh-24px)] w-full max-w-xl overflow-y-auto rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[32px]">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <h3 className="text-base font-semibold text-white">{title}</h3>
 

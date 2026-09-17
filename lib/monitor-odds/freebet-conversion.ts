@@ -147,9 +147,14 @@ function uniqueTopOdds(odds: DuploOddItem[]) {
     }
   }
 
-  return Array.from(byBookmaker.values())
-    .sort(compareByOdd)
-    .slice(0, topOddsPerSelection);
+  const unique = Array.from(byBookmaker.values()).sort(compareByOdd);
+
+  // Odds com PA costumam ser menores; sem separar por categoria elas nunca entram no top.
+  return (["COM_PA", "SEM_PA"] as const).flatMap((category) =>
+    unique
+      .filter((odd) => getSafePaCategory(odd.pa_category) === category)
+      .slice(0, topOddsPerSelection),
+  );
 }
 
 function get1x2Odds(event: DuploEvent, selection: FreebetConversionSelection) {
@@ -218,9 +223,9 @@ function getMode(lines: FreebetConversionLine[]): FreebetConversionMode {
 
 function sortOpportunities(opportunities: FreebetConversionOpportunity[]) {
   return [...opportunities].sort((left, right) => {
-    const conversionOrder = right.conversionPercent - left.conversionPercent;
-    if (conversionOrder !== 0) return conversionOrder;
-    return right.profitAmount - left.profitAmount;
+    const profitOrder = right.profitAmount - left.profitAmount;
+    if (profitOrder !== 0) return profitOrder;
+    return right.profitPercent - left.profitPercent;
   });
 }
 

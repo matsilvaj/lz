@@ -320,7 +320,8 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(oddsUi, /parseConversionContextParams/);
   assert.match(oddsUi, /isConversionFreebetHouse/);
   assert.match(oddsUi, /isConversionFreebetLine/);
-  assert.match(oddsUi, /Conversao Freebet/);
+  assert.match(oddsUi, /Conversão de freebet/);
+  assert.match(oddsUi, /buildFreebetConversionAnalysis/);
   assert.match(oddsUi, /conversionContext=\{conversionContext\}/);
   assert.match(oddsUi, /getOddCalculatorSelection/);
   assert.match(oddsUi, /getOpportunityCalculatorSelections/);
