@@ -458,6 +458,65 @@ export class ProceduresPostgresRepository {
 
   async initialize() {}
 
+  async getFilterPreset(userId, screen, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedScreen = parseText(screen).trim().slice(0, 60);
+
+    if (!normalizedUserId || !normalizedScreen) {
+      return null;
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT filtros
+        FROM user_filter_presets
+        WHERE user_id = $1
+          AND tela = $2
+      `,
+      [normalizedUserId, normalizedScreen],
+    );
+
+    return rows[0]?.filtros ?? null;
+  }
+
+  async saveFilterPreset(userId, screen, filters, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedScreen = parseText(screen).trim().slice(0, 60);
+
+    if (!normalizedUserId || !normalizedScreen) {
+      return;
+    }
+
+    await executor.query(
+      `
+        INSERT INTO user_filter_presets (user_id, tela, filtros, created_at, updated_at)
+        VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+        ON CONFLICT (user_id, tela) DO UPDATE
+        SET filtros = EXCLUDED.filtros,
+            updated_at = NOW()
+      `,
+      [normalizedUserId, normalizedScreen, JSON.stringify(filters ?? {})],
+    );
+  }
+
+  async deleteFilterPreset(userId, screen, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedScreen = parseText(screen).trim().slice(0, 60);
+
+    if (!normalizedUserId || !normalizedScreen) {
+      return;
+    }
+
+    await executor.query(
+      `
+        DELETE FROM user_filter_presets
+        WHERE user_id = $1
+          AND tela = $2
+      `,
+      [normalizedUserId, normalizedScreen],
+    );
+  }
+
   async setActiveUserSession(userId, sessionId, executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedSessionId = parseText(sessionId).trim().slice(0, 128);

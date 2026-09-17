@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   Gift,
-  RotateCcw,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -33,6 +32,7 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
   buildDuploAnalysis,
@@ -150,7 +150,7 @@ type OddsRefreshResult = {
   oddsVersion: string | null;
 };
 
-type DatePreset = "all" | "today" | "tomorrow";
+type DatePreset = "all" | "today" | "tomorrow" | "day2" | "day3" | "day4";
 type DateRangePreset = Exclude<DatePreset, "all">;
 type EventListSortMode = "league" | "nearest" | "farthest";
 type EventsRequest =
@@ -183,6 +183,7 @@ type BookmakerFilterOption = {
   key: string;
   name: string;
 };
+type LeagueFilterOption = BookmakerFilterOption;
 type LeagueGroup = {
   events: OddsEvent[];
   key: string;
@@ -193,12 +194,78 @@ type LeagueGroup = {
 };
 
 const selections: Selection[] = ["HOME", "DRAW", "AWAY"];
-const datePresets: DatePreset[] = ["all", "today", "tomorrow"];
-const datePresetLabels: Record<DatePreset, string> = {
+const datePresets: DatePreset[] = [
+  "all",
+  "today",
+  "tomorrow",
+  "day2",
+  "day3",
+  "day4",
+];
+const datePresetOffsets: Record<DateRangePreset, number> = {
+  day2: 2,
+  day3: 3,
+  day4: 4,
+  today: 0,
+  tomorrow: 1,
+};
+const datePresetBaseLabels: Record<DatePreset, string> = {
   all: "Todos",
+  day2: "",
+  day3: "",
+  day4: "",
   today: "Hoje",
   tomorrow: "Amanhã",
 };
+
+function getPresetDate(preset: DateRangePreset) {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + datePresetOffsets[preset]);
+  return date;
+}
+
+function getAvailableDayKeys(events: Array<{ starts_at: string }>) {
+  const keys = new Set<string>();
+
+  for (const event of events) {
+    const date = new Date(event.starts_at);
+
+    if (!Number.isNaN(date.getTime())) {
+      keys.add(formatDateParam(date));
+    }
+  }
+
+  return Array.from(keys);
+}
+
+function getDatePresetLabel(preset: DatePreset) {
+  if (preset === "all") {
+    return datePresetBaseLabels.all;
+  }
+
+  const date = getPresetDate(preset);
+  const dayLabel = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    weekday: "short",
+  })
+    .format(date)
+    .replace(".", "");
+
+  return datePresetBaseLabels[preset] || dayLabel;
+}
+
+function getDatePresetHint(preset: DatePreset) {
+  if (preset === "all") {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(getPresetDate(preset));
+}
 const eventListSortOptions: Array<{
   label: string;
   value: EventListSortMode;
@@ -596,19 +663,15 @@ function getEventHref(event: OddsEvent, basePath: string) {
 }
 
 function getDatePresetRange(preset: DateRangePreset) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-
-  if (preset === "tomorrow") {
-    start.setDate(start.getDate() + 1);
-  }
-
+  const start = getPresetDate(preset);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
 
+  // Enviamos o intervalo com hora e fuso: só a data seria lida como meia-noite UTC
+  // e deixaria de fora os jogos da noite.
   return {
-    from: formatDateParam(start),
-    to: formatDateParam(end),
+    from: start.toISOString(),
+    to: end.toISOString(),
   };
 }
 
@@ -992,11 +1055,15 @@ function useMonitorOddsStatusFeed(
   }, [canPollStatus, onStatusUpdate]);
 }
 
+function getEventLeagueKey(event: OddsEvent) {
+  return `${event.league_slug}:${normalizeLabelKey(event.league_country ?? "")}`;
+}
+
 function groupEventsByLeague(events: OddsEvent[]) {
   const groups = new Map<string, LeagueGroup>();
 
   for (const event of events) {
-    const key = `${event.league_slug}:${normalizeLabelKey(event.league_country ?? "")}`;
+    const key = getEventLeagueKey(event);
     const current =
       groups.get(key) ??
       ({
@@ -1484,10 +1551,12 @@ function EventCard({
 
 function DatePresetButton({
   active,
+  hint,
   label,
   onClick,
 }: {
   active: boolean;
+  hint?: string;
   label: string;
   onClick: () => void;
 }) {
@@ -1502,7 +1571,12 @@ function DatePresetButton({
       onClick={onClick}
       type="button"
     >
-      {label}
+      <span className="flex flex-col items-center leading-tight">
+        <span>{label}</span>
+        {hint ? (
+          <span className="text-[10px] font-medium text-[var(--text-dim)]">{hint}</span>
+        ) : null}
+      </span>
     </button>
   );
 }
@@ -1621,7 +1695,7 @@ function EventListSortMenu({
       : null;
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full sm:w-[220px]">
       <button
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -2094,16 +2168,153 @@ function BookmakerToggleButton({
   );
 }
 
+function LeagueFiltersDialog({
+  availableLeagues,
+  hasPreset,
+  hiddenLeagues,
+  onClearPreset,
+  onClose,
+  onHideAll,
+  onSavePreset,
+  onShowAll,
+  onToggleLeague,
+  savingPreset,
+}: {
+  availableLeagues: LeagueFilterOption[];
+  hasPreset: boolean;
+  hiddenLeagues: ReadonlySet<string>;
+  onClearPreset: () => void;
+  onClose: () => void;
+  onHideAll: () => void;
+  onSavePreset: () => void;
+  onShowAll: () => void;
+  onToggleLeague: (key: string) => void;
+  savingPreset: boolean;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center overflow-hidden bg-black/65 p-3 backdrop-blur-md sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        aria-modal="true"
+        className="lz-floating-panel flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[rgba(18,5,13,0.96)] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.48)] sm:rounded-[28px] sm:p-5"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--text-dim)]">
+              Filtros
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-white sm:text-xl">
+              Monitor de odds
+            </h2>
+          </div>
+          <button
+            aria-label="Fechar filtros"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-white">Campeonatos visíveis</h3>
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <button
+                className="text-[var(--text-secondary)] transition hover:text-white"
+                onClick={onShowAll}
+                type="button"
+              >
+                Marcar todos
+              </button>
+              <button
+                className="text-[var(--text-dim)] transition hover:text-white"
+                onClick={onHideAll}
+                type="button"
+              >
+                Desmarcar todos
+              </button>
+            </div>
+          </div>
+
+          {availableLeagues.length ? (
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {availableLeagues.map((league) => (
+                <BookmakerToggleButton
+                  active={!hiddenLeagues.has(league.key)}
+                  key={league.key}
+                  name={league.name}
+                  onClick={() => onToggleLeague(league.key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4 text-sm text-[var(--text-muted)]">
+              Nenhum campeonato encontrado.
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+            <button
+              className="text-[var(--text-secondary)] transition hover:text-white disabled:opacity-60"
+              disabled={savingPreset}
+              onClick={onSavePreset}
+              type="button"
+            >
+              Salvar como padrão
+            </button>
+            {hasPreset ? (
+              <button
+                className="text-[var(--text-dim)] transition hover:text-white disabled:opacity-60"
+                disabled={savingPreset}
+                onClick={onClearPreset}
+                type="button"
+              >
+                Remover padrão
+              </button>
+            ) : null}
+          </div>
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] px-5 text-xs font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.2)] transition hover:brightness-110"
+            onClick={onClose}
+            type="button"
+          >
+            <Check aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>Aplicar</span>
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function BookmakerFiltersDialog({
   availableBookmakers,
   hiddenBookmakers,
   onClose,
+  onHideAll,
   onReset,
   onToggleBookmaker,
 }: {
   availableBookmakers: BookmakerFilterOption[];
   hiddenBookmakers: ReadonlySet<string>;
   onClose: () => void;
+  onHideAll: () => void;
   onReset: () => void;
   onToggleBookmaker: (key: string) => void;
 }) {
@@ -2131,7 +2342,7 @@ function BookmakerFiltersDialog({
               Filtros
             </p>
             <h2 className="mt-1 text-xl font-semibold text-white">
-              Ocultar casas
+              Casas
             </h2>
           </div>
           <button
@@ -2146,22 +2357,30 @@ function BookmakerFiltersDialog({
 
         <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-white">Casas</h3>
-            <button
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-              onClick={onReset}
-              type="button"
-            >
-              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-              <span>Limpar</span>
-            </button>
+            <h3 className="text-sm font-semibold text-white">Casas visíveis</h3>
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <button
+                className="text-[var(--text-secondary)] transition hover:text-white"
+                onClick={onReset}
+                type="button"
+              >
+                Marcar todos
+              </button>
+              <button
+                className="text-[var(--text-dim)] transition hover:text-white"
+                onClick={onHideAll}
+                type="button"
+              >
+                Desmarcar todos
+              </button>
+            </div>
           </div>
 
           {availableBookmakers.length ? (
             <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3">
               {availableBookmakers.map((bookmaker) => (
                 <BookmakerToggleButton
-                  active={hiddenBookmakers.has(bookmaker.key)}
+                  active={!hiddenBookmakers.has(bookmaker.key)}
                   key={bookmaker.key}
                   name={bookmaker.name}
                   onClick={() => onToggleBookmaker(bookmaker.key)}
@@ -2815,6 +3034,9 @@ export function OddsEventDetails({
           availableBookmakers={availableBookmakers}
           hiddenBookmakers={activeHiddenBookmakers}
           onClose={() => setFiltersOpen(false)}
+          onHideAll={() =>
+            setHiddenBookmakers(availableBookmakers.map((bookmaker) => bookmaker.key))
+          }
           onReset={handleResetFilters}
           onToggleBookmaker={handleToggleBookmaker}
         />
@@ -2903,6 +3125,38 @@ export function OddsEventSearch({
     refreshingOdds: false,
     error: null,
   });
+  const [hiddenLeagueKeys, setHiddenLeagueKeys] = useState<string[]>([]);
+  const [leagueFiltersOpen, setLeagueFiltersOpen] = useState(false);
+  const [availableDayKeys, setAvailableDayKeys] = useState<string[]>([]);
+  const screenFilterState = useMemo(
+    () => ({ activeDatePreset, activeListSort, hiddenLeagueKeys }),
+    [activeDatePreset, activeListSort, hiddenLeagueKeys],
+  );
+  const applyScreenFilters = useCallback(
+    (filters: Partial<{
+      activeDatePreset: DatePreset | null;
+      activeListSort: EventListSortMode;
+      hiddenLeagueKeys: string[];
+    }>) => {
+      if (filters.activeDatePreset !== undefined) {
+        setActiveDatePreset(filters.activeDatePreset);
+      }
+
+      if (filters.activeListSort) {
+        setActiveListSort(filters.activeListSort);
+      }
+
+      if (Array.isArray(filters.hiddenLeagueKeys)) {
+        setHiddenLeagueKeys(filters.hiddenLeagueKeys);
+      }
+    },
+    [],
+  );
+  const { clearPreset, hasPreset, savePreset, savingPreset } = useScreenFilters({
+    apply: applyScreenFilters,
+    screen: "monitor-odds",
+    state: screenFilterState,
+  });
   const eventsRef = useRef<OddsEvent[]>([]);
   const latestFixturesVersionRef = useRef<string | null>(null);
   const latestOddUpdatedAtRef = useRef<string | null>(null);
@@ -2974,6 +3228,11 @@ export function OddsEventSearch({
         latestOddUpdatedAtRef.current = null;
 
         eventsRef.current = events;
+
+        if (request.kind === "available") {
+          setAvailableDayKeys(getAvailableDayKeys(events));
+        }
+
         setState({
           events,
           loading: false,
@@ -3246,7 +3505,43 @@ export function OddsEventSearch({
   const hasDatePreset = activeDatePreset !== null && activeDatePreset !== "all";
   const hasAllPreset = activeDatePreset === "all";
   const hasActiveList = hasQuery || hasActiveDatePreset;
-  const events = hasActiveList ? state.events : emptyOddsEvents;
+  const visibleDatePresets = useMemo(() => {
+    const dayKeys = new Set(availableDayKeys);
+
+    return datePresets.filter((preset) => {
+      if (preset === "all" || preset === activeDatePreset) {
+        return true;
+      }
+
+      if (!dayKeys.size) {
+        return preset === "today" || preset === "tomorrow";
+      }
+
+      return dayKeys.has(formatDateParam(getPresetDate(preset)));
+    });
+  }, [activeDatePreset, availableDayKeys]);
+  const loadedEvents = hasActiveList ? state.events : emptyOddsEvents;
+  const availableLeagues = useMemo<LeagueFilterOption[]>(
+    () =>
+      groupEventsByLeague(loadedEvents)
+        .map((group) => ({
+          key: group.key,
+          name: formatLeagueName(group.leagueName, group.leagueCountry),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
+    [loadedEvents],
+  );
+  const activeHiddenLeagues = useMemo(() => {
+    const availableKeys = new Set(availableLeagues.map((league) => league.key));
+    return new Set(hiddenLeagueKeys.filter((key) => availableKeys.has(key)));
+  }, [availableLeagues, hiddenLeagueKeys]);
+  const events = useMemo(
+    () =>
+      activeHiddenLeagues.size
+        ? loadedEvents.filter((event) => !activeHiddenLeagues.has(getEventLeagueKey(event)))
+        : loadedEvents,
+    [activeHiddenLeagues, loadedEvents],
+  );
   const sortedEvents = useMemo(
     () => sortEventsForList(events, activeListSort),
     [activeListSort, events],
@@ -3256,7 +3551,7 @@ export function OddsEventSearch({
   const showEmpty =
     hasActiveList && !state.loading && !state.error && events.length === 0;
   const activeDateLabel = activeDatePreset
-    ? datePresetLabels[activeDatePreset].toLocaleLowerCase("pt-BR")
+    ? getDatePresetLabel(activeDatePreset).toLocaleLowerCase("pt-BR")
     : "";
   const emptyMessage = hasDatePreset
     ? `Nenhum jogo encontrado para ${activeDateLabel}.`
@@ -3273,10 +3568,10 @@ export function OddsEventSearch({
           >
             Buscar eventos
           </label>
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             <input
               autoComplete="off"
-              className="lz-input h-13 w-full rounded-full px-5 text-base"
+              className="lz-input h-13 w-full min-w-0 rounded-full px-5 text-base xl:flex-1"
               id="odds-event-search"
               maxLength={80}
               onChange={handleQueryChange}
@@ -3285,12 +3580,13 @@ export function OddsEventSearch({
               value={query}
             />
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[112px_112px_120px_220px]">
-              {datePresets.map((preset) => (
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {visibleDatePresets.map((preset) => (
                 <DatePresetButton
                   active={activeDatePreset === preset}
                   key={preset}
-                  label={datePresetLabels[preset]}
+                  hint={getDatePresetHint(preset)}
+                  label={getDatePresetLabel(preset)}
                   onClick={() => handleDatePresetClick(preset)}
                 />
               ))}
@@ -3299,10 +3595,52 @@ export function OddsEventSearch({
                 onChange={handleListSortChange}
                 value={activeListSort}
               />
+
+              <button
+                className={`inline-flex h-13 items-center justify-center gap-2 rounded-full border px-5 text-sm font-semibold transition ${
+                  activeHiddenLeagues.size
+                    ? "border-[rgba(211,27,91,0.72)] bg-[rgba(211,27,91,0.18)] text-white"
+                    : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+                }`}
+                onClick={() => setLeagueFiltersOpen(true)}
+                type="button"
+              >
+                <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+                <span>Filtros</span>
+                {activeHiddenLeagues.size ? (
+                  <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-white/10 px-2 py-0.5 text-xs">
+                    {availableLeagues.length - activeHiddenLeagues.size}
+                  </span>
+                ) : null}
+              </button>
             </div>
           </div>
+
         </div>
       </section>
+
+      {leagueFiltersOpen ? (
+        <LeagueFiltersDialog
+          availableLeagues={availableLeagues}
+          hasPreset={hasPreset}
+          hiddenLeagues={activeHiddenLeagues}
+          onClearPreset={() => void clearPreset()}
+          onClose={() => setLeagueFiltersOpen(false)}
+          onHideAll={() =>
+            setHiddenLeagueKeys(availableLeagues.map((league) => league.key))
+          }
+          onSavePreset={() => void savePreset()}
+          onShowAll={() => setHiddenLeagueKeys([])}
+          onToggleLeague={(key) =>
+            setHiddenLeagueKeys((current) =>
+              current.includes(key)
+                ? current.filter((leagueKey) => leagueKey !== key)
+                : [...current, key],
+            )
+          }
+          savingPreset={savingPreset}
+        />
+      ) : null}
 
       {hasActiveList && state.loading ? (
         hasDatePreset ? <LeagueEventsSkeleton /> : <SearchResultsSkeleton />

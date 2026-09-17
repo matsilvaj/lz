@@ -13,8 +13,14 @@ import { consumeRateLimit } from "@/lib/security/rate-limit";
 export const dynamic = "force-dynamic";
 
 function normalizeDateParam(value: string | null) {
-  const normalized = normalizeText(value, 16);
-  return /^\d{4}-\d{2}-\d{2}$/u.test(normalized) ? normalized : null;
+  const normalized = normalizeText(value, 40);
+
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
+    return normalized;
+  }
+
+  // Também aceita data com hora e fuso, para respeitar o dia local do usuário.
+  return Number.isNaN(new Date(normalized).getTime()) ? null : normalized;
 }
 
 export async function GET(request: NextRequest) {

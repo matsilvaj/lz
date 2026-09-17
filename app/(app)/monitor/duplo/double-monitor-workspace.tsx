@@ -28,6 +28,7 @@ import {
   mergeCalculatorSelections,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
   buildDuploAnalysis,
@@ -570,15 +571,14 @@ function getSignalRows(
   dateFilter: DateFilter,
   mode: ModeFilter,
   hiddenBookmakers: ReadonlySet<string>,
-  selectedLeagueKeys: ReadonlySet<string>,
+  hiddenLeagueKeys: ReadonlySet<string>,
   sortMode: SortMode = "profit_desc",
 ): SignalRow[] {
   const rows = events
     .filter((event) => isEventInDateFilter(event, dateFilter))
     .filter(
       (event) =>
-        selectedLeagueKeys.size === 0 ||
-        selectedLeagueKeys.has(getLeagueKey(event)),
+        !hiddenLeagueKeys.has(getLeagueKey(event)),
     )
     .map((event) => {
       const filteredEvent = filterEventBookmakers(event, hiddenBookmakers);
@@ -683,12 +683,19 @@ function FiltersDialog({
   availableLeagues,
   counts,
   hiddenBookmakers,
-  selectedLeagueKeys,
+  hiddenLeagueKeys,
   onClose,
-  onClearLeagues,
+  onShowAllLeagues,
+  onHideAllLeagues,
+  onShowAllBookmakers,
+  onHideAllBookmakers,
   onDateFilterChange,
   onModeChange,
+  onClearPreset,
   onReset,
+  onSavePreset,
+  hasPreset,
+  savingPreset,
   onToggleLeague,
   onToggleBookmaker,
 }: {
@@ -698,12 +705,19 @@ function FiltersDialog({
   availableLeagues: LeagueFilterOption[];
   counts: Record<ModeFilter, number>;
   hiddenBookmakers: ReadonlySet<string>;
-  selectedLeagueKeys: ReadonlySet<string>;
+  hiddenLeagueKeys: ReadonlySet<string>;
   onClose: () => void;
-  onClearLeagues: () => void;
+  onShowAllLeagues: () => void;
+  onHideAllLeagues: () => void;
+  onShowAllBookmakers: () => void;
+  onHideAllBookmakers: () => void;
   onDateFilterChange: (filter: DateFilter) => void;
   onModeChange: (mode: ModeFilter) => void;
+  onClearPreset: () => void;
   onReset: () => void;
+  onSavePreset: () => void;
+  hasPreset: boolean;
+  savingPreset: boolean;
   onToggleLeague: (leagueKey: string) => void;
   onToggleBookmaker: (key: string) => void;
 }) {
@@ -786,40 +800,75 @@ function FiltersDialog({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold text-white">Campeonato</h3>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <ModeButton
-                active={selectedLeagueKeys.size === 0}
-                count={counts.all}
-                label="Todos"
-                onClick={onClearLeagues}
-              />
-              {availableLeagues.map((league) => (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-white">Campeonatos</h3>
+              <div className="flex items-center gap-3 text-xs font-semibold">
                 <button
-                  aria-pressed={selectedLeagueKeys.has(league.key)}
-                  className={`inline-flex h-11 min-w-0 items-center justify-center rounded-full border px-4 text-sm font-semibold transition ${
-                    selectedLeagueKeys.has(league.key)
-                      ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
-                      : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  key={league.key}
-                  onClick={() => onToggleLeague(league.key)}
+                  className="text-[var(--text-secondary)] transition hover:text-white"
+                  onClick={onShowAllLeagues}
                   type="button"
                 >
-                  <span className="truncate">{league.name}</span>
+                  Marcar todos
                 </button>
-              ))}
+                <button
+                  className="text-[var(--text-dim)] transition hover:text-white"
+                  onClick={onHideAllLeagues}
+                  type="button"
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {availableLeagues.map((league) => {
+                const visible = !hiddenLeagueKeys.has(league.key);
+
+                return (
+                  <button
+                    aria-pressed={visible}
+                    className={`inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                      visible
+                        ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
+                        : "border-white/10 bg-white/[0.035] text-[var(--text-dim)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                    key={league.key}
+                    onClick={() => onToggleLeague(league.key)}
+                    type="button"
+                  >
+                    {visible ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> : null}
+                    <span className="truncate">{league.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold text-white">Ocultar casas</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-white">Casas</h3>
+              <div className="flex items-center gap-3 text-xs font-semibold">
+                <button
+                  className="text-[var(--text-secondary)] transition hover:text-white"
+                  onClick={onShowAllBookmakers}
+                  type="button"
+                >
+                  Marcar todos
+                </button>
+                <button
+                  className="text-[var(--text-dim)] transition hover:text-white"
+                  onClick={onHideAllBookmakers}
+                  type="button"
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+            </div>
 
             {availableBookmakers.length ? (
               <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                 {availableBookmakers.map((bookmaker) => (
                   <BookmakerToggleButton
-                    active={hiddenBookmakers.has(bookmaker.key)}
+                    active={!hiddenBookmakers.has(bookmaker.key)}
                     key={bookmaker.key}
                     name={bookmaker.name}
                     onClick={() => onToggleBookmaker(bookmaker.key)}
@@ -834,7 +883,27 @@ function FiltersDialog({
           </section>
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+            <button
+              className="text-[var(--text-secondary)] transition hover:text-white disabled:opacity-60"
+              disabled={savingPreset}
+              onClick={onSavePreset}
+              type="button"
+            >
+              Salvar como padrão
+            </button>
+            {hasPreset ? (
+              <button
+                className="text-[var(--text-dim)] transition hover:text-white disabled:opacity-60"
+                disabled={savingPreset}
+                onClick={onClearPreset}
+                type="button"
+              >
+                Remover padrão
+              </button>
+            ) : null}
+          </div>
           <button
             className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] px-6 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.2)] transition hover:brightness-110"
             onClick={onClose}
@@ -1163,7 +1232,7 @@ export function DoubleMonitorWorkspace() {
   const [query, setQuery] = useState("");
   const [activeDateFilter, setActiveDateFilter] = useState<DateFilter>("all");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
-  const [selectedLeagueKeys, setSelectedLeagueKeys] = useState<string[]>([]);
+  const [hiddenLeagueKeys, setHiddenLeagueKeys] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("profit_desc");
@@ -1334,10 +1403,10 @@ export function DoubleMonitorWorkspace() {
     const availableKeys = new Set(availableBookmakers.map((bookmaker) => bookmaker.key));
     return new Set(hiddenBookmakers.filter((key) => availableKeys.has(key)));
   }, [availableBookmakers, hiddenBookmakers]);
-  const activeSelectedLeagueKeys = useMemo(() => {
+  const activeHiddenLeagueKeys = useMemo(() => {
     const availableKeys = new Set(availableLeagues.map((league) => league.key));
-    return new Set(selectedLeagueKeys.filter((key) => availableKeys.has(key)));
-  }, [availableLeagues, selectedLeagueKeys]);
+    return new Set(hiddenLeagueKeys.filter((key) => availableKeys.has(key)));
+  }, [availableLeagues, hiddenLeagueKeys]);
   const rows = useMemo(
     () =>
       getSignalRows(
@@ -1345,14 +1414,14 @@ export function DoubleMonitorWorkspace() {
         activeDateFilter,
         activeMode,
         activeHiddenBookmakers,
-        activeSelectedLeagueKeys,
+        activeHiddenLeagueKeys,
         sortMode,
       ),
     [
       activeHiddenBookmakers,
       activeDateFilter,
       activeMode,
-      activeSelectedLeagueKeys,
+      activeHiddenLeagueKeys,
       sortMode,
       state.events,
     ],
@@ -1371,7 +1440,7 @@ export function DoubleMonitorWorkspace() {
           activeDateFilter,
           mode,
           activeHiddenBookmakers,
-          activeSelectedLeagueKeys,
+          activeHiddenLeagueKeys,
         ).length;
         return accumulator;
       },
@@ -1385,7 +1454,7 @@ export function DoubleMonitorWorkspace() {
   }, [
     activeDateFilter,
     activeHiddenBookmakers,
-    activeSelectedLeagueKeys,
+    activeHiddenLeagueKeys,
     state.events,
   ]);
 
@@ -1406,6 +1475,44 @@ export function DoubleMonitorWorkspace() {
     });
   }
 
+  const screenFilterState = useMemo(
+    () => ({
+      activeDateFilter,
+      activeMode,
+      hiddenBookmakers,
+      hiddenLeagueKeys,
+      sortMode,
+    }),
+    [
+      activeDateFilter,
+      activeMode,
+      hiddenBookmakers,
+      hiddenLeagueKeys,
+      sortMode,
+    ],
+  );
+  const applyScreenFilters = useCallback(
+    (filters: Partial<{
+    activeDateFilter: DateFilter;
+    activeMode: ModeFilter;
+    hiddenBookmakers: string[];
+    hiddenLeagueKeys: string[];
+    sortMode: SortMode;
+  }>) => {
+      if (filters.activeDateFilter) setActiveDateFilter(filters.activeDateFilter);
+      if (filters.activeMode) setActiveMode(filters.activeMode);
+      if (Array.isArray(filters.hiddenBookmakers)) setHiddenBookmakers(filters.hiddenBookmakers);
+      if (Array.isArray(filters.hiddenLeagueKeys)) setHiddenLeagueKeys(filters.hiddenLeagueKeys);
+      if (filters.sortMode) setSortMode(filters.sortMode);
+    },
+    [],
+  );
+  const { clearPreset, hasPreset, savePreset, savingPreset } = useScreenFilters({
+    apply: applyScreenFilters,
+    screen: "monitor-duplo",
+    state: screenFilterState,
+  });
+
   function handleToggleBookmaker(key: string) {
     setHiddenBookmakers((current) =>
       current.includes(key)
@@ -1415,7 +1522,7 @@ export function DoubleMonitorWorkspace() {
   }
 
   function handleToggleLeague(key: string) {
-    setSelectedLeagueKeys((current) =>
+    setHiddenLeagueKeys((current) =>
       current.includes(key)
         ? current.filter((leagueKey) => leagueKey !== key)
         : [...current, key],
@@ -1430,7 +1537,7 @@ export function DoubleMonitorWorkspace() {
     setActiveDateFilter("all");
     setActiveMode("all");
     setHiddenBookmakers([]);
-    setSelectedLeagueKeys([]);
+    setHiddenLeagueKeys([]);
   }
 
   function handleToggleCalculatorRow(row: SignalRow) {
@@ -1489,7 +1596,7 @@ export function DoubleMonitorWorkspace() {
                   activeDateFilter !== "all" ||
                   activeMode !== "all" ||
                   activeHiddenBookmakers.size > 0 ||
-                  activeSelectedLeagueKeys.size > 0
+                  activeHiddenLeagueKeys.size > 0
                     ? "border-[rgba(255,139,187,0.42)] bg-[rgba(255,139,187,0.16)] text-white"
                     : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
                 }`}
@@ -1520,12 +1627,23 @@ export function DoubleMonitorWorkspace() {
           availableLeagues={availableLeagues}
           counts={counts}
           hiddenBookmakers={activeHiddenBookmakers}
-          selectedLeagueKeys={activeSelectedLeagueKeys}
-          onClearLeagues={() => setSelectedLeagueKeys([])}
+          hiddenLeagueKeys={activeHiddenLeagueKeys}
+          onShowAllLeagues={() => setHiddenLeagueKeys([])}
+          onHideAllLeagues={() =>
+            setHiddenLeagueKeys(availableLeagues.map((league) => league.key))
+          }
+          onShowAllBookmakers={() => setHiddenBookmakers([])}
+          onHideAllBookmakers={() =>
+            setHiddenBookmakers(availableBookmakers.map((bookmaker) => bookmaker.key))
+          }
           onClose={() => setFiltersOpen(false)}
           onDateFilterChange={handleDateFilterChange}
           onModeChange={setActiveMode}
+          hasPreset={hasPreset}
+          onClearPreset={() => void clearPreset()}
           onReset={handleResetFilters}
+          onSavePreset={() => void savePreset()}
+          savingPreset={savingPreset}
           onToggleLeague={handleToggleLeague}
           onToggleBookmaker={handleToggleBookmaker}
         />

@@ -20,6 +20,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   useDeferredValue,
   useEffect,
+  useMemo,
   useOptimistic,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
@@ -465,6 +467,39 @@ export function ProceduresWorkspace({
     pagination.totalItems,
   );
 
+  const filtersQuery = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("page");
+    params.delete(PROCEDURE_SHARE_PARAM);
+    return params.toString();
+  }, [searchParams]);
+  const screenFilterState = useMemo(() => ({ query: filtersQuery }), [filtersQuery]);
+  const applyScreenFilters = useCallback(
+    (filters: Partial<{ query: string }>) => {
+      if (typeof filters.query !== "string" || !filters.query) {
+        return;
+      }
+
+      const current = new URLSearchParams(window.location.search);
+      current.delete("page");
+      current.delete(PROCEDURE_SHARE_PARAM);
+
+      if (current.toString()) {
+        return;
+      }
+
+      startTransition(() => {
+        router.replace(`${pathname}?${filters.query}`, { scroll: false });
+      });
+    },
+    [pathname, router],
+  );
+  const { clearPreset, hasPreset, savePreset, savingPreset } = useScreenFilters({
+    apply: applyScreenFilters,
+    screen: "procedimentos",
+    state: screenFilterState,
+  });
+
   function updateRepeatedFilter(key: string, values: string[]) {
     updateParams((params) => {
       setRepeatedParam(params, key, values);
@@ -621,6 +656,27 @@ export function ProceduresWorkspace({
               <span>Limpar filtros</span>
             </button>
           ) : null}
+
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+            <button
+              className="text-[var(--text-secondary)] transition hover:text-white disabled:opacity-60"
+              disabled={savingPreset}
+              onClick={() => void savePreset()}
+              type="button"
+            >
+              Salvar como padrão
+            </button>
+            {hasPreset ? (
+              <button
+                className="text-[var(--text-dim)] transition hover:text-white disabled:opacity-60"
+                disabled={savingPreset}
+                onClick={() => void clearPreset()}
+                type="button"
+              >
+                Remover padrão
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
