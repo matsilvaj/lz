@@ -27,6 +27,7 @@ import {
 import {
   enrichProcedure,
 } from "../../domain/procedimentos/procedimentos.service.js";
+import { calculateAdjustedOdd } from "../../domain/shared/odds.js";
 
 function buildRealProfitSql(alias = "") {
   const prefix = alias ? `${alias}.` : "";
@@ -174,14 +175,6 @@ function normalizeProcedureDetailEntries(entries) {
       operationDate: parseText(entry?.operationDate ?? entry?.data_operacao).trim(),
     }))
     .filter((entry) => entry.resultKey !== "defeat");
-}
-
-function calculateAdjustedOdd(odd, increase) {
-  if (odd <= 1) {
-    return odd;
-  }
-
-  return 1 + (odd - 1) * (1 + increase / 100);
 }
 
 function calculateProcedureEntryPayout(entry, selectedKeys) {

@@ -46,6 +46,7 @@ import {
   type ProcedureShareValues,
 } from "./procedure-share-types";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
+import { calculateAdjustedOdd } from "@/core/domain/shared/odds.js";
 
 type ProcedureType = string;
 type ProcedureGroup = "sports" | "casino" | "expenses";
@@ -359,14 +360,6 @@ function formatDecimalDisplay(value: number, fractionDigits = 2) {
   }
 
   return value.toFixed(fractionDigits).replace(".", ",");
-}
-
-function calculateAdjustedOdd(odd: number, increase: number) {
-  if (odd <= 1) {
-    return odd;
-  }
-
-  return 1 + (odd - 1) * (1 + increase / 100);
 }
 
 function calculateLayReturn(

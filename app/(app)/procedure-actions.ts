@@ -27,6 +27,7 @@ import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
 import { revalidateAppData } from "@/lib/server/revalidate";
+import { calculateAdjustedOdd } from "@/core/domain/shared/odds.js";
 
 function parseText(value: FormDataEntryValue | null) {
   return normalizeText(value, 180);
@@ -297,14 +298,6 @@ function parseProcedureDetails(
 
 function normalizeCurrencyAmount(value: number) {
   return Math.abs(value) < 0.005 ? 0 : value;
-}
-
-function calculateAdjustedOdd(odd: number, increase: number) {
-  if (odd <= 1) {
-    return odd;
-  }
-
-  return 1 + (odd - 1) * (1 + increase / 100);
 }
 
 function calculateEntryBalance(

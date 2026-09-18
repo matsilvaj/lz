@@ -129,3 +129,13 @@ test("cashback nao altera o rateio quando as duas casas oferecem a promocao na d
     [10, 10],
   );
 });
+
+test("odd ajustada aplica o aumento só sobre o lucro e é a mesma em todo o projeto", async () => {
+  const { calculateAdjustedOdd } = await import("../core/domain/shared/odds.js");
+
+  assert.equal(calculateAdjustedOdd(2, 0), 2);
+  assert.equal(calculateAdjustedOdd(2, 10), 2.1);
+  assert.equal(calculateAdjustedOdd(3.5, 20), 4);
+  assert.equal(calculateAdjustedOdd(1, 50), 1);
+  assert.equal(calculateAdjustedOdd(0.8, 50), 0.8);
+});
