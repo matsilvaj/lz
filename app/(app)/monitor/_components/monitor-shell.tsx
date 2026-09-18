@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 type MonitorTab = {
   href: string;
   label: string;
-  value: "odds" | "duplo" | "converter-freebet";
+  value: "odds" | "duplo" | "converter-freebet" | "semanal-bet365";
 };
 
 const monitorTabs: MonitorTab[] = [
@@ -15,6 +15,7 @@ const monitorTabs: MonitorTab[] = [
     label: "Converter Freebet",
     value: "converter-freebet",
   },
+  { href: "/monitor/semanal-bet365", label: "Semanal Bet365", value: "semanal-bet365" },
 ];
 
 export function MonitorShell({

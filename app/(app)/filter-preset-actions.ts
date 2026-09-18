@@ -9,6 +9,7 @@ const FILTER_PRESET_SCREENS = new Set([
   "monitor-odds",
   "monitor-duplo",
   "monitor-converter-freebet",
+  "monitor-semanal-bet365",
   "procedimentos",
   "historico",
 ]);

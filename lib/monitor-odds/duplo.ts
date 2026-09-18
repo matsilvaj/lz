@@ -306,11 +306,14 @@ type BestOddsIndex = {
 
 // Uma unica varredura das odds do jogo. Cada consulta avulsa filtrava o array
 // inteiro, e a analise chegava a fazer isso mais de dez vezes por jogo.
-function indexBestOdds(event: DuploEvent): BestOddsIndex {
+function indexBestOdds(
+  event: DuploEvent,
+  includeOdd: (odd: DuploOddItem) => boolean = () => true,
+): BestOddsIndex {
   const index: BestOddsIndex = { away: {}, draw: null, home: {} };
 
   for (const odd of event.odds) {
-    if (!is1x2Odd(odd) || toFiniteNumber(odd.price) <= 1) {
+    if (!is1x2Odd(odd) || toFiniteNumber(odd.price) <= 1 || !includeOdd(odd)) {
       continue;
     }
 
@@ -362,29 +365,17 @@ export function getBestDuploOpportunities(rawEvent: DuploEvent): DuploOpportunit
     return [];
   }
 
-  const drawLine = toLine(index.draw, selectionLabels.DRAW, "1X2");
   const opportunities: DuploOpportunity[] = [];
 
   for (const mode of duploModes) {
     for (const config of mlConfigs[mode]) {
-      const home = index.home[config.home];
-      const away = index.away[config.away];
-
-      if (!home || !away) {
-        continue;
-      }
-
       pushOpportunity(
         opportunities,
-        buildOpportunity(
-          [
-            toLine(home, selectionLabels.HOME, "1X2"),
-            drawLine,
-            toLine(away, selectionLabels.AWAY, "1X2"),
-          ],
+        buildMlOpportunityFromLegs(
+          index.home[config.home],
+          index.draw,
+          index.away[config.away],
           mode,
-          "ML",
-          "Calculadora ML",
         ),
       );
     }
@@ -393,13 +384,127 @@ export function getBestDuploOpportunities(rawEvent: DuploEvent): DuploOpportunit
   return sortOpportunities(opportunities);
 }
 
-function buildMlOpportunities(event: DuploEvent, mode: DuploMode) {
+export const BET365_BOOKMAKER_KEY = "bet365";
+export const BET365_BOOKMAKER_LABEL = "Bet365";
+// Parâmetro da URL do evento aberto pelo Semanal Bet365.
+export const REQUIRED_BOOKMAKER_PARAM = "casaObrigatoria";
+
+export function isRequiredBookmaker(
+  odd: { bookmaker_name?: string; bookmaker_slug?: string },
+  bookmakerKey: string,
+) {
+  const key = normalizeToken(bookmakerKey);
+  return (
+    normalizeToken(odd.bookmaker_slug ?? "") === key ||
+    normalizeToken(odd.bookmaker_name ?? "") === key
+  );
+}
+
+// Melhor combinacao de cada modo com a casa obrigatoria em pelo menos uma perna.
+// Fixada a perna da casa, o lucro so sobe com as outras odds, entao basta testar a
+// casa em cada perna (casa, empate, fora) com as melhores odds gerais nas demais.
+export function getBestDuploOpportunitiesWithBookmaker(
+  rawEvent: DuploEvent,
+  bookmakerKey: string,
+): DuploOpportunity[] {
+  const event = applyExchangeCommission(rawEvent);
+  const best = indexBestOdds(event);
+  const required = indexBestOdds(event, (odd) => isRequiredBookmaker(odd, bookmakerKey));
   const opportunities: DuploOpportunity[] = [];
 
+  for (const mode of duploModes) {
+    for (const config of mlConfigs[mode]) {
+      const candidates = [
+        [required.home[config.home], best.draw, best.away[config.away]],
+        [best.home[config.home], required.draw, best.away[config.away]],
+        [best.home[config.home], best.draw, required.away[config.away]],
+      ] as const;
+      const modeOpportunities: DuploOpportunity[] = [];
+
+      for (const [home, draw, away] of candidates) {
+        pushOpportunity(
+          modeOpportunities,
+          buildMlOpportunityFromLegs(home, draw, away, mode),
+        );
+      }
+
+      pushOpportunity(opportunities, sortOpportunities(modeOpportunities)[0] ?? null);
+    }
+  }
+
+  return sortOpportunities(opportunities);
+}
+
+function buildMlOpportunityFromLegs(
+  home: DuploOddItem | null | undefined,
+  draw: DuploOddItem | null | undefined,
+  away: DuploOddItem | null | undefined,
+  mode: DuploMode,
+) {
+  if (!home || !draw || !away) {
+    return null;
+  }
+
+  return buildOpportunity(
+    [
+      toLine(home, selectionLabels.HOME, "1X2"),
+      toLine(draw, selectionLabels.DRAW, "1X2"),
+      toLine(away, selectionLabels.AWAY, "1X2"),
+    ],
+    mode,
+    "ML",
+    "Calculadora ML",
+  );
+}
+
+// Garante a melhor odd da casa obrigatória entre as candidatas da perna, mesmo fora do top.
+function withRequiredOdd(
+  odds: DuploOddItem[],
+  candidates: DuploOddItem[],
+  requiredBookmaker: string | null,
+) {
+  if (!requiredBookmaker || odds.some((odd) => isRequiredBookmaker(odd, requiredBookmaker))) {
+    return odds;
+  }
+
+  const required = candidates
+    .filter((odd) => isRequiredBookmaker(odd, requiredBookmaker))
+    .sort(compareByOdd)[0];
+
+  return required ? [...odds, required] : odds;
+}
+
+function buildMlOpportunities(
+  event: DuploEvent,
+  mode: DuploMode,
+  requiredBookmaker: string | null = null,
+) {
+  const opportunities: DuploOpportunity[] = [];
+  const legCandidates = (selection: DuploSelection, category?: DuploPaCategory) =>
+    event.odds.filter(
+      (odd) =>
+        is1x2Odd(odd) &&
+        getSelection(odd.selection) === selection &&
+        (!category || getSafePaCategory(odd.pa_category) === category) &&
+        toFiniteNumber(odd.price) > 1,
+    );
+
   for (const config of mlConfigs[mode]) {
-    const homeOdds = get1x2Odds(event, "HOME", config.home);
-    const drawOdds = getBest1x2Odds(event, "DRAW");
-    const awayOdds = get1x2Odds(event, "AWAY", config.away);
+    const homeOdds = withRequiredOdd(
+      get1x2Odds(event, "HOME", config.home),
+      legCandidates("HOME", config.home),
+      requiredBookmaker,
+    );
+    const drawOdds = withRequiredOdd(
+      getBest1x2Odds(event, "DRAW"),
+      legCandidates("DRAW"),
+      requiredBookmaker,
+    );
+    const awayOdds = withRequiredOdd(
+      get1x2Odds(event, "AWAY", config.away),
+      legCandidates("AWAY", config.away),
+      requiredBookmaker,
+    );
 
     for (const [home, draw, away] of combineThree(homeOdds, drawOdds, awayOdds)) {
       pushOpportunity(
@@ -418,7 +523,18 @@ function buildMlOpportunities(event: DuploEvent, mode: DuploMode) {
     }
   }
 
-  return sortOpportunities(opportunities);
+  return sortOpportunities(
+    requiredBookmaker
+      ? opportunities.filter((opportunity) =>
+          opportunity.lines.some((line) =>
+            isRequiredBookmaker(
+              { bookmaker_name: line.bookmakerName, bookmaker_slug: line.bookmakerSlug },
+              requiredBookmaker,
+            ),
+          ),
+        )
+      : opportunities,
+  );
 }
 
 // A comissão entra antes do ranking: odds e cálculos passam a usar o valor líquido.
@@ -444,11 +560,15 @@ export function applyExchangeCommission<T extends DuploEvent>(event: T): T {
 
 // Analise completa, com as alternativas alem da melhor combinacao. Custa ~1 ms
 // para um jogo, entao serve o detalhe; as listas usam getBestDuploOpportunities.
-export function buildDuploAnalysis(rawEvent: DuploEvent): DuploAnalysis {
+// Com casa obrigatória (Semanal Bet365), só entram combinações com ela em alguma perna.
+export function buildDuploAnalysis(
+  rawEvent: DuploEvent,
+  requiredBookmaker: string | null = null,
+): DuploAnalysis {
   const event = applyExchangeCommission(rawEvent);
-  const semPaMlTop = buildMlOpportunities(event, "sem_pa").slice(0, 5);
-  const paSingleTop = buildMlOpportunities(event, "pa_um_lado").slice(0, 5);
-  const paBothTop = buildMlOpportunities(event, "pa_dois_lados").slice(0, 5);
+  const semPaMlTop = buildMlOpportunities(event, "sem_pa", requiredBookmaker).slice(0, 5);
+  const paSingleTop = buildMlOpportunities(event, "pa_um_lado", requiredBookmaker).slice(0, 5);
+  const paBothTop = buildMlOpportunities(event, "pa_dois_lados", requiredBookmaker).slice(0, 5);
   const all = sortOpportunities([
     ...semPaMlTop,
     ...paSingleTop,

@@ -40,7 +40,12 @@ import { getFavoriteLeagueKey, sortByFavorites, sortByTrending } from "@/lib/mon
 import {
   formatDuploPercent,
   formatDuploBookmakerName,
+  BET365_BOOKMAKER_KEY,
+  BET365_BOOKMAKER_LABEL,
+  REQUIRED_BOOKMAKER_PARAM,
   getBestDuploOpportunities,
+  getBestDuploOpportunitiesWithBookmaker,
+  isRequiredBookmaker,
   getDuploModeLabel,
   type DuploEvent,
   type DuploOddItem,
@@ -585,6 +590,7 @@ function getAnalyzedEvents(
   dateFilter: DateFilter,
   hiddenBookmakers: ReadonlySet<string>,
   hiddenLeagueKeys: ReadonlySet<string>,
+  requiredBookmaker: string | null,
 ): AnalyzedEvent[] {
   const analyzed: AnalyzedEvent[] = [];
 
@@ -601,7 +607,9 @@ function getAnalyzedEvents(
 
     analyzed.push({
       event: filteredEvent,
-      opportunities: getBestDuploOpportunities(filteredEvent),
+      opportunities: requiredBookmaker
+        ? getBestDuploOpportunitiesWithBookmaker(filteredEvent, requiredBookmaker)
+        : getBestDuploOpportunities(filteredEvent),
     });
   }
 
@@ -1153,10 +1161,12 @@ function SortMenu({
 }
 
 function OpportunityLineMini({
+  highlighted = false,
   line,
   onToggle,
   selected,
 }: {
+  highlighted?: boolean;
   line: DuploOpportunity["lines"][number];
   onToggle: () => void;
   selected: boolean;
@@ -1167,7 +1177,9 @@ function OpportunityLineMini({
       className={`pointer-events-auto min-w-0 cursor-pointer rounded-2xl border px-3 py-2.5 transition ${
         selected
           ? "border-[rgba(191,219,254,0.66)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_18px_rgba(147,197,253,0.12)]"
-          : "border-white/8 bg-white/[0.035] hover:border-[rgba(255,139,187,0.24)] hover:bg-white/[0.055]"
+          : highlighted
+            ? "border-[rgba(250,204,21,0.45)] bg-[rgba(250,204,21,0.08)] hover:border-[rgba(250,204,21,0.6)]"
+            : "border-white/8 bg-white/[0.035] hover:border-[rgba(255,139,187,0.24)] hover:bg-white/[0.055]"
       }`}
       onClick={(event) => {
         event.stopPropagation();
@@ -1210,6 +1222,7 @@ function OpportunityLineMini({
 }
 
 function SignalCard({
+  highlightBookmaker,
   onToggleCalculator,
   row,
   selectedIds,
@@ -1218,6 +1231,7 @@ function SignalCard({
   trending,
   onToggleFavorite,
 }: {
+  highlightBookmaker: string | null;
   onToggleCalculator: (row: SignalRow) => void;
   row: SignalRow;
   selectedIds: ReadonlySet<string>;
@@ -1251,7 +1265,11 @@ function SignalCard({
       <Link
         aria-label={`Abrir análise de ${teams.label}`}
         className="absolute inset-0 z-0 rounded-[24px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        href={`/monitor/odds/${encodeURIComponent(event.fixture_id)}`}
+        href={`/monitor/odds/${encodeURIComponent(event.fixture_id)}${
+          highlightBookmaker
+            ? `?${REQUIRED_BOOKMAKER_PARAM}=${encodeURIComponent(highlightBookmaker)}`
+            : ""
+        }`}
       />
 
       <div className="pointer-events-none relative z-10 grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(460px,1.35fr)_150px] lg:items-center">
@@ -1288,6 +1306,13 @@ function SignalCard({
         <div className="grid gap-2 md:grid-cols-3">
           {opportunity.lines.map((line, index) => (
             <OpportunityLineMini
+              highlighted={Boolean(
+                highlightBookmaker &&
+                  isRequiredBookmaker(
+                    { bookmaker_name: line.bookmakerName, bookmaker_slug: line.bookmakerSlug },
+                    highlightBookmaker,
+                  ),
+              )}
               key={`${line.bookmakerSlug}-${line.selectionLabel}-${index}`}
               line={line}
               onToggle={() => onToggleCalculator(row)}
@@ -1332,7 +1357,14 @@ function SignalSkeleton() {
   );
 }
 
-export function DoubleMonitorWorkspace() {
+export type DoubleMonitorVariant = "duplo" | "semanal-bet365";
+
+export function DoubleMonitorWorkspace({
+  variant = "duplo",
+}: {
+  variant?: DoubleMonitorVariant;
+}) {
+  const requiredBookmaker = variant === "semanal-bet365" ? BET365_BOOKMAKER_KEY : null;
   const [query, setQuery] = useState("");
   const [activeDateFilter, setActiveDateFilter] = useState<DateFilter>("all");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
@@ -1490,8 +1522,24 @@ export function DoubleMonitorWorkspace() {
     [activeDateFilter, state.events],
   );
   const availableBookmakers = useMemo(
-    () => getAvailableBookmakers(dateFilteredEvents),
-    [dateFilteredEvents],
+    () =>
+      getAvailableBookmakers(dateFilteredEvents).filter(
+        (bookmaker) =>
+          !requiredBookmaker ||
+          !isRequiredBookmaker(
+            { bookmaker_name: bookmaker.name, bookmaker_slug: bookmaker.key },
+            requiredBookmaker,
+          ),
+      ),
+    [dateFilteredEvents, requiredBookmaker],
+  );
+  const hasRequiredBookmakerOdds = useMemo(
+    () =>
+      !requiredBookmaker ||
+      state.events.some((event) =>
+        event.odds.some((odd) => isRequiredBookmaker(odd, requiredBookmaker)),
+      ),
+    [requiredBookmaker, state.events],
   );
   const availableLeagues = useMemo(
     () => getAvailableLeagues(dateFilteredEvents),
@@ -1512,11 +1560,13 @@ export function DoubleMonitorWorkspace() {
         activeDateFilter,
         activeHiddenBookmakers,
         activeHiddenLeagueKeys,
+        requiredBookmaker,
       ),
     [
       activeDateFilter,
       activeHiddenBookmakers,
       activeHiddenLeagueKeys,
+      requiredBookmaker,
       state.events,
     ],
   );
@@ -1674,7 +1724,7 @@ export function DoubleMonitorWorkspace() {
   );
   const { clearPreset, hasPreset, savePreset, savingPreset } = useScreenFilters({
     apply: applyScreenFilters,
-    screen: "monitor-duplo",
+    screen: variant === "semanal-bet365" ? "monitor-semanal-bet365" : "monitor-duplo",
     state: screenFilterState,
   });
 
@@ -1839,6 +1889,7 @@ export function DoubleMonitorWorkspace() {
                   onToggleFavorite={() => toggleGame(row.event.fixture_id)}
                   key={row.event.fixture_id}
                   onToggleCalculator={handleToggleCalculatorRow}
+                  highlightBookmaker={requiredBookmaker}
                   row={row}
                   selectedIds={selectedCalculatorIds}
                   showRelativeDateLabel={activeDateFilter === "all"}
@@ -1846,7 +1897,9 @@ export function DoubleMonitorWorkspace() {
               ))
             ) : (
               <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5 text-sm text-[var(--text-muted)]">
-                Nenhum sinal encontrado para este filtro.
+                {hasRequiredBookmakerOdds
+                  ? "Nenhum sinal encontrado para este filtro."
+                  : "Sem odds da Bet365 no momento. Os duplos aparecem aqui assim que a Bet365 tiver odds no monitor."}
               </div>
             )}
           </div>
@@ -1869,6 +1922,7 @@ export function DoubleMonitorWorkspace() {
 
       <CalculatorSelectionDock
         onClear={() => setCalculatorSelections([])}
+        requiredHouse={requiredBookmaker ? BET365_BOOKMAKER_LABEL : null}
         onRemove={handleRemoveCalculatorSelection}
         selections={calculatorSelections}
       />

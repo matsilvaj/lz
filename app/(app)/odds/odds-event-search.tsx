@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   ArrowUpDown,
+  CalendarCheck,
   Check,
   ChevronDown,
   Flame,
@@ -48,8 +49,11 @@ import {
 } from "@/lib/monitor-odds/use-status-feed";
 import {
   applyExchangeCommission,
+  BET365_BOOKMAKER_KEY,
+  BET365_BOOKMAKER_LABEL,
   buildDuploAnalysis,
   formatDuploPercent,
+  REQUIRED_BOOKMAKER_PARAM,
   type DuploOpportunity,
 } from "@/lib/monitor-odds/duplo";
 import {
@@ -2629,21 +2633,28 @@ function DuploEventAnalysis({
   conversionContext,
   event,
   onToggleOpportunity,
+  requiredBookmaker = null,
   selectedIds,
 }: {
   conversionContext: CalculatorConversionContext | null;
   event: OddsEvent;
   onToggleOpportunity: (opportunity: DuploOpportunity) => void;
+  requiredBookmaker?: string | null;
   selectedIds: ReadonlySet<string>;
 }) {
   // So refaz quando o evento muda de verdade (odds novas ou filtro de casas).
   // Solto no corpo do componente, isso rodava a cada renderizacao.
-  const analysis = useMemo(() => buildDuploAnalysis(event), [event]);
+  const analysis = useMemo(
+    () => buildDuploAnalysis(event, requiredBookmaker),
+    [event, requiredBookmaker],
+  );
 
   if (!analysis.all.length) {
     return (
       <section className="rounded-[22px] border border-white/10 bg-white/[0.025] p-4 text-sm text-[var(--text-muted)]">
-        Sem sinais de duplo suficientes para este evento.
+        {requiredBookmaker
+          ? `Sem combinações com a ${BET365_BOOKMAKER_LABEL} neste evento.`
+          : "Sem sinais de duplo suficientes para este evento."}
       </section>
     );
   }
@@ -2684,9 +2695,16 @@ export function OddsEventDetails({
     () => parseConversionContextParams(searchParams),
     [searchParams],
   );
+  const requiredBookmaker = conversionContext
+    ? null
+    : searchParams.get(REQUIRED_BOOKMAKER_PARAM) === BET365_BOOKMAKER_KEY
+      ? BET365_BOOKMAKER_KEY
+      : null;
   const effectiveBackHref = conversionContext
     ? "/monitor/converter-freebet"
-    : backHref;
+    : requiredBookmaker
+      ? "/monitor/semanal-bet365"
+      : backHref;
   const [currentEventState, setCurrentEvent] = useState(() => ({
     event,
     fixtureId: event.fixture_id,
@@ -2943,6 +2961,22 @@ export function OddsEventDetails({
               </div>
             ) : null}
 
+            {requiredBookmaker ? (
+              <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-[rgba(250,204,21,0.35)] bg-[rgba(250,204,21,0.08)] px-3 py-2 sm:mr-1">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(250,204,21,0.35)] bg-[rgba(250,204,21,0.14)] text-yellow-300">
+                  <CalendarCheck aria-hidden="true" className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white">
+                    Semanal {BET365_BOOKMAKER_LABEL}
+                  </span>
+                  <span className="block truncate text-xs text-[var(--text-secondary)]">
+                    Só combinações com a {BET365_BOOKMAKER_LABEL}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+
             <Link
               className="lz-button-secondary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition sm:w-auto"
               href={effectiveBackHref}
@@ -2996,6 +3030,7 @@ export function OddsEventDetails({
         <DuploEventAnalysis
           conversionContext={conversionContext}
           event={filteredCurrentEvent}
+          requiredBookmaker={requiredBookmaker}
           onToggleOpportunity={handleToggleCalculatorOpportunity}
           selectedIds={selectedCalculatorIds}
         />
@@ -3045,6 +3080,7 @@ export function OddsEventDetails({
       <CalculatorSelectionDock
         conversionContext={conversionContext}
         onClear={() => setCalculatorSelections([])}
+        requiredHouse={requiredBookmaker ? BET365_BOOKMAKER_LABEL : null}
         onRemove={handleRemoveCalculatorSelection}
         selections={calculatorSelections}
       />

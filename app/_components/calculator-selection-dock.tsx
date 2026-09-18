@@ -1,7 +1,7 @@
 "use client";
 
 import { calculateSurebet } from "@/core";
-import { ArrowRight, Calculator, X } from "lucide-react";
+import { ArrowRight, Calculator, ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -308,21 +308,53 @@ function getConversionSelectionHint(
   return null;
 }
 
+// Preferência do usuário: o pop-up fica recolhido até ele expandir de novo.
+const DOCK_MINIMIZED_STORAGE_KEY = "lz:calculator-dock:minimized";
+
+function readDockMinimized() {
+  try {
+    return window.localStorage.getItem(DOCK_MINIMIZED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDockMinimized(minimized: boolean) {
+  try {
+    window.localStorage.setItem(DOCK_MINIMIZED_STORAGE_KEY, minimized ? "1" : "0");
+  } catch {
+    // Sem storage o recolher vale só nesta página.
+  }
+}
+
+function normalizeHouseKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 export function CalculatorSelectionDock({
   conversionContext,
   onClear,
   onRemove,
+  requiredHouse = null,
   selections,
 }: {
   conversionContext?: CalculatorConversionContext | null;
   onClear: () => void;
   onRemove: (id: string) => void;
+  // Semanal Bet365: a calculadora só abre com pelo menos uma odd dessa casa.
+  requiredHouse?: string | null;
   selections: CalculatorSelectionLine[];
 }) {
   const [dockVisible, setDockVisible] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [renderDock, setRenderDock] = useState(false);
   const [renderPanel, setRenderPanel] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+  const minimizedRef = useRef(false);
   const [displaySelections, setDisplaySelections] = useState<
     CalculatorSelectionLine[]
   >([]);
@@ -344,12 +376,16 @@ export function CalculatorSelectionDock({
   const conversionSelectionReady =
     !conversionContext ||
     (orderedVisibleSelections.length === 3 && hasFreebetSelection);
-  const conversionSelectionHint = getConversionSelectionHint(
-    orderedVisibleSelections,
-    conversionContext,
-  );
+  const hasRequiredHouse =
+    !requiredHouse ||
+    orderedVisibleSelections.some(
+      (selection) => normalizeHouseKey(selection.house) === normalizeHouseKey(requiredHouse),
+    );
+  const conversionSelectionHint =
+    getConversionSelectionHint(orderedVisibleSelections, conversionContext) ??
+    (hasRequiredHouse ? null : `Inclua pelo menos uma odd da ${requiredHouse}.`);
   const canOpenCalculator =
-    orderedVisibleSelections.length >= 2 && conversionSelectionReady;
+    orderedVisibleSelections.length >= 2 && conversionSelectionReady && hasRequiredHouse;
 
   useEffect(() => {
     return () => {
@@ -388,12 +424,16 @@ export function CalculatorSelectionDock({
         return;
       }
 
+      const keepMinimized = readDockMinimized();
+
+      minimizedRef.current = keepMinimized;
+      setMinimized(keepMinimized);
       setDisplaySelections(selections);
       setRenderDock(true);
-      setRenderPanel(true);
+      setRenderPanel(!keepMinimized);
       enterAnimationFrame = window.requestAnimationFrame(() => {
         setDockVisible(true);
-        setExpanded(true);
+        setExpanded(!keepMinimized);
       });
     });
 
@@ -435,6 +475,23 @@ export function CalculatorSelectionDock({
     calculatorWindow.focus();
   }
 
+  function setDockMinimized(next: boolean) {
+    minimizedRef.current = next;
+    writeDockMinimized(next);
+    setMinimized(next);
+
+    if (next) {
+      setExpanded(false);
+      setRenderPanel(false);
+      return;
+    }
+
+    setRenderPanel(true);
+    window.requestAnimationFrame(() => {
+      setExpanded(true);
+    });
+  }
+
   function togglePanel() {
     if (closeTimeoutRef.current !== null) {
       window.clearTimeout(closeTimeoutRef.current);
@@ -453,6 +510,31 @@ export function CalculatorSelectionDock({
     window.requestAnimationFrame(() => {
       setExpanded(true);
     });
+  }
+
+  if (minimized) {
+    return createPortal(
+      <button
+        aria-label="Expandir odds selecionadas"
+        className={`fixed bottom-4 right-4 z-[160] inline-flex h-10 items-center gap-2 rounded-full border border-[rgba(255,139,187,0.45)] bg-[rgba(18,5,13,0.94)] pl-3 pr-3.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-200 ease-out hover:border-[rgba(255,139,187,0.7)] md:right-6 ${
+          dockVisible ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+        }`}
+        onClick={() => setDockMinimized(false)}
+        type="button"
+      >
+        <Calculator aria-hidden="true" className="h-4 w-4 text-[#ff9bbd]" />
+        <span>
+          {visibleSelections.length} {visibleSelections.length === 1 ? "odd" : "odds"}
+        </span>
+        {profitPercent !== null ? (
+          <span className={`tabular-nums ${getProfitClassName(profitPercent)}`}>
+            {formatProfitPercent(profitPercent)}
+          </span>
+        ) : null}
+        <ChevronUp aria-hidden="true" className="h-4 w-4 text-[var(--text-secondary)]" />
+      </button>,
+      document.body,
+    );
   }
 
   return createPortal(
@@ -475,13 +557,24 @@ export function CalculatorSelectionDock({
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-dim)]">
               Calculadora
             </span>
-            <button
-              className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-              onClick={onClear}
-              type="button"
-            >
-              Limpar
-            </button>
+            <span className="flex items-center gap-1.5">
+              <button
+                className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+                onClick={onClear}
+                type="button"
+              >
+                Limpar
+              </button>
+              <button
+                aria-label="Recolher calculadora"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setDockMinimized(true)}
+                title="Recolher"
+                type="button"
+              >
+                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+            </span>
           </div>
 
           <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">

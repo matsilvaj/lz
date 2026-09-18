@@ -529,3 +529,19 @@ test("odds snapshots never go through the Next data cache", () => {
   assert.match(oddsRepository, /const ODDS_SNAPSHOT_CACHE_MAX_ENTRIES = \d+;/);
   assert.match(oddsRepository, /oddsSnapshotsInFlight/);
 });
+
+test("semanal bet365 reuses the duplo monitor with bet365 required in a leg", () => {
+  const semanalPage = readFileSync(
+    new URL("../app/(app)/monitor/semanal-bet365/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(semanalPage, /<DoubleMonitorWorkspace variant="semanal-bet365" \/>/);
+  assert.match(duploEngine, /export function getBestDuploOpportunitiesWithBookmaker\(/);
+  // A casa obrigatoria e testada em cada perna, com as melhores odds nas demais.
+  assert.match(duploEngine, /\[required\.home\[config\.home\], best\.draw, best\.away\[config\.away\]\]/);
+  assert.match(duploEngine, /\[best\.home\[config\.home\], required\.draw, best\.away\[config\.away\]\]/);
+  assert.match(duploEngine, /\[best\.home\[config\.home\], best\.draw, required\.away\[config\.away\]\]/);
+  assert.match(doubleMonitorUi, /getBestDuploOpportunitiesWithBookmaker\(filteredEvent, requiredBookmaker\)/);
+  assert.match(doubleMonitorUi, /"monitor-semanal-bet365"/);
+});
