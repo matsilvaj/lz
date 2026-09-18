@@ -33,8 +33,10 @@ import {
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
+import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
+  applyExchangeCommission,
   buildDuploAnalysis,
   formatDuploPercent,
   type DuploOpportunity,
@@ -43,6 +45,7 @@ import {
   formatCompetitionName,
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
+import { getBookmakerCommission } from "@/lib/monitor-odds/exchange";
 import {
   buildFreebetConversionAnalysis,
   formatFreebetConversionPercent,
@@ -75,6 +78,8 @@ type OddsFeedItem = {
   pa_category: string;
   confidence_score: number | null;
   odd_updated_at: string | null;
+  commission_percent?: number;
+  raw_price?: number;
 };
 
 type OddsSnapshotItem = Pick<
@@ -1332,7 +1337,9 @@ function getOddCalculatorSelection(
       odd.pa_category,
     ]),
     meta: getCalculatorMeta(marketLabel),
-    odd: odd.price,
+    commission:
+      odd.commission_percent ?? getBookmakerCommission(odd.bookmaker_name, odd.bookmaker_slug),
+    odd: odd.raw_price ?? odd.price,
     pa: odd.pa_category === "COM_PA",
     selectionKey: lineSelectionLabel,
     selectionLabel: lineSelectionLabel,
@@ -1361,7 +1368,8 @@ function getOpportunityCalculatorSelections(
         line.paCategory,
       ]),
       meta: getCalculatorMeta(line.marketLabel),
-      odd: line.odd,
+      commission: line.commission,
+      odd: line.rawOdd,
       pa: line.paCategory === "COM_PA",
       selectionKey: line.selectionLabel,
       selectionLabel: line.selectionLabel,
@@ -2077,6 +2085,12 @@ function OddsTable({
                   >
                     {row.bookmakerName}
                   </BookmakerEventLink>
+                  <ExchangeCommissionTag
+                    commission={
+                      Object.values(row.odds).find((odd) => odd?.commission_percent)
+                        ?.commission_percent ?? 0
+                    }
+                  />
                   {freebetRow ? (
                     <>
                       <Gift
@@ -2459,6 +2473,7 @@ function DuploLineBadge({
               PA
             </span>
           ) : null}
+          <ExchangeCommissionTag commission={line.commission} rawOdd={line.rawOdd} />
         </span>
         <span className="shrink-0 text-sm font-semibold text-white">
           {line.odd.toFixed(3)}
@@ -2577,7 +2592,8 @@ function getConversionCalculatorSelections(
       line.paCategory,
       line.role,
     ]),
-    odd: line.odd,
+    commission: line.commission,
+    odd: line.rawOdd,
     pa: line.paCategory === "COM_PA",
     selectionKey: line.selectionLabel,
     selectionLabel: line.selectionLabel,
@@ -2785,6 +2801,10 @@ export function OddsEventDetails({
   const filteredCurrentEvent = useMemo(
     () => filterEventBookmakers(currentEvent, activeHiddenBookmakers),
     [activeHiddenBookmakers, currentEvent],
+  );
+  const tableEvent = useMemo(
+    () => applyExchangeCommission(filteredCurrentEvent),
+    [filteredCurrentEvent],
   );
   const selectedCalculatorIds = useMemo(
     () => new Set(calculatorSelections.map((selection) => selection.id)),
@@ -3062,7 +3082,7 @@ export function OddsEventDetails({
         <OddsTable
           category="COM_PA"
           conversionContext={conversionContext}
-          event={filteredCurrentEvent}
+          event={tableEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
               getOddCalculatorSelection(
@@ -3081,7 +3101,7 @@ export function OddsEventDetails({
         <OddsTable
           category="SEM_PA"
           conversionContext={conversionContext}
-          event={filteredCurrentEvent}
+          event={tableEvent}
           isOddSelected={(odd) =>
             selectedCalculatorIds.has(
               getOddCalculatorSelection(

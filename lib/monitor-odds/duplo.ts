@@ -1,5 +1,7 @@
 import { calculateSurebet } from "@/core";
 
+import { getBookmakerCommission, getNetOdd } from "./exchange";
+
 export type DuploPaCategory = "SEM_PA" | "COM_PA";
 export type DuploSelection = "HOME" | "DRAW" | "AWAY";
 export type DuploMode = "sem_pa" | "pa_um_lado" | "pa_dois_lados";
@@ -16,6 +18,8 @@ export type DuploOddItem = {
   pa_category: string;
   price: number;
   selection: string;
+  commission_percent?: number;
+  raw_price?: number;
 };
 
 export type DuploEvent = {
@@ -34,8 +38,10 @@ export type DuploOpportunityLine = {
   bookmakerSlug: string;
   eventUrl: string | null;
   marketLabel: string;
+  commission: number;
   odd: number;
   paCategory: DuploPaCategory;
+  rawOdd: number;
   selectionLabel: string;
 };
 
@@ -262,8 +268,10 @@ function toLine(
     bookmakerName: formatDuploBookmakerName(odd.bookmaker_name),
     bookmakerSlug: odd.bookmaker_slug,
     eventUrl: odd.bookmaker_event_url,
+    commission: odd.commission_percent ?? 0,
     marketLabel,
     odd: odd.price,
+    rawOdd: odd.raw_price ?? odd.price,
     paCategory,
     selectionLabel,
   };
@@ -455,7 +463,29 @@ function buildDcOpportunities(event: DuploEvent, mode: DuploMode) {
   return sortOpportunities(opportunities);
 }
 
-export function buildDuploAnalysis(event: DuploEvent): DuploAnalysis {
+// A comissão entra antes do ranking: odds e cálculos passam a usar o valor líquido.
+export function applyExchangeCommission<T extends DuploEvent>(event: T): T {
+  return {
+    ...event,
+    odds: event.odds.map((odd) => {
+      const commission = getBookmakerCommission(odd.bookmaker_name, odd.bookmaker_slug);
+
+      if (!commission || odd.commission_percent !== undefined) {
+        return odd;
+      }
+
+      return {
+        ...odd,
+        commission_percent: commission,
+        price: getNetOdd(odd.price, commission),
+        raw_price: odd.price,
+      };
+    }),
+  };
+}
+
+export function buildDuploAnalysis(rawEvent: DuploEvent): DuploAnalysis {
+  const event = applyExchangeCommission(rawEvent);
   const semPaMlTop = buildMlOpportunities(event, "sem_pa").slice(0, 5);
   const semPaDcTop = buildDcOpportunities(event, "sem_pa").slice(0, 5);
   const paSingleTop = sortOpportunities([

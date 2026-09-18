@@ -30,6 +30,7 @@ import {
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
+import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import { LzSelect } from "../../_components/lz-select";
 import { formatFreebetCount } from "../../_components/ui";
@@ -804,7 +805,8 @@ function getOpportunityCalculatorSelections(
       line.paCategory,
       line.role,
     ]),
-    odd: line.odd,
+    commission: line.commission,
+    odd: line.rawOdd,
     pa: line.paCategory === "COM_PA",
     selectionKey: line.selectionLabel,
     selectionLabel: line.selectionLabel,
@@ -1586,6 +1588,7 @@ function OpportunityLineMini({
               PA
             </span>
           ) : null}
+          <ExchangeCommissionTag commission={line.commission} rawOdd={line.rawOdd} />
           {line.role === "freebet" ? (
             <span className="shrink-0 rounded-full border border-[rgba(255,255,255,0.12)] bg-white/[0.045] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-secondary)]">
               Freebet

@@ -29,6 +29,7 @@ import {
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
+import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import {
   buildDuploAnalysis,
@@ -428,7 +429,8 @@ function getOpportunityCalculatorSelections(
       line.paCategory,
     ]),
     meta: getCalculatorMeta(line.marketLabel),
-    odd: line.odd,
+    commission: line.commission,
+    odd: line.rawOdd,
     pa: line.paCategory === "COM_PA",
     selectionKey: line.selectionLabel,
     selectionLabel: line.selectionLabel,
@@ -1109,6 +1111,7 @@ function OpportunityLineMini({
               PA
             </span>
           ) : null}
+          <ExchangeCommissionTag commission={line.commission} rawOdd={line.rawOdd} />
         </span>
         <span className="text-sm font-semibold text-white">
           {line.odd.toFixed(3)}

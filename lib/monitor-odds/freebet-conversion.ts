@@ -1,5 +1,6 @@
 import { calculateSurebet } from "@/core";
 import {
+  applyExchangeCommission,
   formatDuploBookmakerName,
   type DuploEvent,
   type DuploOddItem,
@@ -19,10 +20,12 @@ export type FreebetConversionInput = {
 export type FreebetConversionLine = {
   bookmakerName: string;
   bookmakerSlug: string;
+  commission: number;
   eventUrl: string | null;
   marketLabel: string;
   odd: number;
   paCategory: FreebetConversionPaCategory;
+  rawOdd: number;
   role: "freebet" | "protection";
   selectionLabel: string;
   selectionKey: FreebetConversionSelection;
@@ -200,9 +203,11 @@ function toLine(
   return {
     bookmakerName: formatDuploBookmakerName(odd.bookmaker_name),
     bookmakerSlug: odd.bookmaker_slug,
+    commission: odd.commission_percent ?? 0,
     eventUrl: odd.bookmaker_event_url,
     marketLabel: "1X2",
     odd: odd.price,
+    rawOdd: odd.raw_price ?? odd.price,
     paCategory: getSafePaCategory(odd.pa_category),
     role,
     selectionKey: selection,
@@ -289,9 +294,10 @@ function buildOpportunity(
 }
 
 export function buildFreebetConversionAnalysis(
-  event: DuploEvent,
+  rawEvent: DuploEvent,
   input: FreebetConversionInput,
 ): FreebetConversionAnalysis {
+  const event = applyExchangeCommission(rawEvent);
   const freebetHouse = formatDuploBookmakerName(input.freebetHouse);
   const freebetValue = toFiniteNumber(input.freebetValue);
   const minOdd = Math.max(1.01, toFiniteNumber(input.minOdd) || 1.5);

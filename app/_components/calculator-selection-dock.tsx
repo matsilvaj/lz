@@ -5,12 +5,15 @@ import { ArrowRight, Calculator, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import {
   encodeCalculatorPayload,
   type SharedCalculatorPayload,
 } from "@/lib/calculator-share";
+import { getNetOdd } from "@/lib/monitor-odds/exchange";
 
 export type CalculatorSelectionLine = {
+  commission?: number;
   eventName?: string;
   freebet?: boolean;
   house: string;
@@ -129,7 +132,7 @@ function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCa
     lines: lines.map((selection, index) => ({
       aumento_percentual: "0",
       cashback_percentual: "0",
-      comissao_percentual: "0",
+      comissao_percentual: String(selection.commission ?? 0),
       freebet: Boolean(selection.freebet),
       house: selection.house,
       odd: formatCalculatorOdd(selection.odd),
@@ -170,6 +173,7 @@ function getDockProfitPercent(
   try {
     const calculation = calculateSurebet(
       lines.map((selection, index) => ({
+        comissao_percentual: selection.commission ?? 0,
         freebet: Boolean(selection.freebet),
         odd: selection.odd,
         stake:
@@ -491,8 +495,12 @@ export function CalculatorSelectionDock({
                       {selection.house}
                     </span>
                     <span className="shrink-0 text-xs font-semibold text-[rgb(191,219,254)]">
-                      {formatCalculatorOdd(selection.odd)}
+                      {formatCalculatorOdd(getNetOdd(selection.odd, selection.commission ?? 0))}
                     </span>
+                    <ExchangeCommissionTag
+                      commission={selection.commission ?? 0}
+                      rawOdd={selection.odd}
+                    />
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-2">
                     <span className="truncate text-[11px] font-medium text-[var(--text-muted)]">

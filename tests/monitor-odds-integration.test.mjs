@@ -247,8 +247,9 @@ test("monitor odds snapshots cache is scoped by odds version", () => {
   );
   assert.match(
     oddsRepository,
-    /getCachedOddsSnapshotsByFixtureIds\(\s*safeFixtureIds,\s*version,\s*\)/,
+    /getCachedOddsSnapshotsByFixtureIds\(batch, version\)/,
   );
+  assert.match(oddsRepository, /ODDS_SNAPSHOT_CACHE_BATCH_SIZE/);
 });
 
 test("monitor odds UI renders events before refreshing odds", () => {

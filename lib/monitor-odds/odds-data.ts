@@ -35,6 +35,7 @@ const MAX_DATE_RANGE_PAGES = 8;
 const DEFAULT_DATE_RANGE_EVENT_LIMIT = 150;
 const MAX_DATE_RANGE_DAYS = 3;
 const MAX_ODDS_FIXTURE_IDS = 200;
+const ODDS_SNAPSHOT_CACHE_BATCH_SIZE = 25;
 const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
 const EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS = 60;
 const ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3;
@@ -820,10 +821,18 @@ export async function getOddsSnapshotsByFixtureIds(
   }
 
   const version = cleanCachePart(oddsVersion ?? "unknown");
-  const snapshots = await getCachedOddsSnapshotsByFixtureIds(
-    safeFixtureIds,
-    version,
-  );
+  // O cache do Next.js recusa itens acima de 2 MB; em lotes cada entrada fica pequena.
+  const batches: string[][] = [];
+
+  for (let index = 0; index < safeFixtureIds.length; index += ODDS_SNAPSHOT_CACHE_BATCH_SIZE) {
+    batches.push(safeFixtureIds.slice(index, index + ODDS_SNAPSHOT_CACHE_BATCH_SIZE));
+  }
+
+  const snapshots = (
+    await Promise.all(
+      batches.map((batch) => getCachedOddsSnapshotsByFixtureIds(batch, version)),
+    )
+  ).flat();
   const snapshotsByFixtureId = new Map(
     snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
   );
