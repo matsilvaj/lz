@@ -57,6 +57,10 @@ const signalFiltersDialog = readFileSync(
   new URL("../app/(app)/monitor/_components/signal-filters-dialog.tsx", import.meta.url),
   "utf8",
 );
+const signalCard = readFileSync(
+  new URL("../app/(app)/monitor/_components/signal-card.tsx", import.meta.url),
+  "utf8",
+);
 const signalHelpers = readFileSync(
   new URL("../lib/monitor-odds/signal-helpers.ts", import.meta.url),
   "utf8",
@@ -394,7 +398,9 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(doubleMonitorUi, /CalculatorSelectionDock/);
   assert.match(doubleMonitorUi, /getOpportunityCalculatorSelections/);
   assert.match(doubleMonitorUi, /replaceAll: true/);
-  assert.match(doubleMonitorUi, /BookmakerEventLink/);
+  // O card compartilhado leva ao evento na casa.
+  assert.match(doubleMonitorUi, /<SignalCard/);
+  assert.match(signalCard, /BookmakerEventLink/);
 });
 
 test("calculator route keeps app chrome without protected workspace lookup", () => {
@@ -478,7 +484,7 @@ test("freebet converter keeps Sem PA, protects the freebet house, and opens calc
   // A casa da freebet fica travada no filtro de casas.
   assert.match(freebetConverterUi, /lockedBookmakerKey=\{freebetHouseKey\}/);
   assert.match(signalFiltersDialog, /bookmaker\.key === lockedBookmakerKey/);
-  assert.match(freebetConverterUi, /BookmakerEventLink/);
+  assert.match(freebetConverterUi, /<SignalCard/);
   assert.match(freebetConverterUi, /CalculatorSelectionDock/);
   assert.match(freebetConverterUi, /conversionContext=\{conversionContext\}/);
   assert.match(freebetConverterUi, /getEventDetailHref/);

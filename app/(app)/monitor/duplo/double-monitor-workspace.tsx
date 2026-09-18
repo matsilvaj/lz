@@ -1,10 +1,8 @@
 "use client";
 
 import { Search, SlidersHorizontal } from "lucide-react";
-import Link from "next/link";
 import {
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -18,12 +16,9 @@ import {
   mergeCalculatorSelections,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
-import { FavoriteStarButton } from "@/app/(app)/_components/favorite-star-button";
-import { TrendingBadge } from "@/app/(app)/_components/trending-badge";
 import { useMonitorFavorites } from "@/app/(app)/_components/use-monitor-favorites";
 import { useTrendingFixtures } from "@/app/(app)/_components/use-trending-fixtures";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
-import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 import { getFavoriteLeagueKey, sortByFavorites, sortByTrending } from "@/lib/monitor-odds/favorites";
 import {
@@ -47,19 +42,15 @@ import {
   getPageSlice,
   SignalPagination,
 } from "../_components/signal-pagination";
-import { BookmakerEventLink, SortMenu } from "@/app/(app)/monitor/_components/signal-controls";
+import { SortMenu } from "@/app/(app)/monitor/_components/signal-controls";
 import {
   areCalculatorSelectionsActive,
   formatFixtureTeams,
-  formatLeagueLine,
-  formatSignalDate,
-  formatSignalTime,
   getAvailableBookmakers,
   getAvailableLeagues,
   getEventTimeValue,
   getLeagueKey,
   getModeCounts,
-  getRelativeDateLabel,
   getSignalProfitClass,
   isEventInDateFilter,
   type SignalDateFilter,
@@ -71,6 +62,11 @@ import {
   type SignalOddsSnapshot,
 } from "@/lib/monitor-odds/signal-odds-memory";
 import { SignalFiltersDialog } from "@/app/(app)/monitor/_components/signal-filters-dialog";
+import {
+  SignalCard,
+  SignalSkeleton,
+  type SignalCardLine,
+} from "@/app/(app)/monitor/_components/signal-card";
 
 type DateFilter = SignalDateFilter;
 type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
@@ -207,6 +203,15 @@ function getBookmakerKey(slug: string | null | undefined, name: string) {
   return (slug?.trim() || name.trim() || "casa").toLocaleLowerCase("pt-BR");
 }
 
+// Semanal Bet365 abre o evento só com combinações da casa obrigatória.
+function getDuploEventHref(fixtureId: string, requiredBookmaker: string | null) {
+  const href = `/monitor/odds/${encodeURIComponent(fixtureId)}`;
+
+  return requiredBookmaker
+    ? `${href}?${REQUIRED_BOOKMAKER_PARAM}=${encodeURIComponent(requiredBookmaker)}`
+    : href;
+}
+
 function getCalculatorMeta(marketLabel: string) {
   return marketLabel.trim().toUpperCase() === "1X2"
     ? undefined
@@ -334,203 +339,6 @@ function getSignalRows(
 
 // Quantos jogos tem ao menos uma oportunidade de cada modo. Antes isso refazia
 // a analise inteira uma vez por modo, so para exibir um numero no badge.
-function OpportunityLineMini({
-  highlighted = false,
-  line,
-  onToggle,
-  selected,
-}: {
-  highlighted?: boolean;
-  line: DuploOpportunity["lines"][number];
-  onToggle: () => void;
-  selected: boolean;
-}) {
-  return (
-    <div
-      aria-pressed={selected}
-      className={`pointer-events-auto min-w-0 cursor-pointer rounded-2xl border px-3 py-2.5 transition ${
-        selected
-          ? "border-[rgba(191,219,254,0.66)] bg-[rgba(59,130,246,0.14)] shadow-[0_0_18px_rgba(147,197,253,0.12)]"
-          : highlighted
-            ? "border-[rgba(250,204,21,0.45)] bg-[rgba(250,204,21,0.08)] hover:border-[rgba(250,204,21,0.6)]"
-            : "border-white/8 bg-white/[0.035] hover:border-[rgba(255,139,187,0.24)] hover:bg-white/[0.055]"
-      }`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      onKeyDown={(keyboardEvent: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
-          return;
-        }
-
-        keyboardEvent.preventDefault();
-        keyboardEvent.stopPropagation();
-        onToggle();
-      }}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          <BookmakerEventLink
-            bookmakerName={line.bookmakerName}
-            className="min-w-0 truncate text-xs font-semibold text-white no-underline transition hover:text-[var(--accent-soft)] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            eventUrl={line.eventUrl}
-          >
-            {line.bookmakerName}
-          </BookmakerEventLink>
-          {line.paCategory === "COM_PA" ? (
-            <span className="shrink-0 rounded-full border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-              PA
-            </span>
-          ) : null}
-          <ExchangeCommissionTag commission={line.commission} rawOdd={line.rawOdd} />
-        </span>
-        <span className="text-sm font-semibold text-white">
-          {line.odd.toFixed(3)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function SignalCard({
-  highlightBookmaker,
-  onToggleCalculator,
-  row,
-  selectedIds,
-  showRelativeDateLabel,
-  favorite,
-  trending,
-  onToggleFavorite,
-}: {
-  highlightBookmaker: string | null;
-  onToggleCalculator: (row: SignalRow) => void;
-  row: SignalRow;
-  selectedIds: ReadonlySet<string>;
-  showRelativeDateLabel: boolean;
-  favorite: boolean;
-  trending: boolean;
-  onToggleFavorite: () => void;
-}) {
-  const { event, opportunity } = row;
-  const teams = formatFixtureTeams(event);
-  const relativeDateLabel = showRelativeDateLabel
-    ? getRelativeDateLabel(event.starts_at)
-    : null;
-  const opportunitySelections = getOpportunityCalculatorSelections(
-    event.fixture_id,
-    opportunity,
-  );
-  const selected = areCalculatorSelectionsActive(
-    selectedIds,
-    opportunitySelections,
-  );
-
-  return (
-    <article
-      className={`group relative rounded-[24px] border p-4 transition ${
-        selected
-          ? "border-[rgba(191,219,254,0.58)] bg-[rgba(59,130,246,0.11)] shadow-[0_0_22px_rgba(147,197,253,0.1)]"
-          : "border-white/10 bg-white/[0.026] hover:border-[rgba(255,139,187,0.28)] hover:bg-white/[0.04]"
-      }`}
-    >
-      <Link
-        aria-label={`Abrir análise de ${teams.label}`}
-        className="absolute inset-0 z-0 rounded-[24px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        href={`/monitor/odds/${encodeURIComponent(event.fixture_id)}${
-          highlightBookmaker
-            ? `?${REQUIRED_BOOKMAKER_PARAM}=${encodeURIComponent(highlightBookmaker)}`
-            : ""
-        }`}
-      />
-
-      <div className="pointer-events-none relative z-10 grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(460px,1.35fr)_150px] lg:items-center">
-        <div className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-            <FavoriteStarButton
-              active={favorite}
-              label={teams.label}
-              onToggle={onToggleFavorite}
-              size="sm"
-            />
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              {formatSignalDate(event.starts_at)}
-            </span>
-            {relativeDateLabel ? (
-              <span className="rounded-full border border-[rgba(45,212,191,0.28)] bg-[rgba(45,212,191,0.09)] px-3 py-1 text-[var(--positive)]">
-                {relativeDateLabel}
-              </span>
-            ) : null}
-            <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1">
-              {formatSignalTime(event.starts_at)}
-            </span>
-            {trending ? <TrendingBadge /> : null}
-          </div>
-
-          <h3 className="truncate text-base font-semibold text-white md:text-lg">
-            {teams.label}
-          </h3>
-          <p className="mt-1 truncate text-xs font-medium text-[var(--text-muted)]">
-            {formatLeagueLine(event)}
-          </p>
-        </div>
-
-        <div className="grid gap-2 md:grid-cols-3">
-          {opportunity.lines.map((line, index) => (
-            <OpportunityLineMini
-              highlighted={Boolean(
-                highlightBookmaker &&
-                  isRequiredBookmaker(
-                    { bookmaker_name: line.bookmakerName, bookmaker_slug: line.bookmakerSlug },
-                    highlightBookmaker,
-                  ),
-              )}
-              key={`${line.bookmakerSlug}-${line.selectionLabel}-${index}`}
-              line={line}
-              onToggle={() => onToggleCalculator(row)}
-              selected={selected}
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 lg:w-[150px] lg:flex-col lg:items-end">
-          <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[var(--text-secondary)]">
-            {opportunity.modeLabel}
-          </span>
-          <strong className={`text-lg font-semibold tabular-nums ${getSignalProfitClass(opportunity.profitPercent)}`}>
-            {formatDuploPercent(opportunity.profitPercent)}
-          </strong>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function SignalSkeleton() {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.026] p-4">
-      <div className="grid animate-pulse gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(460px,1.35fr)_150px] lg:items-center">
-        <div>
-          <div className="mb-3 flex gap-2">
-            <span className="h-6 w-20 rounded-full bg-white/8" />
-            <span className="h-6 w-14 rounded-full bg-white/8" />
-          </div>
-          <span className="block h-5 w-64 max-w-full rounded-full bg-white/10" />
-          <span className="mt-2 block h-3 w-44 rounded-full bg-white/8" />
-        </div>
-        <div className="grid gap-2 md:grid-cols-3">
-          <span className="h-14 rounded-2xl bg-white/8" />
-          <span className="h-14 rounded-2xl bg-white/8" />
-          <span className="h-14 rounded-2xl bg-white/8" />
-        </div>
-        <span className="h-8 w-20 rounded-full bg-white/8" />
-      </div>
-    </div>
-  );
-}
-
 export type DoubleMonitorVariant = "duplo" | "semanal-bet365";
 
 export function DoubleMonitorWorkspace({
@@ -539,6 +347,17 @@ export function DoubleMonitorWorkspace({
   variant?: DoubleMonitorVariant;
 }) {
   const requiredBookmaker = variant === "semanal-bet365" ? BET365_BOOKMAKER_KEY : null;
+  const isRequiredLine = useCallback(
+    (line: SignalCardLine) =>
+      Boolean(
+        requiredBookmaker &&
+          isRequiredBookmaker(
+            { bookmaker_name: line.bookmakerName, bookmaker_slug: line.bookmakerSlug },
+            requiredBookmaker,
+          ),
+      ),
+    [requiredBookmaker],
+  );
   const [query, setQuery] = useState("");
   const [activeDateFilter, setActiveDateFilter] = useState<DateFilter>("all");
   const [activeMode, setActiveMode] = useState<ModeFilter>("all");
@@ -1063,15 +882,28 @@ export function DoubleMonitorWorkspace({
             ) : displayRows.length ? (
               visibleRows.map((row) => (
                 <SignalCard
+                  event={row.event}
                   favorite={favoriteGames.has(row.event.fixture_id)}
-                  trending={trendingRank.has(row.event.fixture_id)}
-                  onToggleFavorite={() => toggleGame(row.event.fixture_id)}
+                  href={getDuploEventHref(row.event.fixture_id, requiredBookmaker)}
+                  isLineHighlighted={isRequiredLine}
                   key={row.event.fixture_id}
-                  onToggleCalculator={handleToggleCalculatorRow}
-                  highlightBookmaker={requiredBookmaker}
-                  row={row}
-                  selectedIds={selectedCalculatorIds}
+                  lines={row.opportunity.lines}
+                  modeLabel={row.opportunity.modeLabel}
+                  onToggleCalculator={() => handleToggleCalculatorRow(row)}
+                  onToggleFavorite={() => toggleGame(row.event.fixture_id)}
+                  result={
+                    <strong
+                      className={`text-lg font-semibold tabular-nums ${getSignalProfitClass(row.opportunity.profitPercent)}`}
+                    >
+                      {formatDuploPercent(row.opportunity.profitPercent)}
+                    </strong>
+                  }
+                  selected={areCalculatorSelectionsActive(
+                    selectedCalculatorIds,
+                    getOpportunityCalculatorSelections(row.event.fixture_id, row.opportunity),
+                  )}
                   showRelativeDateLabel={activeDateFilter === "all"}
+                  trending={trendingRank.has(row.event.fixture_id)}
                 />
               ))
             ) : (
