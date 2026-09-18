@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  calculateSurebet,
   FREEBET_CONDITIONS,
   FREEBET_CONDITION_CONVERSION_ONLY,
   FREEBET_CONDITION_LOSS_ONLY,
@@ -10,13 +9,9 @@ import {
 import {
   CornerDownRight,
   Plus,
-  RotateCcw,
   Scissors,
-  Search,
-  Settings,
 } from "lucide-react";
 import {
-  useMemo,
   useEffect,
   useRef,
   useState,
@@ -46,12 +41,27 @@ import {
   type ProcedureShareValues,
 } from "./procedure-share-types";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
-import { calculateAdjustedOdd } from "@/core/domain/shared/odds.js";
+
+import {
+  SportsBetFields,
+} from "./procedure-bet-fields";
+import {
+  type BetSide,
+  type SportResultSelection,
+  normalizeCurrencyAmount,
+  parseDecimalInput,
+} from "./procedure-form-utils";
+import {
+  HousePickerDialog,
+} from "./procedure-house-picker";
+import {
+  calculateSportsProfit,
+} from "./procedure-sports-profit";
 
 type ProcedureType = string;
+
 type ProcedureGroup = "sports" | "casino" | "expenses";
-type SportResultSelection = "principal" | "defeat" | `protection-${number}`;
-type BetSide = "back" | "lay";
+
 type ProtectionDraft = {
   stake: string;
   odd: string;
@@ -63,10 +73,15 @@ type ProtectionDraft = {
   cashbackLossOnly: boolean;
   freebet: boolean;
 };
+
 type ProcedureStatus = "Pendente" | "Concluído";
+
 type ChildDraft = ProtectionDraft & { house: string };
+
 type ChildSection = "main" | "collection";
+
 type ChildRecord = Record<string, ChildDraft[]>;
+
 type HousePickerTarget = {
   section: ChildSection;
   index: number;
@@ -108,19 +123,10 @@ type ProcedureModalProps = {
   };
 };
 
-type HousePickerDialogProps = {
-  open: boolean;
-  title: string;
-  options: string[];
-  multiple?: boolean;
-  selectedValues: string[];
-  onClose: () => void;
-  onToggle: (value: string) => void;
-  onClear: () => void;
-};
-
 const FREEBET_COLLECTION_TYPE = "Coletar Freebet";
+
 const FREEBET_CONVERSION_TYPE = "Converter Freebet";
+
 const FREEBET_TYPES = [FREEBET_COLLECTION_TYPE, FREEBET_CONVERSION_TYPE];
 
 const PROCEDURE_GROUPS: Array<{
@@ -150,8 +156,11 @@ const CASINO_PROCEDURE_OPTIONS = [
 const EXPENSE_PROCEDURE_OPTIONS = [{ value: "Gastos", label: "Gastos" }];
 
 const PROCEDURE_STATUS_OPTIONS: ProcedureStatus[] = ["Pendente", "Concluído"];
+
 const MAX_SPORT_PROTECTIONS = 11;
+
 const MAX_CHILD_ENTRIES = 5;
+
 const DEFAULT_BET_SIDE: BetSide = "back";
 
 function createChildRecord(
@@ -303,19 +312,6 @@ function isFreebetProcedureType(type: string | undefined) {
   return FREEBET_TYPES.includes(String(type ?? ""));
 }
 
-function parseDecimalInput(value: string) {
-  const parsed = Number.parseFloat(value.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function normalizeCurrencyAmount(value: number) {
-  if (!Number.isFinite(value) || Math.abs(value) < 0.005) {
-    return 0;
-  }
-
-  return value;
-}
-
 function getResultLabel(value: number, total = false) {
   const normalizedValue = normalizeCurrencyAmount(value);
   const suffix = total ? " total" : "";
@@ -354,192 +350,8 @@ function formatProcedureCurrency(value: number) {
   return formatCurrency(normalizeCurrencyAmount(value));
 }
 
-function formatDecimalDisplay(value: number, fractionDigits = 2) {
-  if (!Number.isFinite(value) || Math.abs(value) < 0.005) {
-    return "";
-  }
-
-  return value.toFixed(fractionDigits).replace(".", ",");
-}
-
-function calculateLayReturn(
-  responsibility: number,
-  effectiveOdd: number,
-  commission: number,
-  cashback: number,
-  cashbackLossOnly: boolean,
-) {
-  if (responsibility <= 0 || effectiveOdd <= 1) {
-    return 0;
-  }
-
-  const layStake = responsibility / (effectiveOdd - 1);
-  const commissionMultiplier = 1 - commission / 100;
-  // Cashback pago so na derrota nao existe no cenario em que o lay ganha.
-  const cashbackRate = cashbackLossOnly ? 0 : cashback / 100;
-
-  return (
-    layStake *
-    (effectiveOdd - 1 + commissionMultiplier + (effectiveOdd - 1) * cashbackRate)
-  );
-}
-
 function getProtectionResultId(key: number): SportResultSelection {
   return `protection-${key}`;
-}
-
-function calculateSportsProfit(
-  entries: Array<{
-    resultId: SportResultSelection;
-    stakeInput: string;
-    oddInput: string;
-    side: BetSide;
-    layOddInput?: string;
-    commissionInput?: string;
-    increaseInput?: string;
-    cashbackInput?: string;
-    cashbackLossOnly?: boolean;
-    freebet?: boolean;
-  }>,
-  selectedResults: SportResultSelection[],
-) {
-  const normalizedEntries = entries.map((entry) => {
-    const side = entry.side === "lay" ? "lay" : "back";
-    const riskValue = parseDecimalInput(entry.stakeInput);
-    const layOddInput = entry.layOddInput ?? "";
-    const odd =
-      side === "lay"
-        ? parseDecimalInput(layOddInput.trim() ? layOddInput : entry.oddInput)
-        : parseDecimalInput(entry.oddInput);
-    const increase = parseDecimalInput(entry.increaseInput ?? "");
-    const cashback = parseDecimalInput(entry.cashbackInput ?? "");
-    const effectiveOdd = calculateAdjustedOdd(odd, increase);
-    const stake =
-      side === "lay" && effectiveOdd > 1
-        ? riskValue / (effectiveOdd - 1)
-        : riskValue;
-
-    return {
-      ...entry,
-      side,
-      stake,
-      responsibility: side === "lay" ? riskValue : 0,
-      odd,
-      effectiveOdd,
-      commission: parseDecimalInput(entry.commissionInput ?? ""),
-      increase,
-      cashback,
-      cashbackLossOnly: Boolean(entry.cashbackLossOnly),
-      freebet: Boolean(entry.freebet),
-    };
-  });
-  
-  const baseIndex = normalizedEntries.findIndex((entry) => entry.stake > 0);
-  const fallbackInvestment = normalizedEntries.reduce(
-    (sum, entry) =>
-      sum +
-      (entry.side === "lay" ? entry.responsibility : entry.freebet ? 0 : entry.stake),
-    0,
-  );
-
-  let investment = fallbackInvestment;
-  let returnByIndex = new Map<number, number>();
-
-  if (baseIndex >= 0) {
-    try {
-      const calculation = calculateSurebet(
-        normalizedEntries.map((entry) => ({
-          odd: entry.odd,
-          stake: entry.stake,
-          tipo: entry.side === "lay" ? "L" : "B",
-          responsabilidade: entry.responsibility,
-          aumento_percentual: entry.increase,
-          comissao_percentual: entry.commission,
-          cashback_percentual: entry.cashback,
-          cashback_apenas_perda: entry.cashbackLossOnly,
-          freebet: entry.freebet,
-        })),
-        baseIndex,
-      );
-
-      investment = Number(calculation?.investimento_efetivo ?? fallbackInvestment);
-      
-      returnByIndex = new Map(
-        normalizedEntries.map((_, index) => {
-          const lucroLiquido = Number(calculation?.linhas?.[index]?.lucro_liquido ?? 0);
-
-          return [index, lucroLiquido + investment]; 
-        }),
-      );
-    } catch {
-      returnByIndex = new Map(
-        normalizedEntries.map((entry, index) => {
-          const layReturn = calculateLayReturn(
-            entry.responsibility,
-            entry.effectiveOdd,
-            entry.commission,
-            entry.cashback,
-            entry.cashbackLossOnly,
-          );
-          const backReturn = entry.freebet
-            ? entry.stake *
-              ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
-            : entry.stake *
-              (1 +
-                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
-                (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
-
-          return [index, entry.side === "lay" ? layReturn : backReturn];
-        }),
-      );
-    }
-  } else {
-    returnByIndex = new Map(
-      normalizedEntries.map((entry, index) => {
-        const layReturn = calculateLayReturn(
-          entry.responsibility,
-          entry.effectiveOdd,
-          entry.commission,
-          entry.cashback,
-          entry.cashbackLossOnly,
-        );
-        const backReturn = entry.freebet
-          ? entry.stake *
-            ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
-          : entry.stake *
-            (1 +
-              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
-              (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
-
-        return [index, entry.side === "lay" ? layReturn : backReturn];
-      }),
-    );
-  }
-
-  if (selectedResults.length === 0) {
-    return 0;
-  }
-
-  const selectedResultSet = new Set(selectedResults);
-  const selectedReturns = normalizedEntries
-    .map((entry, index) =>
-      selectedResultSet.has(entry.resultId) ? (returnByIndex.get(index) ?? 0) : null,
-    )
-    .filter((value): value is number => value !== null);
-
-  if (selectedReturns.length === 0) {
-
-    return selectedResultSet.has("defeat") ? -investment : 0;
-  }
-
-
-  const totalGrossReturn = selectedReturns.reduce(
-    (sum, returnVal) => sum + returnVal,
-    0,
-  );
-
-
-  return normalizeCurrencyAmount(totalGrossReturn - investment);
 }
 
 function toChildCalculationEntries(
@@ -692,135 +504,6 @@ function createProtectionDraftRecord(
 
     return record;
   }, {});
-}
-
-function HousePickerDialog({
-  open,
-  title,
-  options,
-  multiple = false,
-  selectedValues,
-  onClose,
-  onToggle,
-  onClear,
-}: HousePickerDialogProps) {
-  const [search, setSearch] = useState("");
-
-  const visibleOptions = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-
-    if (!normalizedSearch) {
-      return options;
-    }
-
-    return options.filter((option) =>
-      option.toLowerCase().includes(normalizedSearch),
-    );
-  }, [options, search]);
-
-  if (!open) {
-    return null;
-  }
-
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  function handleClose() {
-    setSearch("");
-    onClose();
-  }
-
-  return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-4">
-      <div className="lz-panel max-h-[calc(100dvh-24px)] w-full max-w-xl overflow-y-auto rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[32px]">
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-          <h3 className="text-base font-semibold text-white">{title}</h3>
-
-          <button
-            aria-label="Fechar"
-            className="lz-button-secondary inline-flex h-9 w-9 items-center justify-center rounded-full p-0"
-            onClick={handleClose}
-            type="button"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className="space-y-4 px-5 py-5">
-          <div className="relative">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
-            />
-            <input
-              className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar casa..."
-              type="search"
-              value={search}
-            />
-          </div>
-
-          <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-            {visibleOptions.length === 0 ? (
-              <p className="px-1 py-3 text-sm text-[var(--text-muted)]">
-                Nenhuma casa encontrada.
-              </p>
-            ) : (
-              visibleOptions.map((option) => {
-                const active = selectedValues.includes(option);
-
-                return (
-                  <button
-                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
-                      active ? "lz-button-primary" : "lz-button-secondary"
-                    }`}
-                    key={option}
-                    onClick={() => {
-                      onToggle(option);
-                      if (!multiple) {
-                        handleClose();
-                      }
-                    }}
-                    type="button"
-                  >
-                    <span>{option}</span>
-                    {active ? <span>Selecionada</span> : null}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-            <button
-              className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-              onClick={() => {
-                setSearch("");
-                onClear();
-              }}
-              type="button"
-            >
-              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-              <span>Limpar</span>
-            </button>
-
-            {multiple ? (
-              <button
-                className="lz-button-primary rounded-full px-4 py-2 text-sm font-semibold"
-                onClick={handleClose}
-                type="button"
-              >
-                Concluir
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
 }
 
 export function ProcedureModal({
@@ -1902,270 +1585,6 @@ export function ProcedureModal({
     handleSubmit(event);
   }
 
-  function renderSportsBetFields({
-    stakeName,
-    oddName,
-    stakeValue,
-    oddValue,
-    side,
-    layOddValue,
-    commissionValue,
-    increaseValue,
-    cashbackValue,
-    cashbackLossOnlyChecked,
-    freebetChecked,
-    configOpen,
-    onStakeChange,
-    onOddChange,
-    onToggleSide,
-    onLayOddChange,
-    onCommissionChange,
-    onIncreaseChange,
-    onCashbackChange,
-    onCashbackLossOnlyChange,
-    onFreebetChange,
-    onToggleConfig,
-  }: {
-    stakeName: string;
-    oddName: string;
-    stakeValue: string;
-    oddValue: string;
-    side: BetSide;
-    layOddValue: string;
-    commissionValue: string;
-    increaseValue: string;
-    cashbackValue: string;
-    cashbackLossOnlyChecked: boolean;
-    freebetChecked: boolean;
-    configOpen: boolean;
-    onStakeChange: (value: string) => void;
-    onOddChange: (value: string) => void;
-    onToggleSide: () => void;
-    onLayOddChange: (value: string) => void;
-    onCommissionChange: (value: string) => void;
-    onIncreaseChange: (value: string) => void;
-    onCashbackChange: (value: string) => void;
-    onCashbackLossOnlyChange: (checked: boolean) => void;
-    onFreebetChange: (checked: boolean) => void;
-    onToggleConfig: () => void;
-  }) {
-    const isLay = side === "lay";
-    const displayedOddValue = isLay ? (layOddValue || oddValue) : oddValue;
-    const responsibilityValue = stakeValue;
-    const layOddNumber = parseDecimalInput(displayedOddValue);
-    const responsibilityNumber = parseDecimalInput(responsibilityValue);
-    const displayedLayStake =
-      isLay && layOddNumber > 1
-        ? formatDecimalDisplay(responsibilityNumber / (layOddNumber - 1))
-        : "";
-    const hasCustomConfig =
-      parseDecimalInput(increaseValue) !== 0 ||
-      parseDecimalInput(commissionValue) !== 0 ||
-      parseDecimalInput(cashbackValue) !== 0 ||
-      freebetChecked;
-    const configFieldClass =
-      "flex min-h-[84px] flex-col justify-between rounded-2xl border border-white/10 bg-white/4 px-3 py-3 text-sm";
-
-    return (
-      <>
-        {isLay ? (
-          <label className="min-w-0 space-y-2 text-sm sm:col-span-2">
-            <span className="block text-[var(--text-muted)]">
-              Responsabilidade
-            </span>
-            <input
-              className="lz-input w-full rounded-2xl px-3 py-3"
-              inputMode="decimal"
-              name={stakeName}
-              onChange={(event) => onStakeChange(event.target.value)}
-              placeholder="0,00"
-              value={responsibilityValue}
-            />
-          </label>
-        ) : (
-          <label className="min-w-0 space-y-2 text-sm">
-            <span className="block text-[var(--text-muted)]">Stake</span>
-            <input
-              className="lz-input w-full rounded-2xl px-3 py-3"
-              inputMode="decimal"
-              name={stakeName}
-              onChange={(event) => onStakeChange(event.target.value)}
-              placeholder="0,00"
-              value={stakeValue}
-            />
-          </label>
-        )}
-
-        <div className="min-w-0 space-y-2 text-sm">
-          <span className="block text-[var(--text-muted)]">
-            {isLay ? "Stake" : "Odd"}
-          </span>
-          {isLay ? (
-            <input
-              className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
-              inputMode="decimal"
-              onChange={(event) => {
-                const nextStake = parseDecimalInput(event.target.value);
-                const effectiveOdd = parseDecimalInput(displayedOddValue);
-
-                if (effectiveOdd > 1) {
-                  onStakeChange(
-                    formatDecimalDisplay(nextStake * (effectiveOdd - 1)),
-                  );
-                }
-              }}
-              placeholder="0,00"
-              value={displayedLayStake}
-            />
-          ) : (
-            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
-              <input
-                className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
-                inputMode="decimal"
-                name={oddName}
-                onChange={(event) => onOddChange(event.target.value)}
-                placeholder="0.000"
-                value={displayedOddValue}
-              />
-              <button
-                aria-label="Alternar para lay"
-                className="lz-button-primary rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3"
-                onClick={onToggleSide}
-                title="Back"
-                type="button"
-              >
-                B
-              </button>
-              <button
-                aria-expanded={configOpen}
-                aria-label="Configurações da entrada"
-                className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
-                  configOpen || hasCustomConfig
-                    ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
-                    : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
-                }`}
-                onClick={onToggleConfig}
-                title="Configurações"
-                type="button"
-              >
-                <Settings className="h-3.5 w-3.5" strokeWidth={1.7} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {isLay ? (
-          <div className="min-w-0 space-y-2 text-sm">
-            <span className="block text-[var(--text-muted)]">Odd Lay</span>
-            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
-              <input
-                className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
-                inputMode="decimal"
-                name={oddName}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-
-                  onLayOddChange(nextValue);
-
-                  if (!oddValue.trim()) {
-                    onOddChange(nextValue);
-                  }
-                }}
-                placeholder="0.000"
-                value={displayedOddValue}
-              />
-              <button
-                aria-label="Alternar para back"
-                className="lz-button-primary rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3"
-                onClick={onToggleSide}
-                title="Lay"
-                type="button"
-              >
-                L
-              </button>
-            <button
-              aria-expanded={configOpen}
-              aria-label="Configurações da entrada"
-              className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
-                configOpen || hasCustomConfig
-                  ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
-                  : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
-              }`}
-              onClick={onToggleConfig}
-              title="Configurações"
-              type="button"
-            >
-              <Settings className="h-3.5 w-3.5" strokeWidth={1.7} />
-            </button>
-          </div>
-        </div>
-        ) : null}
-
-        {configOpen ? (
-          <div className="grid min-w-0 items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-            <label className={configFieldClass}>
-              <span className="text-[var(--text-muted)]">Aumento (%)</span>
-              <input
-                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
-                inputMode="decimal"
-                onChange={(event) => onIncreaseChange(event.target.value)}
-                placeholder="0,00"
-                value={increaseValue}
-              />
-            </label>
-
-            <label className={configFieldClass}>
-              <span className="text-[var(--text-muted)]">Comissão (%)</span>
-              <input
-                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
-                inputMode="decimal"
-                onChange={(event) => onCommissionChange(event.target.value)}
-                placeholder="0,00"
-                value={commissionValue}
-              />
-            </label>
-
-            <label className={configFieldClass}>
-              <span className="text-[var(--text-muted)]">Cashback (%)</span>
-              <input
-                className="lz-input w-full rounded-xl px-3 py-2 text-sm"
-                inputMode="decimal"
-                onChange={(event) => onCashbackChange(event.target.value)}
-                placeholder="0,00"
-                value={cashbackValue}
-              />
-            </label>
-
-            <label
-              className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-36 2xl:justify-center"
-              title="A casa so paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
-            >
-              <input
-                checked={cashbackLossOnlyChecked}
-                className="lz-checkbox"
-                onChange={(event) =>
-                  onCashbackLossOnlyChange(event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>Cashback so na derrota</span>
-            </label>
-
-            <label className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-28 2xl:justify-center">
-              <input
-                checked={freebetChecked}
-                className="lz-checkbox"
-                onChange={(event) => onFreebetChange(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Freebet</span>
-            </label>
-          </div>
-        ) : null}
-      </>
-    );
-  }
-
   function renderChildEntries(section: ChildSection, parent: string) {
     const children = getChildRecord(section)[parent] ?? [];
     const canAdd = !isReadOnly && children.length < MAX_CHILD_ENTRIES;
@@ -2222,45 +1641,45 @@ export function ProcedureModal({
                   </button>
                 </div>
 
-                {renderSportsBetFields({
-                  stakeName: `${section}ChildStake`,
-                  oddName: `${section}ChildOdd`,
-                  stakeValue: child.stake,
-                  oddValue: child.odd,
-                  side: child.side,
-                  layOddValue: child.layOdd,
-                  commissionValue: child.commission,
-                  increaseValue: child.increase,
-                  cashbackValue: child.cashback,
-                  freebetChecked: child.freebet,
-                  cashbackLossOnlyChecked: Boolean(child.cashbackLossOnly),
-                  configOpen: Boolean(sportsConfigOpen[configKey]),
-                  onStakeChange: (value) =>
-                    setChildValue(section, parent, index, "stake", value),
-                  onOddChange: (value) =>
-                    setChildValue(section, parent, index, "odd", value),
-                  onToggleSide: () =>
-                    setChildValue(
-                      section,
-                      parent,
-                      index,
-                      "side",
-                      child.side === "back" ? "lay" : "back",
-                    ),
-                  onLayOddChange: (value) =>
-                    setChildValue(section, parent, index, "layOdd", value),
-                  onCommissionChange: (value) =>
-                    setChildValue(section, parent, index, "commission", value),
-                  onIncreaseChange: (value) =>
-                    setChildValue(section, parent, index, "increase", value),
-                  onCashbackChange: (value) =>
-                    setChildValue(section, parent, index, "cashback", value),
-                  onFreebetChange: (checked) =>
-                    setChildValue(section, parent, index, "freebet", checked),
-                  onCashbackLossOnlyChange: (checked) =>
-                    setChildValue(section, parent, index, "cashbackLossOnly", checked),
-                  onToggleConfig: () => toggleSportsConfig(configKey),
-                })}
+                <SportsBetFields
+                  stakeName={`${section}ChildStake`}
+                  oddName={`${section}ChildOdd`}
+                  stakeValue={child.stake}
+                  oddValue={child.odd}
+                  side={child.side}
+                  layOddValue={child.layOdd}
+                  commissionValue={child.commission}
+                  increaseValue={child.increase}
+                  cashbackValue={child.cashback}
+                  freebetChecked={child.freebet}
+                  cashbackLossOnlyChecked={Boolean(child.cashbackLossOnly)}
+                  configOpen={Boolean(sportsConfigOpen[configKey])}
+                  onStakeChange={(value) =>
+                  setChildValue(section, parent, index, "stake", value)}
+                  onOddChange={(value) =>
+                  setChildValue(section, parent, index, "odd", value)}
+                  onToggleSide={() =>
+                  setChildValue(
+                    section,
+                    parent,
+                    index,
+                    "side",
+                    child.side === "back" ? "lay" : "back",
+                  )}
+                  onLayOddChange={(value) =>
+                  setChildValue(section, parent, index, "layOdd", value)}
+                  onCommissionChange={(value) =>
+                  setChildValue(section, parent, index, "commission", value)}
+                  onIncreaseChange={(value) =>
+                  setChildValue(section, parent, index, "increase", value)}
+                  onCashbackChange={(value) =>
+                  setChildValue(section, parent, index, "cashback", value)}
+                  onFreebetChange={(checked) =>
+                  setChildValue(section, parent, index, "freebet", checked)}
+                  onCashbackLossOnlyChange={(checked) =>
+                  setChildValue(section, parent, index, "cashbackLossOnly", checked)}
+                  onToggleConfig={() => toggleSportsConfig(configKey)}
+                />
               </div>
             </div>
           );
@@ -3168,38 +2587,36 @@ export function ProcedureModal({
                           </div>
 
                           <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
-                            {renderSportsBetFields({
-                              stakeName: "collectionPrimaryStake",
-                              oddName: "collectionPrimaryOdd",
-                              stakeValue: collectionPrimaryStake,
-                              oddValue: collectionPrimaryOdd,
-                              side: collectionPrimarySide,
-                              layOddValue: collectionPrimaryLayOdd,
-                              commissionValue: collectionPrimaryCommission,
-                              increaseValue: collectionPrimaryIncrease,
-                              cashbackValue: collectionPrimaryCashback,
-                              cashbackLossOnlyChecked:
-                                collectionPrimaryCashbackLossOnly,
-                              freebetChecked: collectionPrimaryFreebet,
-                              configOpen: Boolean(
-                                sportsConfigOpen["collection-primary"],
-                              ),
-                              onStakeChange: setCollectionPrimaryStake,
-                              onOddChange: setCollectionPrimaryOdd,
-                              onToggleSide: () =>
-                                setCollectionPrimarySide((current) =>
-                                  current === "back" ? "lay" : "back",
-                                ),
-                              onLayOddChange: setCollectionPrimaryLayOdd,
-                              onCommissionChange: setCollectionPrimaryCommission,
-                              onIncreaseChange: setCollectionPrimaryIncrease,
-                              onCashbackChange: setCollectionPrimaryCashback,
-                              onCashbackLossOnlyChange:
-                                setCollectionPrimaryCashbackLossOnly,
-                              onFreebetChange: setCollectionPrimaryFreebet,
-                              onToggleConfig: () =>
-                                toggleSportsConfig("collection-primary"),
-                            })}
+                            <SportsBetFields
+                              stakeName="collectionPrimaryStake"
+                              oddName="collectionPrimaryOdd"
+                              stakeValue={collectionPrimaryStake}
+                              oddValue={collectionPrimaryOdd}
+                              side={collectionPrimarySide}
+                              layOddValue={collectionPrimaryLayOdd}
+                              commissionValue={collectionPrimaryCommission}
+                              increaseValue={collectionPrimaryIncrease}
+                              cashbackValue={collectionPrimaryCashback}
+                              cashbackLossOnlyChecked={collectionPrimaryCashbackLossOnly}
+                              freebetChecked={collectionPrimaryFreebet}
+                              configOpen={Boolean(
+                              sportsConfigOpen["collection-primary"],
+                              )}
+                              onStakeChange={setCollectionPrimaryStake}
+                              onOddChange={setCollectionPrimaryOdd}
+                              onToggleSide={() =>
+                              setCollectionPrimarySide((current) =>
+                                current === "back" ? "lay" : "back",
+                              )}
+                              onLayOddChange={setCollectionPrimaryLayOdd}
+                              onCommissionChange={setCollectionPrimaryCommission}
+                              onIncreaseChange={setCollectionPrimaryIncrease}
+                              onCashbackChange={setCollectionPrimaryCashback}
+                              onCashbackLossOnlyChange={setCollectionPrimaryCashbackLossOnly}
+                              onFreebetChange={setCollectionPrimaryFreebet}
+                              onToggleConfig={() =>
+                              toggleSportsConfig("collection-primary")}
+                            />
                           </div>
 
                           {renderChildEntries("collection", "principal")}
@@ -3250,96 +2667,89 @@ export function ProcedureModal({
                                   </button>
                                 </div>
 
-                                {renderSportsBetFields({
-                                  stakeName: "collectionProtectionStake",
-                                  oddName: "collectionProtectionOdd",
-                                  stakeValue:
-                                    collectionProtectionDrafts[key]?.stake ?? "",
-                                  oddValue:
-                                    collectionProtectionDrafts[key]?.odd ?? "",
-                                  side:
-                                    collectionProtectionDrafts[key]?.side ??
-                                    DEFAULT_BET_SIDE,
-                                  layOddValue:
-                                    collectionProtectionDrafts[key]?.layOdd ?? "",
-                                  commissionValue:
-                                    collectionProtectionDrafts[key]?.commission ?? "",
-                                  increaseValue:
-                                    collectionProtectionDrafts[key]?.increase ?? "",
-                                  cashbackValue:
-                                    collectionProtectionDrafts[key]?.cashback ?? "",
-                                  cashbackLossOnlyChecked: Boolean(
-                                    collectionProtectionDrafts[key]
-                                      ?.cashbackLossOnly,
-                                  ),
-                                  freebetChecked: Boolean(
-                                    collectionProtectionDrafts[key]?.freebet,
-                                  ),
-                                  configOpen: Boolean(
-                                    sportsConfigOpen[`collection-protection-${key}`],
-                                  ),
-                                  onStakeChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "stake",
-                                      value,
-                                    ),
-                                  onOddChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "odd",
-                                      value,
-                                    ),
-                                  onToggleSide: () =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "side",
-                                      (collectionProtectionDrafts[key]?.side ??
-                                        DEFAULT_BET_SIDE) === "back"
-                                        ? "lay"
-                                        : "back",
-                                    ),
-                                  onLayOddChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "layOdd",
-                                      value,
-                                    ),
-                                  onCommissionChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "commission",
-                                      value,
-                                    ),
-                                  onIncreaseChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "increase",
-                                      value,
-                                    ),
-                                  onCashbackChange: (value) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "cashback",
-                                      value,
-                                    ),
-                                  onCashbackLossOnlyChange: (checked) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "cashbackLossOnly",
-                                      checked,
-                                    ),
-                                  onFreebetChange: (checked) =>
-                                    setCollectionProtectionDraftValue(
-                                      key,
-                                      "freebet",
-                                      checked,
-                                    ),
-                                  onToggleConfig: () =>
-                                    toggleSportsConfig(
-                                      `collection-protection-${key}`,
-                                    ),
-                                })}
+                                <SportsBetFields
+                                  stakeName="collectionProtectionStake"
+                                  oddName="collectionProtectionOdd"
+                                  stakeValue={collectionProtectionDrafts[key]?.stake ?? ""}
+                                  oddValue={collectionProtectionDrafts[key]?.odd ?? ""}
+                                  side={collectionProtectionDrafts[key]?.side ??
+                                  DEFAULT_BET_SIDE}
+                                  layOddValue={collectionProtectionDrafts[key]?.layOdd ?? ""}
+                                  commissionValue={collectionProtectionDrafts[key]?.commission ?? ""}
+                                  increaseValue={collectionProtectionDrafts[key]?.increase ?? ""}
+                                  cashbackValue={collectionProtectionDrafts[key]?.cashback ?? ""}
+                                  cashbackLossOnlyChecked={Boolean(
+                                  collectionProtectionDrafts[key]
+                                    ?.cashbackLossOnly,
+                                  )}
+                                  freebetChecked={Boolean(
+                                  collectionProtectionDrafts[key]?.freebet,
+                                  )}
+                                  configOpen={Boolean(
+                                  sportsConfigOpen[`collection-protection-${key}`],
+                                  )}
+                                  onStakeChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "stake",
+                                    value,
+                                  )}
+                                  onOddChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "odd",
+                                    value,
+                                  )}
+                                  onToggleSide={() =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "side",
+                                    (collectionProtectionDrafts[key]?.side ??
+                                      DEFAULT_BET_SIDE) === "back"
+                                      ? "lay"
+                                      : "back",
+                                  )}
+                                  onLayOddChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "layOdd",
+                                    value,
+                                  )}
+                                  onCommissionChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "commission",
+                                    value,
+                                  )}
+                                  onIncreaseChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "increase",
+                                    value,
+                                  )}
+                                  onCashbackChange={(value) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "cashback",
+                                    value,
+                                  )}
+                                  onCashbackLossOnlyChange={(checked) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "cashbackLossOnly",
+                                    checked,
+                                  )}
+                                  onFreebetChange={(checked) =>
+                                  setCollectionProtectionDraftValue(
+                                    key,
+                                    "freebet",
+                                    checked,
+                                  )}
+                                  onToggleConfig={() =>
+                                  toggleSportsConfig(
+                                    `collection-protection-${key}`,
+                                  )}
+                                />
                               </div>
 
                               {renderChildEntries("collection", protectionResultId)}
@@ -3493,34 +2903,34 @@ export function ProcedureModal({
                           </div>
                         ) : null}
 
-                        {renderSportsBetFields({
-                          stakeName: "primaryStake",
-                          oddName: "primaryOdd",
-                          stakeValue: primaryStake,
-                          oddValue: primaryOdd,
-                          side: primarySide,
-                          layOddValue: primaryLayOdd,
-                          commissionValue: primaryCommission,
-                          increaseValue: primaryIncrease,
-                          cashbackValue: primaryCashback,
-                          cashbackLossOnlyChecked: primaryCashbackLossOnly,
-                          freebetChecked: primaryFreebet,
-                          configOpen: Boolean(sportsConfigOpen["sports-primary"]),
-                          onStakeChange: setPrimaryStake,
-                          onOddChange: setPrimaryOdd,
-                          onToggleSide: () =>
-                            setPrimarySide((current) =>
-                              current === "back" ? "lay" : "back",
-                            ),
-                          onLayOddChange: setPrimaryLayOdd,
-                          onCommissionChange: setPrimaryCommission,
-                          onIncreaseChange: setPrimaryIncrease,
-                          onCashbackChange: setPrimaryCashback,
-                          onCashbackLossOnlyChange: setPrimaryCashbackLossOnly,
-                          onFreebetChange: setPrimaryFreebet,
-                          onToggleConfig: () =>
-                            toggleSportsConfig("sports-primary"),
-                        })}
+                        <SportsBetFields
+                          stakeName="primaryStake"
+                          oddName="primaryOdd"
+                          stakeValue={primaryStake}
+                          oddValue={primaryOdd}
+                          side={primarySide}
+                          layOddValue={primaryLayOdd}
+                          commissionValue={primaryCommission}
+                          increaseValue={primaryIncrease}
+                          cashbackValue={primaryCashback}
+                          cashbackLossOnlyChecked={primaryCashbackLossOnly}
+                          freebetChecked={primaryFreebet}
+                          configOpen={Boolean(sportsConfigOpen["sports-primary"])}
+                          onStakeChange={setPrimaryStake}
+                          onOddChange={setPrimaryOdd}
+                          onToggleSide={() =>
+                          setPrimarySide((current) =>
+                            current === "back" ? "lay" : "back",
+                          )}
+                          onLayOddChange={setPrimaryLayOdd}
+                          onCommissionChange={setPrimaryCommission}
+                          onIncreaseChange={setPrimaryIncrease}
+                          onCashbackChange={setPrimaryCashback}
+                          onCashbackLossOnlyChange={setPrimaryCashbackLossOnly}
+                          onFreebetChange={setPrimaryFreebet}
+                          onToggleConfig={() =>
+                          toggleSportsConfig("sports-primary")}
+                        />
                       </div>
 
                       {renderChildEntries("main", "principal")}
@@ -3570,81 +2980,76 @@ export function ProcedureModal({
                                   </button>
                                 </div>
 
-                                {renderSportsBetFields({
-                                  stakeName: "protectionStake",
-                                  oddName: "protectionOdd",
-                                  stakeValue: protectionDrafts[key]?.stake ?? "",
-                                  oddValue: protectionDrafts[key]?.odd ?? "",
-                                  side:
-                                    protectionDrafts[key]?.side ??
-                                    DEFAULT_BET_SIDE,
-                                  layOddValue:
-                                    protectionDrafts[key]?.layOdd ?? "",
-                                  commissionValue:
-                                    protectionDrafts[key]?.commission ?? "",
-                                  increaseValue:
-                                    protectionDrafts[key]?.increase ?? "",
-                                  cashbackValue:
-                                    protectionDrafts[key]?.cashback ?? "",
-                                  cashbackLossOnlyChecked: Boolean(
-                                    protectionDrafts[key]?.cashbackLossOnly,
-                                  ),
-                                  freebetChecked: Boolean(
-                                    protectionDrafts[key]?.freebet,
-                                  ),
-                                  configOpen: Boolean(
-                                    sportsConfigOpen[`sports-protection-${key}`],
-                                  ),
-                                  onStakeChange: (value) =>
-                                    setProtectionDraftValue(key, "stake", value),
-                                  onOddChange: (value) =>
-                                    setProtectionDraftValue(key, "odd", value),
-                                  onToggleSide: () =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "side",
-                                      (protectionDrafts[key]?.side ??
-                                        DEFAULT_BET_SIDE) === "back"
-                                        ? "lay"
-                                        : "back",
-                                    ),
-                                  onLayOddChange: (value) =>
-                                    setProtectionDraftValue(key, "layOdd", value),
-                                  onCommissionChange: (value) =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "commission",
-                                      value,
-                                    ),
-                                  onIncreaseChange: (value) =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "increase",
-                                      value,
-                                    ),
-                                  onCashbackChange: (value) =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "cashback",
-                                      value,
-                                    ),
-                                  onCashbackLossOnlyChange: (checked) =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "cashbackLossOnly",
-                                      checked,
-                                    ),
-                                  onFreebetChange: (checked) =>
-                                    setProtectionDraftValue(
-                                      key,
-                                      "freebet",
-                                      checked,
-                                    ),
-                                  onToggleConfig: () =>
-                                    toggleSportsConfig(
-                                      `sports-protection-${key}`,
-                                    ),
-                                })}
+                                <SportsBetFields
+                                  stakeName="protectionStake"
+                                  oddName="protectionOdd"
+                                  stakeValue={protectionDrafts[key]?.stake ?? ""}
+                                  oddValue={protectionDrafts[key]?.odd ?? ""}
+                                  side={protectionDrafts[key]?.side ??
+                                  DEFAULT_BET_SIDE}
+                                  layOddValue={protectionDrafts[key]?.layOdd ?? ""}
+                                  commissionValue={protectionDrafts[key]?.commission ?? ""}
+                                  increaseValue={protectionDrafts[key]?.increase ?? ""}
+                                  cashbackValue={protectionDrafts[key]?.cashback ?? ""}
+                                  cashbackLossOnlyChecked={Boolean(
+                                  protectionDrafts[key]?.cashbackLossOnly,
+                                  )}
+                                  freebetChecked={Boolean(
+                                  protectionDrafts[key]?.freebet,
+                                  )}
+                                  configOpen={Boolean(
+                                  sportsConfigOpen[`sports-protection-${key}`],
+                                  )}
+                                  onStakeChange={(value) =>
+                                  setProtectionDraftValue(key, "stake", value)}
+                                  onOddChange={(value) =>
+                                  setProtectionDraftValue(key, "odd", value)}
+                                  onToggleSide={() =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "side",
+                                    (protectionDrafts[key]?.side ??
+                                      DEFAULT_BET_SIDE) === "back"
+                                      ? "lay"
+                                      : "back",
+                                  )}
+                                  onLayOddChange={(value) =>
+                                  setProtectionDraftValue(key, "layOdd", value)}
+                                  onCommissionChange={(value) =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "commission",
+                                    value,
+                                  )}
+                                  onIncreaseChange={(value) =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "increase",
+                                    value,
+                                  )}
+                                  onCashbackChange={(value) =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "cashback",
+                                    value,
+                                  )}
+                                  onCashbackLossOnlyChange={(checked) =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "cashbackLossOnly",
+                                    checked,
+                                  )}
+                                  onFreebetChange={(checked) =>
+                                  setProtectionDraftValue(
+                                    key,
+                                    "freebet",
+                                    checked,
+                                  )}
+                                  onToggleConfig={() =>
+                                  toggleSportsConfig(
+                                    `sports-protection-${key}`,
+                                  )}
+                                />
                               </div>
 
                               {renderChildEntries("main", protectionResultId)}
