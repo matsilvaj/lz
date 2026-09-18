@@ -83,3 +83,41 @@ export function sortByTrending<T>(
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
     .map((entry) => entry.item);
 }
+
+// "Só favoritos" e as ordenações "Favoritos primeiro" e "Mais acessados" das listas de sinais.
+type FavoriteViewRow = {
+  event: { fixture_id: string; league_country?: string | null; league_name?: string | null };
+};
+
+export function applyFavoriteView<T extends FavoriteViewRow>(
+  rows: T[],
+  {
+    favoriteGames,
+    favoriteLeagues,
+    onlyFavorites,
+    sortMode,
+    trendingRank,
+  }: {
+    favoriteGames: ReadonlySet<string>;
+    favoriteLeagues: ReadonlySet<string>;
+    onlyFavorites: boolean;
+    sortMode: string;
+    trendingRank: ReadonlyMap<string, number>;
+  },
+) {
+  const visible = onlyFavorites
+    ? rows.filter(
+        (row) =>
+          favoriteGames.has(row.event.fixture_id) ||
+          favoriteLeagues.has(getFavoriteLeagueKey(row.event)),
+      )
+    : rows;
+
+  if (sortMode === "favorites") {
+    return sortByFavorites(visible, (row) => row.event, favoriteGames, favoriteLeagues);
+  }
+
+  return sortMode === "trending"
+    ? sortByTrending(visible, (row) => row.event.fixture_id, trendingRank)
+    : visible;
+}

@@ -19,7 +19,7 @@ import { useMonitorFavorites } from "@/app/(app)/_components/use-monitor-favorit
 import { useTrendingFixtures } from "@/app/(app)/_components/use-trending-fixtures";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
-import { getFavoriteLeagueKey, sortByFavorites, sortByTrending } from "@/lib/monitor-odds/favorites";
+import { applyFavoriteView } from "@/lib/monitor-odds/favorites";
 import {
   formatDuploPercent,
   BET365_BOOKMAKER_KEY,
@@ -48,6 +48,7 @@ import {
   getModeCounts,
   getSignalProfitClass,
   isEventInDateFilter,
+  toggleListItem,
   type SignalDateFilter,
 } from "@/lib/monitor-odds/signal-helpers";
 import {
@@ -575,23 +576,17 @@ export function DoubleMonitorWorkspace({
     () => getSignalRows(analyzedEvents, activeMode, sortMode),
     [activeMode, analyzedEvents, sortMode],
   );
-  const displayRows = useMemo(() => {
-    const visible = onlyFavorites
-      ? rows.filter(
-          (row) =>
-            favoriteGames.has(row.event.fixture_id) ||
-            favoriteLeagues.has(getFavoriteLeagueKey(row.event)),
-        )
-      : rows;
-
-    if (sortMode === "favorites") {
-      return sortByFavorites(visible, (row) => row.event, favoriteGames, favoriteLeagues);
-    }
-
-    return sortMode === "trending"
-      ? sortByTrending(visible, (row) => row.event.fixture_id, trendingRank)
-      : visible;
-  }, [favoriteGames, favoriteLeagues, onlyFavorites, rows, sortMode, trendingRank]);
+  const displayRows = useMemo(
+    () =>
+      applyFavoriteView(rows, {
+        favoriteGames,
+        favoriteLeagues,
+        onlyFavorites,
+        sortMode,
+        trendingRank,
+      }),
+    [favoriteGames, favoriteLeagues, onlyFavorites, rows, sortMode, trendingRank],
+  );
   const showSignalSkeleton =
     state.loading || (state.refreshingOdds && !rows.length && state.events.length > 0);
   const counts = useMemo(() => getModeCounts(analyzedEvents), [analyzedEvents]);
@@ -678,19 +673,11 @@ export function DoubleMonitorWorkspace({
   });
 
   function handleToggleBookmaker(key: string) {
-    setHiddenBookmakers((current) =>
-      current.includes(key)
-        ? current.filter((bookmakerKey) => bookmakerKey !== key)
-        : [...current, key],
-    );
+    setHiddenBookmakers((current) => toggleListItem(current, key));
   }
 
   function handleToggleLeague(key: string) {
-    setHiddenLeagueKeys((current) =>
-      current.includes(key)
-        ? current.filter((leagueKey) => leagueKey !== key)
-        : [...current, key],
-    );
+    setHiddenLeagueKeys((current) => toggleListItem(current, key));
   }
 
   function handleDateFilterChange(filter: DateFilter) {

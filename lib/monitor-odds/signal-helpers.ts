@@ -240,3 +240,8 @@ export function areCalculatorSelectionsActive(
 ) {
   return lines.length > 0 && lines.every((line) => selectedIds.has(line.id));
 }
+
+// Marca ou desmarca um item de uma lista de filtro (casas e campeonatos escondidos).
+export function toggleListItem(list: string[], key: string) {
+  return list.includes(key) ? list.filter((item) => item !== key) : [...list, key];
+}
