@@ -5,7 +5,7 @@ import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { getOddsEventByFixtureId } from "@/lib/monitor-odds/odds-data";
 import { getProceduresRepository } from "@/lib/server";
 
-import { OddsEventDetails } from "../../../odds/odds-event-search";
+import { OddsEventDetails } from "../../../odds/odds-event-details";
 
 type MonitorOddsEventPageProps = {
   params: Promise<{

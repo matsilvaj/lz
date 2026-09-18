@@ -30,10 +30,14 @@ const oddsFetch = readFileSync(
   new URL("../lib/monitor-odds/odds-fetch.ts", import.meta.url),
   "utf8",
 );
-const oddsUi = readFileSync(
+const oddsListUi = readFileSync(
   new URL("../app/(app)/odds/odds-event-search.tsx", import.meta.url),
   "utf8",
 );
+// A tela de Odds fica dividida em lista, detalhe do evento e partes comuns.
+const oddsUi = ["odds-event-search.tsx", "odds-event-details.tsx", "odds-shared.tsx"]
+  .map((file) => readFileSync(new URL(`../app/(app)/odds/${file}`, import.meta.url), "utf8"))
+  .join("\n");
 const doubleMonitorUi = readFileSync(
   new URL("../app/(app)/monitor/duplo/double-monitor-workspace.tsx", import.meta.url),
   "utf8",
@@ -308,10 +312,10 @@ test("monitor odds snapshots cache is scoped by odds version", () => {
 test("monitor odds list never fetches odds it does not render", () => {
   // Os cards da listagem mostram apenas data, hora, times e liga. Buscar odds
   // aqui custava o feed inteiro a cada poll sem mudar nada na tela.
-  const listStartIndex = oddsUi.indexOf("export function OddsEventSearch(");
+  const listStartIndex = oddsListUi.indexOf("export function OddsEventSearch(");
   assert.notEqual(listStartIndex, -1);
 
-  const listSource = oddsUi.slice(listStartIndex);
+  const listSource = oddsListUi.slice(listStartIndex);
 
   assert.doesNotMatch(listSource, /fetchOddsForEvents/);
   assert.doesNotMatch(listSource, /mergeOddsSnapshots/);
@@ -319,8 +323,8 @@ test("monitor odds list never fetches odds it does not render", () => {
 });
 
 test("monitor odds list only reloads when the fixtures change", () => {
-  const listStartIndex = oddsUi.indexOf("export function OddsEventSearch(");
-  const listSource = oddsUi.slice(listStartIndex);
+  const listStartIndex = oddsListUi.indexOf("export function OddsEventSearch(");
+  const listSource = oddsListUi.slice(listStartIndex);
 
   assert.match(listSource, /nextFixturesVersion !== previousFixturesVersion/);
   assert.doesNotMatch(listSource, /nextOddsVersion/);
