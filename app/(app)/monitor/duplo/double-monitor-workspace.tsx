@@ -13,7 +13,6 @@ import {
 import {
   CalculatorSelectionDock,
   createCalculatorSelectionId,
-  mergeCalculatorSelections,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
 import { useMonitorFavorites } from "@/app/(app)/_components/use-monitor-favorites";
@@ -34,10 +33,6 @@ import {
   type DuploOpportunity,
 } from "@/lib/monitor-odds/duplo";
 import { fetchOddsSnapshots } from "@/lib/monitor-odds/odds-fetch";
-import {
-  useMonitorOddsStatusFeed,
-  type MonitorOddsStatus,
-} from "@/lib/monitor-odds/use-status-feed";
 import {
   getPageSlice,
   SignalPagination,
@@ -67,6 +62,10 @@ import {
   SignalSkeleton,
   type SignalCardLine,
 } from "@/app/(app)/monitor/_components/signal-card";
+import {
+  useCalculatorRowSelections,
+  useSignalLiveOdds,
+} from "@/app/(app)/monitor/_components/use-signal-screen";
 
 type DateFilter = SignalDateFilter;
 type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
@@ -139,9 +138,6 @@ const sortOptions: SortMode[] = [
   "nearest",
   "farthest",
 ];
-// A consulta de status roda a cada 4s (barata), mas rebaixar as odds de todos
-// os jogos custa ~200 KB, entao a lista se atualiza no maximo a cada 20s.
-const oddsRefreshIntervalMs = 20_000;
 const duploEventsMemoryLimit = 20;
 const duploEventsByRequestKey = new Map<string, DuploEvent[]>();
 const duploOddsMemory = new SignalOddsMemory(300);
@@ -367,14 +363,24 @@ export function DoubleMonitorWorkspace({
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const { favoriteGames, favoriteLeagues, toggleGame } = useMonitorFavorites();
   const { trendingRank } = useTrendingFixtures();
+  const getRowCalculatorSelections = useCallback(
+    (row: SignalRow) =>
+      getOpportunityCalculatorSelections(
+        row.event.fixture_id,
+        row.opportunity,
+        formatFixtureTeams(row.event).label,
+      ),
+    [],
+  );
+  const {
+    calculatorSelections,
+    removeCalculatorSelection,
+    selectedCalculatorIds,
+    setCalculatorSelections,
+    toggleCalculatorRow,
+  } = useCalculatorRowSelections(getRowCalculatorSelections);
   const [sortMode, setSortMode] = useState<SortMode>("profit_desc");
   const [page, setPage] = useState(1);
-  const eventsRef = useRef<DuploEvent[]>([]);
-  const oddsVersionRef = useRef<string | null>(null);
-  const lastOddsRefreshAtRef = useRef(0);
-  const [calculatorSelections, setCalculatorSelections] = useState<
-    CalculatorSelectionLine[]
-  >([]);
   const [state, setState] = useState<SearchState>({
     error: null,
     events: [],
@@ -588,64 +594,14 @@ export function DoubleMonitorWorkspace({
   }, [favoriteGames, favoriteLeagues, onlyFavorites, rows, sortMode, trendingRank]);
   const showSignalSkeleton =
     state.loading || (state.refreshingOdds && !rows.length && state.events.length > 0);
-  const selectedCalculatorIds = useMemo(
-    () => new Set(calculatorSelections.map((selection) => selection.id)),
-    [calculatorSelections],
-  );
   const counts = useMemo(() => getModeCounts(analyzedEvents), [analyzedEvents]);
   const visibleRows = useMemo(() => getPageSlice(displayRows, page), [displayRows, page]);
 
-  useEffect(() => {
-    eventsRef.current = state.events;
-  }, [state.events]);
-
-  // Odds novas chegam sozinhas e a lista reordena junto: o intervalo de 20s e
-  // longo o bastante para isso nao atrapalhar o clique, e o melhor sinal
-  // aparecendo no topo e o que importa.
-  const handleStatusUpdate = useCallback(async (status: MonitorOddsStatus) => {
-    const nextOddsVersion =
-      status.odds_version ?? status.latest_odd_updated_at ?? null;
-
-    if (!nextOddsVersion || nextOddsVersion === oddsVersionRef.current) {
-      return;
-    }
-
-    if (Date.now() - lastOddsRefreshAtRef.current < oddsRefreshIntervalMs) {
-      return;
-    }
-
-    const currentEvents = eventsRef.current;
-
-    if (!currentEvents.length) {
-      return;
-    }
-
-    lastOddsRefreshAtRef.current = Date.now();
-
-    try {
-      const result = await fetchOddsSnapshots<OddsSnapshot>(
-        currentEvents.map((event) => event.fixture_id),
-        nextOddsVersion,
-      );
-
-      if (!result?.complete) {
-        return;
-      }
-
-      oddsVersionRef.current = result.oddsVersion;
-      duploOddsMemory.remember(result.snapshots);
-
-      const updatedEvents = mergeSignalOddsSnapshots(currentEvents, result.snapshots);
-
-      setState((previous) => ({ ...previous, events: updatedEvents }));
-    } catch {
-      // Atualizacao automatica e best-effort: o que esta na tela continua valido.
-    }
+  const updateEvents = useCallback((events: DuploEvent[]) => {
+    setState((previous) => ({ ...previous, events }));
   }, []);
 
-  const canPollStatus = useCallback(() => eventsRef.current.length > 0, []);
-
-  useMonitorOddsStatusFeed(canPollStatus, handleStatusUpdate);
+  useSignalLiveOdds(state.events, duploOddsMemory, updateEvents);
 
   // Volta para a primeira pagina quando os filtros mudam. Nao reage a
   // atualizacao de odds: quem esta lendo a pagina 3 continua nela.
@@ -746,31 +702,6 @@ export function DoubleMonitorWorkspace({
     setActiveMode("all");
     setHiddenBookmakers([]);
     setHiddenLeagueKeys([]);
-  }
-
-  function handleToggleCalculatorRow(row: SignalRow) {
-    const selections = getOpportunityCalculatorSelections(
-      row.event.fixture_id,
-      row.opportunity,
-      formatFixtureTeams(row.event).label,
-    );
-
-    setCalculatorSelections((current) => {
-      const currentIds = new Set(current.map((selection) => selection.id));
-      const selected = areCalculatorSelectionsActive(currentIds, selections);
-
-      return selected
-        ? current.filter(
-            (selection) => !selections.some((item) => item.id === selection.id),
-          )
-        : mergeCalculatorSelections(current, selections, { replaceAll: true });
-    });
-  }
-
-  function handleRemoveCalculatorSelection(id: string) {
-    setCalculatorSelections((current) =>
-      current.filter((selection) => selection.id !== id),
-    );
   }
 
   return (
@@ -889,7 +820,7 @@ export function DoubleMonitorWorkspace({
                   key={row.event.fixture_id}
                   lines={row.opportunity.lines}
                   modeLabel={row.opportunity.modeLabel}
-                  onToggleCalculator={() => handleToggleCalculatorRow(row)}
+                  onToggleCalculator={() => toggleCalculatorRow(row)}
                   onToggleFavorite={() => toggleGame(row.event.fixture_id)}
                   result={
                     <strong
@@ -934,7 +865,7 @@ export function DoubleMonitorWorkspace({
       <CalculatorSelectionDock
         onClear={() => setCalculatorSelections([])}
         requiredHouse={requiredBookmaker ? BET365_BOOKMAKER_LABEL : null}
-        onRemove={handleRemoveCalculatorSelection}
+        onRemove={removeCalculatorSelection}
         selections={calculatorSelections}
       />
     </div>

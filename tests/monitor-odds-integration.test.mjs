@@ -61,6 +61,10 @@ const signalCard = readFileSync(
   new URL("../app/(app)/monitor/_components/signal-card.tsx", import.meta.url),
   "utf8",
 );
+const signalScreenHooks = readFileSync(
+  new URL("../app/(app)/monitor/_components/use-signal-screen.ts", import.meta.url),
+  "utf8",
+);
 const signalHelpers = readFileSync(
   new URL("../lib/monitor-odds/signal-helpers.ts", import.meta.url),
   "utf8",
@@ -397,7 +401,8 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(oddsUi, /replaceAll: true/);
   assert.match(doubleMonitorUi, /CalculatorSelectionDock/);
   assert.match(doubleMonitorUi, /getOpportunityCalculatorSelections/);
-  assert.match(doubleMonitorUi, /replaceAll: true/);
+  assert.match(doubleMonitorUi, /useCalculatorRowSelections\(/);
+  assert.match(signalScreenHooks, /replaceAll: true/);
   // O card compartilhado leva ao evento na casa.
   assert.match(doubleMonitorUi, /<SignalCard/);
   assert.match(signalCard, /BookmakerEventLink/);
@@ -496,7 +501,7 @@ test("freebet converter keeps Sem PA, protects the freebet house, and opens calc
     freebetConverterUi,
     /stake: line\.role === "freebet" \? opportunity\.freebetValue : undefined/,
   );
-  assert.match(freebetConverterUi, /replaceAll: true/);
+  assert.match(freebetConverterUi, /useCalculatorRowSelections\(/);
   assert.match(freebetConverterUi, /createPortal\(/);
 });
 
@@ -508,21 +513,22 @@ test("monitor screens share one status poll across tabs", () => {
   assert.match(statusFeed, /statusPollIntervalMs = 4_000/);
   assert.match(statusFeed, /export function useMonitorOddsStatusFeed/);
 
-  for (const ui of [oddsUi, doubleMonitorUi, freebetConverterUi]) {
-    assert.match(ui, /useMonitorOddsStatusFeed\(canPollStatus, handleStatusUpdate\)/);
+  assert.match(oddsUi, /useMonitorOddsStatusFeed\(canPollStatus, handleStatusUpdate\)/);
+  assert.match(signalScreenHooks, /useMonitorOddsStatusFeed\(canPollStatus, handleStatusUpdate\)/);
+
+  for (const ui of [doubleMonitorUi, freebetConverterUi]) {
+    assert.match(ui, /useSignalLiveOdds\(state\.events,/);
   }
 });
 
 test("monitor lists refresh odds on a slower cadence than the detail screen", () => {
   // Rebaixar as odds de todos os jogos custa ~200 KB, entao as listas se
   // limitam, enquanto o detalhe rebaixa um jogo so e acompanha o poll.
-  for (const ui of [doubleMonitorUi, freebetConverterUi]) {
-    assert.match(ui, /const oddsRefreshIntervalMs = 20_000;/);
-    assert.match(
-      ui,
-      /Date\.now\(\) - lastOddsRefreshAtRef\.current < oddsRefreshIntervalMs/,
-    );
-  }
+  assert.match(signalScreenHooks, /const ODDS_REFRESH_INTERVAL_MS = 20_000;/);
+  assert.match(
+    signalScreenHooks,
+    /Date\.now\(\) - lastOddsRefreshAtRef\.current < ODDS_REFRESH_INTERVAL_MS/,
+  );
 });
 
 test("monitor lists reorder as soon as new odds arrive", () => {
