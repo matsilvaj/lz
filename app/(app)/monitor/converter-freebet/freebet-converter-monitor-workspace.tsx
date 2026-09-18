@@ -106,8 +106,6 @@ type SortMode =
   | "conversion_asc"
   | "nearest"
   | "farthest"
-  | "recent"
-  | "oldest"
   | "favorites"
   | "trending";
 
@@ -178,20 +176,16 @@ const sortLabels: Record<SortMode, string> = {
   conversion_desc: "Maior conversão",
   farthest: "Mais distante",
   nearest: "Mais próximo",
-  oldest: "Mais antigos",
-  recent: "Mais recentes",
   favorites: "Favoritos primeiro",
   trending: "Mais acessados",
 };
 const sortOptions: SortMode[] = [
   "conversion_desc",
   "conversion_asc",
-  "nearest",
-  "farthest",
-  "recent",
-  "oldest",
   "favorites",
   "trending",
+  "nearest",
+  "farthest",
 ];
 const converterOddsSnapshotMemoryLimit = 300;
 const converterOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
@@ -745,13 +739,6 @@ function sortSignalRows(rows: SignalRow[], sortMode: SortMode) {
       return Math.abs(getTimeValue(right.event) - now) - Math.abs(getTimeValue(left.event) - now);
     }
 
-    if (sortMode === "recent") {
-      return getTimeValue(right.event) - getTimeValue(left.event);
-    }
-
-    if (sortMode === "oldest") {
-      return getTimeValue(left.event) - getTimeValue(right.event);
-    }
 
     const conversionOrder =
       right.opportunity.profitAmount - left.opportunity.profitAmount;
@@ -2449,7 +2436,9 @@ export function FreebetConverterMonitorWorkspace({
       if (Array.isArray(filters.hiddenLeagueKeys)) setHiddenLeagueKeys(filters.hiddenLeagueKeys);
       if (typeof filters.maxOddValue === "string") setMaxOddValue(filters.maxOddValue);
       if (typeof filters.minOddValue === "string") setMinOddValue(filters.minOddValue);
-      if (filters.sortMode) setSortMode(filters.sortMode);
+      if (filters.sortMode && sortOptions.includes(filters.sortMode)) {
+        setSortMode(filters.sortMode);
+      }
     },
     [],
   );

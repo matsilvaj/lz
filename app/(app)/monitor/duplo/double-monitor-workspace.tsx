@@ -66,8 +66,6 @@ type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
 type SortMode =
   | "profit_desc"
   | "profit_asc"
-  | "recent"
-  | "oldest"
   | "nearest"
   | "farthest"
   | "favorites"
@@ -135,10 +133,8 @@ const dateFilterLabels: Record<DateFilter, string> = {
 const sortLabels: Record<SortMode, string> = {
   farthest: "Mais distante",
   nearest: "Mais próximo",
-  oldest: "Mais antigos",
   profit_asc: "Menor lucro",
   profit_desc: "Maior lucro",
-  recent: "Mais recentes",
   favorites: "Favoritos primeiro",
   trending: "Mais acessados",
 };
@@ -146,12 +142,10 @@ const sortLabels: Record<SortMode, string> = {
 const sortOptions: SortMode[] = [
   "profit_desc",
   "profit_asc",
-  "recent",
-  "oldest",
-  "nearest",
-  "farthest",
   "favorites",
   "trending",
+  "nearest",
+  "farthest",
 ];
 // A consulta de status roda a cada 4s (barata), mas rebaixar as odds de todos
 // os jogos custa ~200 KB, entao a lista se atualiza no maximo a cada 20s.
@@ -569,13 +563,6 @@ function sortSignalRows(rows: SignalRow[], mode: SortMode) {
       return left.opportunity.profitPercent - right.opportunity.profitPercent;
     }
 
-    if (mode === "recent") {
-      return getTimeValue(right.event) - getTimeValue(left.event);
-    }
-
-    if (mode === "oldest") {
-      return getTimeValue(left.event) - getTimeValue(right.event);
-    }
 
     if (mode === "nearest") {
       return Math.abs(getTimeValue(left.event) - now) - Math.abs(getTimeValue(right.event) - now);
@@ -1679,7 +1666,9 @@ export function DoubleMonitorWorkspace() {
       if (filters.activeMode) setActiveMode(filters.activeMode);
       if (Array.isArray(filters.hiddenBookmakers)) setHiddenBookmakers(filters.hiddenBookmakers);
       if (Array.isArray(filters.hiddenLeagueKeys)) setHiddenLeagueKeys(filters.hiddenLeagueKeys);
-      if (filters.sortMode) setSortMode(filters.sortMode);
+      if (filters.sortMode && sortOptions.includes(filters.sortMode)) {
+        setSortMode(filters.sortMode);
+      }
     },
     [],
   );

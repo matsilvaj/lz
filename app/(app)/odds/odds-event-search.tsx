@@ -282,9 +282,9 @@ const eventListSortOptions: Array<{
   value: EventListSortMode;
 }> = [
   { label: "Por campeonato", value: "league" },
+  { label: "Mais acessados", value: "trending" },
   { label: "Mais próximos", value: "nearest" },
   { label: "Mais distantes", value: "farthest" },
-  { label: "Mais acessados", value: "trending" },
 ];
 const leagueLogoOutlinePositions = [
   "top",
