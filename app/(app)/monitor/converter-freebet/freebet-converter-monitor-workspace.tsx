@@ -70,6 +70,7 @@ import {
   getPageSlice,
   SignalPagination,
 } from "../_components/signal-pagination";
+import { formatCurrency } from "@/lib/format";
 
 type FreebetQueueItem = {
   casa: string;
@@ -511,13 +512,6 @@ function getOddLimits(minOddValue: string, maxOddValue: string) {
 function formatNumber(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    currency: "BRL",
-    style: "currency",
   }).format(Number.isFinite(value) ? value : 0);
 }
 

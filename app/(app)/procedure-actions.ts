@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
@@ -27,6 +26,7 @@ import {
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
+import { revalidateAppData } from "@/lib/server/revalidate";
 
 function parseText(value: FormDataEntryValue | null) {
   return normalizeText(value, 180);
@@ -582,30 +582,6 @@ function getReturnTo(formData: FormData, fallback: string) {
   return getSafeAppPath(formData.get("returnTo"), fallback);
 }
 
-function revalidateApplication() {
-  const paths = [
-    "/dashboard",
-    "/procedimentos",
-    "/freebets",
-    "/calculadora",
-    "/bancas",
-    "/historico",
-  ];
-
-  for (const path of paths) {
-    revalidatePath(path);
-  }
-
-  for (const tag of [
-    "dashboard-data",
-    "freebets-page-data",
-    "bookmakers-page-data",
-    "history-page-data",
-  ]) {
-    updateTag(tag);
-  }
-}
-
 export async function saveProcedureAction(formData: FormData) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
@@ -689,7 +665,7 @@ export async function saveProcedureAction(formData: FormData) {
 
   const bookmakerBalanceImpacts = calculateBookmakerBalanceImpacts(procedureDetails);
 
-  revalidateApplication();
+  revalidateAppData();
   redirect(
     appendToastParams(
       returnTo,
@@ -802,7 +778,7 @@ export async function updateProcedureAction(formData: FormData) {
 
   const bookmakerBalanceImpacts = calculateBookmakerBalanceImpacts(procedureDetails);
 
-  revalidateApplication();
+  revalidateAppData();
   redirect(
     appendToastParams(
       returnTo,
@@ -835,7 +811,7 @@ export async function updateProcedureDoubleStatusAction(
     await repository.updateDoubleStatus(parsedProcedureId, hitDouble, user.id, activeWorkspace.id);
   }
 
-  revalidateApplication();
+  revalidateAppData();
 }
 export async function updateProcedureStatusAction(
   procedureId: number | string,
@@ -879,7 +855,7 @@ export async function updateProcedureStatusAction(
     activeWorkspace.id,
   );
 
-  revalidateApplication();
+  revalidateAppData();
 }
 
 export async function deleteProcedureAction(procedureId: number | string) {
@@ -901,5 +877,5 @@ export async function deleteProcedureAction(procedureId: number | string) {
     await repository.deleteProcedure(parsedProcedureId, user.id, activeWorkspace.id);
   }
 
-  revalidateApplication();
+  revalidateAppData();
 }

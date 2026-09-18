@@ -3,6 +3,7 @@
 import { Calendar, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { clamp } from "@/lib/format";
 
 const DAY_LABELS = ["D", "S", "T", "Q", "Q", "S", "S"];
 const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
@@ -17,10 +18,6 @@ type DatePickerFieldProps = {
   placeholder?: string;
   value: string;
 };
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function parseDateValue(value: string) {
   const [year, month, day] = String(value ?? "").split("-").map(Number);

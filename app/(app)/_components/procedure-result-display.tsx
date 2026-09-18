@@ -1,3 +1,5 @@
+import { isFreebetProcedure } from "@/lib/procedures";
+
 type ResultDisplayEntry = {
   escopo: string;
   resultado_chave: string;
@@ -23,10 +25,6 @@ export const MULTIPLE_OPTIONS = [
 ];
 
 const MULTIPLE_SLOT_CLASS = "flex w-[74px] shrink-0 justify-start";
-
-function isFreebetProcedure(type: string) {
-  return type === "Coletar Freebet" || type === "Converter Freebet";
-}
 
 function getEntryHouse(procedure: ResultDisplayProcedure, entry: ResultDisplayEntry) {
   const house = entry.casa.trim();

@@ -19,6 +19,9 @@ import {
   formatFreebetCount,
   formatNumber,
 } from "../_components/ui";
+import { formatDraftNumber } from "@/lib/format";
+import { toDateInputValue } from "@/lib/format";
+import { getProfitClass } from "@/app/(app)/_components/ui";
 
 const FREEBET_TYPE_OPTIONS = ["Coletar Freebet"] as const;
 type FreebetSubtab = "pending-collection" | "convertible" | "pending-conversion";
@@ -127,10 +130,6 @@ type FreebetsWorkspaceProps = {
   convertedHistory: ConvertedFreebetHistoryItem[];
   bookmakers: string[];
 };
-
-function getProfitClass(value: number) {
-  return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
-}
 
 function FreebetRowMenu({ onEdit }: { onEdit: () => void }) {
   const [open, setOpen] = useState(false);
@@ -258,29 +257,12 @@ function FreebetRowMenu({ onEdit }: { onEdit: () => void }) {
   );
 }
 
-function toDateInputValue(value = "") {
-  const [day, month, year] = String(value).split("/");
-  if (!day || !month || !year) {
-    return "";
-  }
-
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
 function toHousesInputValue(value = "") {
   return String(value ?? "")
     .split(/[,|]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .join(", ");
-}
-
-function formatDraftNumber(value: number | null | undefined) {
-  if (!Number.isFinite(Number(value)) || Math.abs(Number(value)) < 0.005) {
-    return "";
-  }
-
-  return String(Number(value));
 }
 
 function toProtectionDraft(entry: FreebetProcedureEntry): ProcedureShareProtectionDraft {

@@ -7,14 +7,11 @@ import { PasswordInput } from "@/app/_components/password-input";
 
 import { login } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
+import { readParam } from "@/lib/search-params";
 
 type LoginPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
-
-function readParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const user = await getCurrentUser();

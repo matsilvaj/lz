@@ -17,6 +17,8 @@ import {
   buildProcedureDefaultValues,
   ProcedureRowActions,
 } from "../procedimentos/procedure-row-actions";
+import { isFreebetProcedure } from "@/lib/procedures";
+import { getProfitClass } from "@/app/(app)/_components/ui";
 
 type HistoryMonth = {
   value: string;
@@ -84,10 +86,6 @@ const PROCEDURE_TYPE_LABELS: Record<string, string> = {
   "Converter Freebet": "Freebet",
 };
 
-function getProfitClass(value: number) {
-  return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
-}
-
 function getProcedureTypeLabel(type: string) {
   return PROCEDURE_TYPE_LABELS[type] ?? type;
 }
@@ -98,10 +96,6 @@ function getProcedureStatusLabel(status: string | null | undefined) {
 
 function getProcedureStatusTone(status: string) {
   return status === PROCEDURE_STATUS_DONE ? "positive" : "warning";
-}
-
-function isFreebetProcedure(type: string) {
-  return type === "Coletar Freebet" || type === "Converter Freebet";
 }
 
 function normalizeMoney(value: number) {

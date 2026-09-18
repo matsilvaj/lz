@@ -1,6 +1,6 @@
 "use server";
 
-import { refresh, revalidatePath, updateTag } from "next/cache";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getSafeAppPath } from "@/lib/auth/redirects";
@@ -13,6 +13,7 @@ import { normalizeText, parsePositiveInteger } from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getProceduresRepository } from "@/lib/server";
 import { appendToastParams } from "@/lib/ui/toast";
+import { revalidateAppData } from "@/lib/server/revalidate";
 
 function parseText(value: string | FormDataEntryValue | null) {
   return normalizeText(value, 80);
@@ -25,31 +26,6 @@ async function canWriteWorkspaces(userId: string) {
     limit: 30,
     windowMs: 60_000,
   });
-}
-
-function revalidateApplication() {
-  const paths = [
-    "/dashboard",
-    "/procedimentos",
-    "/freebets",
-    "/calculadora",
-    "/bancas",
-    "/historico",
-    "/workspaces",
-  ];
-
-  for (const path of paths) {
-    revalidatePath(path);
-  }
-
-  for (const tag of [
-    "dashboard-data",
-    "freebets-page-data",
-    "bookmakers-page-data",
-    "history-page-data",
-  ]) {
-    updateTag(tag);
-  }
 }
 
 export async function createWorkspaceAction(formData: FormData) {
@@ -71,7 +47,7 @@ export async function createWorkspaceAction(formData: FormData) {
     await setActiveWorkspaceCookie(createdWorkspace.id);
   }
 
-  revalidateApplication();
+  revalidateAppData(["/workspaces"]);
   redirect(appendToastParams("/workspaces", "success", "Workspace criado."));
 }
 
@@ -86,7 +62,7 @@ export async function switchWorkspaceAction(workspaceId: number, returnTo = "/da
   }
 
   await setActiveWorkspaceCookie(workspace.id);
-  revalidateApplication();
+  revalidateAppData(["/workspaces"]);
   redirect(safeReturnTo);
 }
 
@@ -100,7 +76,7 @@ export async function selectWorkspaceAction(workspaceId: number) {
   }
 
   await setActiveWorkspaceCookie(workspace.id);
-  revalidateApplication();
+  revalidateAppData(["/workspaces"]);
   refresh();
 }
 
@@ -120,7 +96,7 @@ export async function updateWorkspaceAction(formData: FormData) {
 
   await repository.updateWorkspace(user.id, workspaceId, name);
 
-  revalidateApplication();
+  revalidateAppData(["/workspaces"]);
   redirect(appendToastParams("/workspaces", "success", "Workspace atualizado."));
 }
 
@@ -150,6 +126,6 @@ export async function deleteWorkspaceAction(workspaceId: number) {
     await setActiveWorkspaceCookie(fallbackWorkspace.id);
   }
 
-  revalidateApplication();
+  revalidateAppData(["/workspaces"]);
   redirect(appendToastParams("/workspaces", "success", "Workspace removido."));
 }

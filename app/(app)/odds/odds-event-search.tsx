@@ -69,6 +69,7 @@ import {
   type FreebetConversionMode,
   type FreebetConversionOpportunity,
 } from "@/lib/monitor-odds/freebet-conversion";
+import { formatCurrency } from "@/lib/format";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -1000,13 +1001,6 @@ function selectionLabel(value: string) {
 
 function formatOdd(value: number | undefined) {
   return value ? value.toFixed(3) : "-";
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    currency: "BRL",
-    style: "currency",
-  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function BookmakerEventLink({

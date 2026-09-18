@@ -16,6 +16,9 @@ import {
 } from "../_components/procedure-share-types";
 import { CloseIcon } from "../_components/ui";
 import { deleteProcedureAction } from "../procedure-actions";
+import { isFreebetProcedure } from "@/lib/procedures";
+import { formatDraftNumber } from "@/lib/format";
+import { toDateInputValue } from "@/lib/format";
 
 const PROCEDURE_EDIT_EVENT = "lz:procedure-edit";
 const PROCEDURE_MENU_EVENT = "lz:procedure-menu";
@@ -102,33 +105,12 @@ export function requestProcedureMenu(
   );
 }
 
-function toDateInputValue(value: string) {
-  const [day, month, year] = String(value).split("/");
-  if (!day || !month || !year) {
-    return "";
-  }
-
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
 function toHousesInputValue(value: string) {
   return String(value ?? "")
     .split(/[,|]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .join(", ");
-}
-
-function isFreebetProcedure(type: string) {
-  return type === "Coletar Freebet" || type === "Converter Freebet";
-}
-
-function formatDraftNumber(value: number | null | undefined) {
-  if (!Number.isFinite(Number(value)) || Math.abs(Number(value)) < 0.005) {
-    return "";
-  }
-
-  return String(Number(value));
 }
 
 function toProtectionDraft(entry: ProcedureEntryDetail): ProcedureShareProtectionDraft {

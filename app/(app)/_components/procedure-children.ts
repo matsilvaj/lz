@@ -1,4 +1,5 @@
 import type { ProcedureShareChildDraft } from "./procedure-share-types";
+import { formatDraftNumber } from "@/lib/format";
 
 type StoredEntry = {
   escopo: string;
@@ -15,14 +16,6 @@ type StoredEntry = {
   cashback_percentual: number;
   freebet_somente_lucro: boolean;
 };
-
-function formatDraftNumber(value: number | null | undefined) {
-  if (!Number.isFinite(Number(value)) || Math.abs(Number(value)) < 0.005) {
-    return "";
-  }
-
-  return String(Number(value));
-}
 
 // Filhas compartilham a chave de resultado da mãe; o modal indexa proteções pela posição.
 export function buildChildDraftsFromEntries(

@@ -50,6 +50,9 @@ import {
   requestProcedureEdit,
   requestProcedureMenu,
 } from "./procedure-row-actions";
+import { isFreebetProcedure } from "@/lib/procedures";
+import { clamp } from "@/lib/format";
+import { getProfitClass } from "@/app/(app)/_components/ui";
 
 type ProcedureRow = {
   id: number;
@@ -151,20 +154,12 @@ const PROCEDURE_TYPE_FILTER_OPTIONS = PROCEDURE_TYPES.reduce<
   return options;
 }, []);
 
-function getProfitClass(value: number) {
-  return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
-}
-
 function getProcedureStatusLabel(status: string | null | undefined) {
   return status?.trim() || PROCEDURE_STATUS_DONE;
 }
 
 function getProcedureTypeLabel(type: string) {
   return PROCEDURE_TYPE_LABELS[type] ?? type;
-}
-
-function isFreebetProcedure(type: string) {
-  return type === "Coletar Freebet" || type === "Converter Freebet";
 }
 
 function hasProcedureScopeResult(procedure: ProcedureRow, scope: string) {
@@ -286,10 +281,6 @@ function ProcedureStatusToggle({ procedure }: { procedure: ProcedureRow }) {
 
 function normalizeMoney(value: number) {
   return Object.is(value, -0) || Math.abs(value) < 0.005 ? 0 : value;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
 }
 
 function isInteractiveTarget(target: EventTarget | null) {

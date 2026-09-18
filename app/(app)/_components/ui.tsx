@@ -1,17 +1,14 @@
 import { type ReactNode } from "react";
 
-const currencyFormatter = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  maximumFractionDigits: 2,
-});
-
 const numberFormatter = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 });
 
-export function formatCurrency(value: number) {
-  return currencyFormatter.format(value);
+export { formatCurrency } from "@/lib/format";
+
+// Verde para lucro (ou zero), vermelho para prejuízo.
+export function getProfitClass(value: number) {
+  return value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]";
 }
 
 export function formatNumber(value: number) {

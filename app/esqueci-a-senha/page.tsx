@@ -6,14 +6,11 @@ import { getCurrentUser } from "@/lib/auth/session";
 
 import { requestPasswordReset } from "../auth/actions";
 import { AuthPageShell } from "../auth/auth-page-shell";
+import { readParam } from "@/lib/search-params";
 
 type ForgotPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
-
-function readParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 export default async function ForgotPasswordPage({
   searchParams,
