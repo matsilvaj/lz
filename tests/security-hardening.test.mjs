@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -10,6 +10,20 @@ const projectRoot = path.resolve(__dirname, "..");
 
 function projectFile(...segments) {
   return path.join(projectRoot, ...segments);
+}
+
+// O repositório fica dividido entre a classe e os arquivos por assunto em ./repository.
+async function readRepositorySource() {
+  const databaseDir = projectFile("core", "server", "database");
+  const repositoryDir = path.join(databaseDir, "repository");
+  const files = [
+    path.join(databaseDir, "postgresRepository.js"),
+    ...(await readdir(repositoryDir))
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => path.join(repositoryDir, file)),
+  ];
+
+  return (await Promise.all(files.map((file) => readFile(file, "utf8")))).join("\n");
 }
 
 test("tenant data tables enforce user/workspace ownership at the database layer", async () => {
@@ -46,10 +60,7 @@ test("tenant data tables enforce user/workspace ownership at the database layer"
 });
 
 test("bookmaker notes upsert never updates a row owned by a different user", async () => {
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(
     repositorySource,
@@ -68,10 +79,7 @@ test("procedure status migration is additive and queryable", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(
     migration,
@@ -96,10 +104,7 @@ test("procedure entry details migration is additive and tenant scoped", async ()
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+procedimentos_entradas/iu);
   assert.match(migration, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+procedimentos_resultados/iu);
@@ -113,10 +118,7 @@ test("procedure entry details migration is additive and tenant scoped", async ()
 });
 
 test("procedure result details require an explicit selected outcome", async () => {
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
   const actionSource = await readFile(
     projectFile("app", "(app)", "procedure-actions.ts"),
     "utf8",
@@ -186,10 +188,7 @@ test("procedure entry calculator adjustments migration is additive", async () =>
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+aumento_percentual/iu);
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+cashback_percentual/iu);
@@ -209,10 +208,7 @@ test("procedure entry freebet flag migration is additive", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+freebet_somente_lucro/iu);
   assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/iu.test(migration), false);
@@ -230,10 +226,7 @@ test("procedure entry cashback loss-only migration is additive and defaults to u
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+cashback_apenas_perda/iu);
   // A caixa nasce desmarcada, entao a coluna precisa acompanhar o padrao da tela.
@@ -253,10 +246,7 @@ test("procedure entry operation date migration is additive", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+data_operacao/iu);
   assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/iu.test(migration), false);
@@ -274,10 +264,7 @@ test("freebet phase games migration is additive", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+jogo_coleta_freebet/iu);
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+jogo_conversao_freebet/iu);
@@ -297,10 +284,7 @@ test("freebet conversion batch migration is additive", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+lote_conversao_freebet/iu);
   assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/iu.test(migration), false);
@@ -313,10 +297,7 @@ test("freebet conversion updates can be applied to selected origin procedures", 
     projectFile("app", "(app)", "procedure-actions.ts"),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
   const calculatorSource = await readFile(
     projectFile("app", "(app)", "calculadora", "calculator-workspace.tsx"),
     "utf8",
@@ -345,10 +326,7 @@ test("freebet conversion updates can be applied to selected origin procedures", 
 });
 
 test("bookmaker balances consolidate procedure entries by catalog house and hide empty balances", async () => {
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(repositorySource, /ca\.id\s+AS\s+bookmaker_id/iu);
   assert.match(repositorySource, /lower\(ca\.nome\)\s*=\s*lower\(btrim\(e\.casa\)\)/iu);
@@ -370,10 +348,7 @@ test("procedure bookmaker applications migration is additive and runtime scoped"
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(migration, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+procedimentos_bancas_aplicacoes/iu);
   assert.match(migration, /procedimento_id\s+BIGINT\s+NOT\s+NULL\s+REFERENCES\s+procedimentos_historico\(id\)\s+ON\s+DELETE\s+CASCADE/iu);
@@ -387,10 +362,7 @@ test("procedure bookmaker applications migration is additive and runtime scoped"
 });
 
 test("manual bookmaker balance edits rebase procedure applications", async () => {
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
 
   assert.match(
     repositorySource,
@@ -419,10 +391,7 @@ test("manual bookmaker balance edits rebase procedure applications", async () =>
 });
 
 test("bookmaker deletion is blocked while pending procedures use the house", async () => {
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
   const actionsSource = await readFile(
     projectFile("app", "(app)", "bancas", "actions.ts"),
     "utf8",
@@ -468,10 +437,7 @@ test("active user sessions enforce one app session per account", async () => {
     ),
     "utf8",
   );
-  const repositorySource = await readFile(
-    projectFile("core", "server", "database", "postgresRepository.js"),
-    "utf8",
-  );
+  const repositorySource = await readRepositorySource();
   const sessionSource = await readFile(
     projectFile("lib", "auth", "session.ts"),
     "utf8",
