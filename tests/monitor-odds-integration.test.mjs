@@ -53,6 +53,10 @@ const freebetConversionLib = readFileSync(
   new URL("../lib/monitor-odds/freebet-conversion.ts", import.meta.url),
   "utf8",
 );
+const signalHelpers = readFileSync(
+  new URL("../lib/monitor-odds/signal-helpers.ts", import.meta.url),
+  "utf8",
+);
 const duploEngine = readFileSync(
   new URL("../lib/monitor-odds/duplo.ts", import.meta.url),
   "utf8",
@@ -254,8 +258,10 @@ test("monitor odds UI localizes international competitions and national teams", 
   assert.match(oddsDisplayNames, /"south-korea": "Coreia do Sul"/);
   assert.match(oddsUi, /formatCompetitionName/);
   assert.match(oddsUi, /formatNationalTeamName/);
-  assert.match(doubleMonitorUi, /formatCompetitionName/);
-  assert.match(doubleMonitorUi, /formatNationalTeamName/);
+  // Duplo, Semanal e Converter formatam nomes pelo módulo compartilhado.
+  assert.match(signalHelpers, /formatCompetitionName/);
+  assert.match(signalHelpers, /formatNationalTeamName/);
+  assert.match(doubleMonitorUi, /from "@\/lib\/monitor-odds\/signal-helpers"/);
 });
 
 test("monitor odds UI keeps retrying incomplete odds versions", () => {

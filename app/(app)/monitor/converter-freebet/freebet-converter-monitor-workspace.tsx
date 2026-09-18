@@ -2,9 +2,7 @@
 
 import {
   ArrowLeft,
-  ArrowUpDown,
   Check,
-  ChevronDown,
   RotateCcw,
   SlidersHorizontal,
   Star,
@@ -13,7 +11,6 @@ import {
 import Link from "next/link";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -56,11 +53,6 @@ import {
   type DuploEvent,
   type DuploOddItem,
 } from "@/lib/monitor-odds/duplo";
-import {
-  formatCompetitionName,
-  formatLeagueCountryName,
-  formatNationalTeamName,
-} from "@/lib/monitor-odds/display-names";
 import { fetchOddsSnapshots } from "@/lib/monitor-odds/odds-fetch";
 import {
   useMonitorOddsStatusFeed,
@@ -71,6 +63,30 @@ import {
   SignalPagination,
 } from "../_components/signal-pagination";
 import { formatCurrency } from "@/lib/format";
+import {
+  BookmakerEventLink,
+  BookmakerToggleButton,
+  DateFilterButton,
+  ModeButton,
+  SortMenu,
+} from "@/app/(app)/monitor/_components/signal-controls";
+import {
+  areCalculatorSelectionsActive,
+  formatFixtureTeams,
+  formatLeagueLine,
+  formatSignalDate,
+  formatSignalTime,
+  getAvailableBookmakers,
+  getAvailableLeagues,
+  getEventTimeValue,
+  getLeagueKey,
+  getModeCounts,
+  getRelativeDateLabel,
+  getSignalProfitClass,
+  isEventInDateFilter,
+  type FilterOption,
+  type SignalDateFilter,
+} from "@/lib/monitor-odds/signal-helpers";
 
 type FreebetQueueItem = {
   casa: string;
@@ -98,7 +114,7 @@ type FreebetConverterMonitorWorkspaceProps = {
   convertibleGroups: ConvertibleFreebetGroup[];
 };
 
-type DateFilter = "all" | "today" | "tomorrow";
+type DateFilter = SignalDateFilter;
 type SelectionMode = "registered" | "consultation";
 type ConversionSource = "registered" | "consultation";
 type ModeFilter = FreebetConversionMode | "all";
@@ -134,15 +150,9 @@ type AnalyzedEvent = {
   opportunities: FreebetConversionOpportunity[];
 };
 
-type BookmakerFilterOption = {
-  key: string;
-  name: string;
-};
+type BookmakerFilterOption = FilterOption;
 
-type LeagueFilterOption = {
-  key: string;
-  name: string;
-};
+type LeagueFilterOption = FilterOption;
 
 type SearchState = {
   error: string | null;
@@ -515,59 +525,6 @@ function formatNumber(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
-
-function formatTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatLeagueLine(event: DuploEvent) {
-  const leagueName = formatCompetitionName(event.league_name, event.league_country);
-  const country = formatLeagueCountryName(event.league_country);
-
-  return country ? `${leagueName} - ${country}` : leagueName;
-}
-
-function formatFixtureTeams(event: Pick<DuploEvent, "away_team" | "home_team">) {
-  const homeTeam = formatNationalTeamName(event.home_team);
-  const awayTeam = formatNationalTeamName(event.away_team);
-
-  return {
-    awayTeam,
-    homeTeam,
-    label: `${homeTeam} x ${awayTeam}`,
-  };
-}
-
-function getProfitClass(value: number) {
-  if (Math.abs(value) < 0.005) {
-    return "text-white";
-  }
-
-  return value > 0 ? "text-emerald-400" : "text-rose-400";
-}
-
 function getBookmakerKey(slug: string | null | undefined, name: string) {
   return getFreebetConversionBookmakerKey(name, slug);
 }
@@ -583,46 +540,6 @@ function isFreebetHouse(
   return (
     getBookmakerKey(odd.bookmaker_slug, odd.bookmaker_name) === freebetHouseKey ||
     getFreebetConversionBookmakerKey(odd.bookmaker_name) === freebetHouseKey
-  );
-}
-
-function getAvailableBookmakers(events: DuploEvent[]): BookmakerFilterOption[] {
-  const bookmakers = new Map<string, string>();
-
-  for (const event of events) {
-    for (const odd of event.odds) {
-      const key = getBookmakerKey(odd.bookmaker_slug, odd.bookmaker_name);
-      const name = formatDuploBookmakerName(odd.bookmaker_name);
-
-      if (!bookmakers.has(key)) {
-        bookmakers.set(key, name);
-      }
-    }
-  }
-
-  return Array.from(bookmakers, ([key, name]) => ({ key, name })).sort((left, right) =>
-    left.name.localeCompare(right.name, "pt-BR"),
-  );
-}
-
-function getLeagueKey(event: Pick<DuploEvent, "league_country" | "league_name">) {
-  return `${event.league_name || "campeonato"}::${event.league_country || ""}`;
-}
-
-function getAvailableLeagues(events: DuploEvent[]): LeagueFilterOption[] {
-  const leagues = new Map<string, string>();
-
-  for (const event of events) {
-    const key = getLeagueKey(event);
-    const name = formatLeagueLine(event);
-
-    if (!leagues.has(key)) {
-      leagues.set(key, name);
-    }
-  }
-
-  return Array.from(leagues, ([key, name]) => ({ key, name })).sort((left, right) =>
-    left.name.localeCompare(right.name, "pt-BR"),
   );
 }
 
@@ -649,74 +566,6 @@ function filterEventBookmakers(
   };
 }
 
-function getTimeValue(event: DuploEvent) {
-  const timestamp = new Date(event.starts_at).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-}
-
-function formatDateParam(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function getDateFilterKey(filter: DateFilter) {
-  if (filter === "all") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-
-  if (filter === "tomorrow") {
-    date.setDate(date.getDate() + 1);
-  }
-
-  return formatDateParam(date);
-}
-
-function isEventInDateFilter(event: DuploEvent, filter: DateFilter) {
-  const filterKey = getDateFilterKey(filter);
-
-  if (!filterKey) {
-    return true;
-  }
-
-  const eventDate = new Date(event.starts_at);
-
-  if (Number.isNaN(eventDate.getTime())) {
-    return false;
-  }
-
-  return formatDateParam(eventDate) === filterKey;
-}
-
-function getRelativeDateLabel(value: string) {
-  const eventDate = new Date(value);
-
-  if (Number.isNaN(eventDate.getTime())) {
-    return null;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const eventKey = formatDateParam(eventDate);
-
-  if (eventKey === formatDateParam(today)) {
-    return "Hoje";
-  }
-
-  if (eventKey === formatDateParam(tomorrow)) {
-    return "Amanhã";
-  }
-
-  return null;
-}
-
 function sortSignalRows(rows: SignalRow[], sortMode: SortMode) {
   const now = Date.now();
 
@@ -726,11 +575,11 @@ function sortSignalRows(rows: SignalRow[], sortMode: SortMode) {
     }
 
     if (sortMode === "nearest") {
-      return Math.abs(getTimeValue(left.event) - now) - Math.abs(getTimeValue(right.event) - now);
+      return Math.abs(getEventTimeValue(left.event) - now) - Math.abs(getEventTimeValue(right.event) - now);
     }
 
     if (sortMode === "farthest") {
-      return Math.abs(getTimeValue(right.event) - now) - Math.abs(getTimeValue(left.event) - now);
+      return Math.abs(getEventTimeValue(right.event) - now) - Math.abs(getEventTimeValue(left.event) - now);
     }
 
 
@@ -738,7 +587,7 @@ function sortSignalRows(rows: SignalRow[], sortMode: SortMode) {
       right.opportunity.profitAmount - left.opportunity.profitAmount;
 
     if (conversionOrder !== 0) return conversionOrder;
-    return getTimeValue(left.event) - getTimeValue(right.event);
+    return getEventTimeValue(left.event) - getEventTimeValue(right.event);
   });
 }
 
@@ -808,34 +657,6 @@ function getSignalRows(
 
 // Quantos jogos tem ao menos uma conversao de cada modo. Antes isso refazia a
 // analise inteira uma vez por modo, so para exibir um numero no badge.
-function getModeCounts(analyzedEvents: AnalyzedEvent[]) {
-  const counts: Record<ModeFilter, number> = {
-    all: 0,
-    pa_dois_lados: 0,
-    pa_um_lado: 0,
-    sem_pa: 0,
-  };
-
-  for (const { opportunities } of analyzedEvents) {
-    if (!opportunities.length) {
-      continue;
-    }
-
-    counts.all += 1;
-
-    for (const mode of modeFilters) {
-      if (
-        mode !== "all" &&
-        opportunities.some((opportunity) => opportunity.mode === mode)
-      ) {
-        counts[mode] += 1;
-      }
-    }
-  }
-
-  return counts;
-}
-
 function getOpportunityCalculatorSelections(
   fixtureId: string,
   opportunity: FreebetConversionOpportunity,
@@ -866,13 +687,6 @@ function getOpportunityCalculatorSelections(
   }));
 }
 
-function areCalculatorSelectionsActive(
-  selectedIds: ReadonlySet<string>,
-  lines: CalculatorSelectionLine[],
-) {
-  return lines.length > 0 && lines.every((line) => selectedIds.has(line.id));
-}
-
 function getEventDetailHref(
   fixtureId: string,
   conversionContext: CalculatorConversionContext | null,
@@ -887,270 +701,6 @@ function getEventDetailHref(
   appendConversionContextParams(params, conversionContext);
 
   return `${href}?${params.toString()}`;
-}
-
-function BookmakerEventLink({
-  bookmakerName,
-  children,
-  className,
-  eventUrl,
-}: {
-  bookmakerName: string;
-  children: ReactNode;
-  className: string;
-  eventUrl: string | null | undefined;
-}) {
-  if (eventUrl) {
-    return (
-      <a
-        aria-label={`Abrir evento na ${bookmakerName}`}
-        className={`${className} pointer-events-auto`}
-        href={eventUrl}
-        onClick={(event) => event.stopPropagation()}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        {children}
-      </a>
-    );
-  }
-
-  return <span className={className}>{children}</span>;
-}
-
-function ModeButton({
-  active,
-  count,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      aria-pressed={active}
-      className={`inline-flex h-11 items-center justify-center gap-3 rounded-full border px-4 text-sm font-semibold transition ${
-        active
-          ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
-          : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
-      }`}
-      onClick={onClick}
-      type="button"
-    >
-      <span>{label}</span>
-      <span className="inline-flex min-w-7 items-center justify-center rounded-full bg-white/8 px-2 py-0.5 text-xs text-[var(--text-secondary)]">
-        {count}
-      </span>
-    </button>
-  );
-}
-
-function DateFilterButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      aria-pressed={active}
-      className={`inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold transition ${
-        active
-          ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.2)] text-white shadow-[0_12px_28px_rgba(211,27,91,0.12)]"
-          : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
-      }`}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
-function SortMenu({
-  onChange,
-  value,
-}: {
-  onChange: (value: SortMode) => void;
-  value: SortMode;
-}) {
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{
-    left: number;
-    top: number;
-    width: number;
-  } | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const updateMenuPosition = useCallback(() => {
-    const button = buttonRef.current;
-
-    if (!button) return;
-
-    const rect = button.getBoundingClientRect();
-    const menuHeight = 252;
-    const gap = 8;
-    const viewportPadding = 16;
-    const width = Math.max(rect.width, 190);
-    const left = Math.min(
-      Math.max(viewportPadding, rect.right - width),
-      window.innerWidth - width - viewportPadding,
-    );
-    const hasRoomBelow = rect.bottom + gap + menuHeight <= window.innerHeight;
-    const top = hasRoomBelow
-      ? rect.bottom + gap
-      : Math.max(viewportPadding, rect.top - menuHeight - gap);
-
-    setMenuPosition({ left, top, width });
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-
-    updateMenuPosition();
-
-    function handlePointerDown(event: MouseEvent) {
-      const target = event.target;
-
-      if (!(target instanceof Node)) return;
-      if (buttonRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-
-      setOpen(false);
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [open, updateMenuPosition]);
-
-  const menu =
-    open && menuPosition
-      ? createPortal(
-          <div
-            className="lz-floating-panel fixed z-[80] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,5,13,0.98)] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
-            ref={menuRef}
-            role="listbox"
-            style={{
-              left: menuPosition.left,
-              top: menuPosition.top,
-              width: menuPosition.width,
-            }}
-          >
-            {sortOptions.map((option) => (
-              <button
-                aria-selected={value === option}
-                className={`flex h-10 w-full items-center rounded-xl px-3 text-left text-sm font-semibold transition ${
-                  value === option
-                    ? "bg-[rgba(211,27,91,0.22)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-white"
-                }`}
-                key={option}
-                onClick={() => {
-                  onChange(option);
-                  setOpen(false);
-                }}
-                role="option"
-                type="button"
-              >
-                {sortLabels[option]}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )
-      : null;
-
-  return (
-    <div className="relative w-full sm:w-[190px]">
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className={`inline-flex h-12 w-full items-center justify-between gap-3 rounded-full border px-4 text-sm font-semibold transition ${
-          open
-            ? "border-[rgba(255,139,187,0.52)] bg-[rgba(255,139,187,0.12)] text-white shadow-[0_12px_30px_rgba(211,27,91,0.12)]"
-            : "border-white/10 bg-[rgba(22,10,18,0.72)] text-white hover:border-white/20 hover:bg-white/[0.05]"
-        }`}
-        onClick={() => setOpen((current) => !current)}
-        ref={buttonRef}
-        type="button"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <ArrowUpDown
-            aria-hidden="true"
-            className="h-4 w-4 shrink-0 text-[var(--text-secondary)]"
-          />
-          <span className="truncate">{sortLabels[value]}</span>
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          className={`h-4 w-4 shrink-0 text-[var(--text-secondary)] transition ${
-            open ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-
-      {menu}
-    </div>
-  );
-}
-
-function BookmakerToggleButton({
-  active,
-  disabled,
-  name,
-  onClick,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  name: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      aria-pressed={active}
-      className={`min-w-0 rounded-2xl border px-3 py-2 text-left text-sm font-semibold transition ${
-        disabled
-          ? "cursor-not-allowed border-[rgba(45,212,191,0.26)] bg-[rgba(45,212,191,0.08)] text-emerald-200"
-          : active
-            ? "border-[rgba(211,27,91,0.78)] bg-[rgba(211,27,91,0.18)] text-white"
-            : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/18 hover:bg-white/[0.06] hover:text-white"
-      }`}
-      disabled={disabled}
-      onClick={onClick}
-      type="button"
-    >
-      <span className="flex min-w-0 items-center justify-between gap-2">
-        <span className="truncate">{name}</span>
-        {disabled ? (
-          <span className="shrink-0 rounded-full border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-            Freebet
-          </span>
-        ) : null}
-      </span>
-    </button>
-  );
 }
 
 function FiltersDialog({
@@ -1527,7 +1077,7 @@ function FreebetSelectionDialog({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
                 Resultado coleta
               </p>
-              <p className={`mt-2 text-lg font-semibold ${getProfitClass(selectedCollectionResult)}`}>
+              <p className={`mt-2 text-lg font-semibold ${getSignalProfitClass(selectedCollectionResult)}`}>
                 {formatCurrency(selectedCollectionResult)}
               </p>
             </div>
@@ -1576,7 +1126,7 @@ function FreebetSelectionDialog({
                         {formatCurrency(item.valor_fb)}
                       </td>
                       <td
-                        className={`px-3 py-3.5 text-center font-medium ${getProfitClass(item.lucro_real)}`}
+                        className={`px-3 py-3.5 text-center font-medium ${getSignalProfitClass(item.lucro_real)}`}
                       >
                         {formatCurrency(item.lucro_real)}
                       </td>
@@ -1739,7 +1289,7 @@ function SignalCard({
               size="sm"
             />
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              {formatDate(event.starts_at)}
+              {formatSignalDate(event.starts_at)}
             </span>
             {relativeDateLabel ? (
               <span className="rounded-full border border-[rgba(45,212,191,0.28)] bg-[rgba(45,212,191,0.09)] px-3 py-1 text-[var(--positive)]">
@@ -1747,7 +1297,7 @@ function SignalCard({
               </span>
             ) : null}
             <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1">
-              {formatTime(event.starts_at)}
+              {formatSignalTime(event.starts_at)}
             </span>
             {trending ? <TrendingBadge /> : null}
           </div>
@@ -1775,7 +1325,7 @@ function SignalCard({
           <span className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[var(--text-secondary)]">
             {opportunity.modeLabel}
           </span>
-          <strong className={`text-lg font-semibold tabular-nums ${getProfitClass(opportunity.conversionPercent)}`}>
+          <strong className={`text-lg font-semibold tabular-nums ${getSignalProfitClass(opportunity.conversionPercent)}`}>
             {formatFreebetConversionPercent(opportunity.conversionPercent)}
           </strong>
           <span className="text-xs font-semibold text-[var(--text-dim)]">
@@ -2081,7 +1631,7 @@ export function FreebetConverterMonitorWorkspace({
     [activeDateFilter, state.events],
   );
   const availableBookmakers = useMemo(
-    () => getAvailableBookmakers(dateFilteredEvents),
+    () => getAvailableBookmakers(dateFilteredEvents, getBookmakerKey),
     [dateFilteredEvents],
   );
   const availableLeagues = useMemo(
@@ -2597,7 +2147,7 @@ export function FreebetConverterMonitorWorkspace({
                               {formatCurrency(item.valor_total)}
                             </td>
                             <td
-                              className={`px-2 py-2.5 text-center font-semibold ${getProfitClass(
+                              className={`px-2 py-2.5 text-center font-semibold ${getSignalProfitClass(
                                 item.lucro_total,
                               )}`}
                             >
@@ -2820,7 +2370,9 @@ export function FreebetConverterMonitorWorkspace({
               <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
               Filtros
             </button>
-            <SortMenu onChange={setSortMode} value={sortMode} />
+            <SortMenu
+              labels={sortLabels}
+              options={sortOptions} onChange={setSortMode} value={sortMode} />
           </div>
         </div>
       </section>

@@ -70,6 +70,8 @@ import {
   type FreebetConversionOpportunity,
 } from "@/lib/monitor-odds/freebet-conversion";
 import { formatCurrency } from "@/lib/format";
+import { BookmakerEventLink } from "@/app/(app)/monitor/_components/signal-controls";
+import { areCalculatorSelectionsActive, formatDateParam } from "@/lib/monitor-odds/signal-helpers";
 
 type OddsFeedItem = {
   fixture_id: string;
@@ -531,14 +533,6 @@ function formatTime(value: string | null) {
   if (Number.isNaN(date.getTime())) return "Sem horário";
 
   return timeFormatter.format(date);
-}
-
-function formatDateParam(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
 
 function getRelativeDateLabel(value: string | null) {
@@ -1003,35 +997,6 @@ function formatOdd(value: number | undefined) {
   return value ? value.toFixed(3) : "-";
 }
 
-function BookmakerEventLink({
-  bookmakerName,
-  children,
-  className,
-  eventUrl,
-}: {
-  bookmakerName: string;
-  children: ReactNode;
-  className: string;
-  eventUrl: string | null | undefined;
-}) {
-  if (eventUrl) {
-    return (
-      <a
-        aria-label={`Abrir evento na ${bookmakerName}`}
-        className={`${className} pointer-events-auto`}
-        href={eventUrl}
-        onClick={(event) => event.stopPropagation()}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        {children}
-      </a>
-    );
-  }
-
-  return <span className={className}>{children}</span>;
-}
-
 function get1x2Rows(event: OddsEvent, category: PaCategory) {
   const rows = new Map<string, OddsTableRow>();
 
@@ -1227,13 +1192,6 @@ function getOpportunityCalculatorSelections(
       stake: freebet ? conversionContext?.freebetValue : undefined,
     };
   });
-}
-
-function areCalculatorSelectionsActive(
-  selectedIds: ReadonlySet<string>,
-  lines: CalculatorSelectionLine[],
-) {
-  return lines.length > 0 && lines.every((line) => selectedIds.has(line.id));
 }
 
 function getBookmakerKey(slug: string | null | undefined, name: string) {
