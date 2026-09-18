@@ -24,6 +24,13 @@ export const signalModeFilters: SignalModeFilter[] = [
   "sem_pa",
 ];
 
+export const signalDateFilters: SignalDateFilter[] = ["today", "tomorrow", "all"];
+export const signalDateFilterLabels: Record<SignalDateFilter, string> = {
+  all: "Todos",
+  today: "Hoje",
+  tomorrow: "Amanhã",
+};
+
 export function formatSignalDate(value: string) {
   const date = new Date(value);
 

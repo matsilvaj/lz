@@ -53,6 +53,10 @@ const freebetConversionLib = readFileSync(
   new URL("../lib/monitor-odds/freebet-conversion.ts", import.meta.url),
   "utf8",
 );
+const signalFiltersDialog = readFileSync(
+  new URL("../app/(app)/monitor/_components/signal-filters-dialog.tsx", import.meta.url),
+  "utf8",
+);
 const signalHelpers = readFileSync(
   new URL("../lib/monitor-odds/signal-helpers.ts", import.meta.url),
   "utf8",
@@ -184,8 +188,11 @@ test("duplo monitor loads all available event days by default", () => {
 });
 
 test("duplo monitor filters and lists all requested PA classes", () => {
-  assert.match(doubleMonitorUi, /"pa_dois_lados", "pa_um_lado", "sem_pa"/);
-  assert.match(doubleMonitorUi, /createPortal\(/);
+  // Filtros compartilhados entre Duplo, Semanal e Converter.
+  assert.match(signalHelpers, /"all",\s*"pa_dois_lados",\s*"pa_um_lado",\s*"sem_pa"/);
+  assert.match(signalFiltersDialog, /signalModeFilters\.map\(/);
+  assert.match(signalFiltersDialog, /createPortal\(/);
+  assert.match(doubleMonitorUi, /<SignalFiltersDialog/);
   assert.match(duploEngine, /PA para os Dois lados/);
   assert.match(duploEngine, /PA para 1 dos lados/);
   assert.match(duploEngine, /Sem PA/);
@@ -462,13 +469,15 @@ test("freebet converter keeps Sem PA, protects the freebet house, and opens calc
   assert.match(freebetConversionLib, /COM_PA/);
   assert.match(freebetConversionLib, /1X2/);
   assert.match(freebetConversionLib, /line\.selectionKey !== "DRAW"/);
-  assert.match(freebetConverterUi, /modeFilters/);
+  assert.match(freebetConverterUi, /<SignalFiltersDialog/);
   assert.match(freebetConverterUi, /modeLabels/);
   assert.match(freebetConverterUi, /SortMenu/);
   assert.match(freebetConverterUi, /handleBackToSelection/);
   assert.match(freebetConverterUi, /freebetHouseKey/);
   assert.match(freebetConverterUi, /key !== freebetHouseKey/);
-  assert.match(freebetConverterUi, /disabled = bookmaker\.key === freebetHouseKey/);
+  // A casa da freebet fica travada no filtro de casas.
+  assert.match(freebetConverterUi, /lockedBookmakerKey=\{freebetHouseKey\}/);
+  assert.match(signalFiltersDialog, /bookmaker\.key === lockedBookmakerKey/);
   assert.match(freebetConverterUi, /BookmakerEventLink/);
   assert.match(freebetConverterUi, /CalculatorSelectionDock/);
   assert.match(freebetConverterUi, /conversionContext=\{conversionContext\}/);
