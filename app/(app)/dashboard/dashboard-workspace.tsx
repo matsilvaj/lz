@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
 
+import { useToast } from "@/app/_components/toast-provider";
+
 import { DatePickerField } from "../_components/date-picker-field";
 import { LzSelect } from "../_components/lz-select";
 import {
@@ -671,6 +673,7 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { showToast } = useToast();
   const [dashboardData, setDashboardData] = useState(initialData);
   const [periodLoading, setPeriodLoading] = useState(false);
   const periodRequestRef = useRef(0);
@@ -746,6 +749,11 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
       });
     } catch (error) {
       console.error(error);
+      showToast({
+        description: "Mantivemos os dados atuais. Tente trocar o periodo novamente em instantes.",
+        title: "Nao foi possivel atualizar o dashboard",
+        tone: "error",
+      });
     } finally {
       if (periodRequestRef.current === requestId) {
         setPeriodLoading(false);

@@ -31,11 +31,22 @@ const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 3;
 const DEFAULT_EVENT_LIMIT = 20;
 const DATE_RANGE_PAGE_SIZE = 200;
-const MAX_DATE_RANGE_PAGES = 8;
-const DEFAULT_DATE_RANGE_EVENT_LIMIT = 150;
+// Teto de jogos por listagem, e o unico numero que precisa ser ajustado.
+//
+// Antes eram 150, e um fim de semana cheio passava disso: os jogos excedentes
+// sumiam do site sem aviso. Nao da para simplesmente remover o teto — o laco de
+// paginacao tem o proprio limite de paginas, entao "sem teto" viraria um teto
+// invisivel nascido da multiplicacao de duas constantes. Por isso o numero de
+// paginas e derivado daqui: mexer neste valor muda o limite de verdade.
+//
+// A valvula existe porque cada jogo carrega ~36 KB de odds; sem ela, uma
+// anomalia nos dados vira uma resposta de dezenas de MB no navegador.
+const DEFAULT_DATE_RANGE_EVENT_LIMIT = 1000;
+const MAX_DATE_RANGE_PAGES = Math.ceil(
+  DEFAULT_DATE_RANGE_EVENT_LIMIT / DATE_RANGE_PAGE_SIZE,
+);
 const MAX_DATE_RANGE_DAYS = 3;
-const MAX_ODDS_FIXTURE_IDS = 200;
-const ODDS_SNAPSHOT_CACHE_BATCH_SIZE = 25;
+export const MAX_ODDS_FIXTURE_IDS = 200;
 const EVENTS_SHARED_CACHE_TTL_SECONDS = 15 * 60;
 const EVENTS_UNVERSIONED_SHARED_CACHE_TTL_SECONDS = 60;
 const ODDS_SNAPSHOT_CACHE_TTL_SECONDS = 3;
@@ -705,17 +716,91 @@ const getCachedOddsFeedStatusFromDatabase = unstable_cache(
   },
 );
 
-const getCachedOddsSnapshotsByFixtureIds = unstable_cache(
-  async (fixtureIds: string[], oddsVersion = "unknown") => {
-    void oddsVersion;
-    return fetchOddsSnapshotsByFixtureIds(fixtureIds);
-  },
-  ["monitor-odds-snapshots-by-fixture-ids-v4"],
-  {
-    tags: ["monitor-odds-snapshots"],
-    revalidate: ODDS_SNAPSHOT_CACHE_TTL_SECONDS,
-  },
-);
+// Cache em memoria, e nao unstable_cache, por dois motivos.
+//
+// O data cache do Next recusa entradas acima de 2 MB e LANCA excecao ao inves
+// de apenas nao cachear: o snapshot de 200 jogos passa de 5 MB, entao a rota
+// inteira respondia 500.
+//
+// E a chave e o conjunto exato de fixtureIds, entao qualquer diferenca entre as
+// telas (duplo, converter, detalhe) ja era miss. Na pratica ele pagava o custo
+// de gravar megabytes sem quase nunca acertar.
+//
+// Aqui o objetivo e so amortecer rajadas: varios usuarios pedindo o mesmo
+// conjunto logo depois de uma atualizacao de odds fazem uma consulta so.
+type OddsSnapshotsCacheEntry = {
+  expiresAt: number;
+  snapshots: MonitorOddsSnapshot[];
+};
+
+const ODDS_SNAPSHOT_CACHE_MAX_ENTRIES = 2;
+const oddsSnapshotsCache = new Map<string, OddsSnapshotsCacheEntry>();
+const oddsSnapshotsInFlight = new Map<string, Promise<MonitorOddsSnapshot[]>>();
+
+function readOddsSnapshotsCache(key: string) {
+  const entry = oddsSnapshotsCache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    oddsSnapshotsCache.delete(key);
+    return null;
+  }
+
+  return entry.snapshots;
+}
+
+function writeOddsSnapshotsCache(key: string, snapshots: MonitorOddsSnapshot[]) {
+  oddsSnapshotsCache.delete(key);
+  oddsSnapshotsCache.set(key, {
+    expiresAt: Date.now() + ODDS_SNAPSHOT_CACHE_TTL_SECONDS * 1000,
+    snapshots,
+  });
+
+  while (oddsSnapshotsCache.size > ODDS_SNAPSHOT_CACHE_MAX_ENTRIES) {
+    const oldestKey = oddsSnapshotsCache.keys().next().value;
+
+    if (!oldestKey) {
+      return;
+    }
+
+    oddsSnapshotsCache.delete(oldestKey);
+  }
+}
+
+async function getCachedOddsSnapshotsByFixtureIds(
+  fixtureIds: string[],
+  oddsVersion = "unknown",
+) {
+  const key = `${oddsVersion}:${fixtureIds.join(",")}`;
+  const cached = readOddsSnapshotsCache(key);
+
+  if (cached) {
+    return cached;
+  }
+
+  // Pedidos simultaneos do mesmo conjunto compartilham uma consulta so.
+  const pending = oddsSnapshotsInFlight.get(key);
+
+  if (pending) {
+    return pending;
+  }
+
+  const request = fetchOddsSnapshotsByFixtureIds(fixtureIds)
+    .then((snapshots) => {
+      writeOddsSnapshotsCache(key, snapshots);
+      return snapshots;
+    })
+    .finally(() => {
+      oddsSnapshotsInFlight.delete(key);
+    });
+
+  oddsSnapshotsInFlight.set(key, request);
+
+  return request;
+}
 
 const getCachedAvailableFreebetConsultationBookmakers = unstable_cache(
   async (fixturesVersion = "unknown", oddsVersion = "unknown") => {
@@ -821,18 +906,10 @@ export async function getOddsSnapshotsByFixtureIds(
   }
 
   const version = cleanCachePart(oddsVersion ?? "unknown");
-  // O cache do Next.js recusa itens acima de 2 MB; em lotes cada entrada fica pequena.
-  const batches: string[][] = [];
-
-  for (let index = 0; index < safeFixtureIds.length; index += ODDS_SNAPSHOT_CACHE_BATCH_SIZE) {
-    batches.push(safeFixtureIds.slice(index, index + ODDS_SNAPSHOT_CACHE_BATCH_SIZE));
-  }
-
-  const snapshots = (
-    await Promise.all(
-      batches.map((batch) => getCachedOddsSnapshotsByFixtureIds(batch, version)),
-    )
-  ).flat();
+  const snapshots = await getCachedOddsSnapshotsByFixtureIds(
+    safeFixtureIds,
+    version,
+  );
   const snapshotsByFixtureId = new Map(
     snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
   );

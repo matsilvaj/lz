@@ -59,6 +59,7 @@ type ProtectionDraft = {
   commission: string;
   increase: string;
   cashback: string;
+  cashbackLossOnly: boolean;
   freebet: boolean;
 };
 type ProcedureStatus = "Pendente" | "Concluído";
@@ -232,6 +233,7 @@ function createProtectionDraft(
     commission: draft.commission ?? "",
     increase: draft.increase ?? "",
     cashback: draft.cashback ?? "",
+    cashbackLossOnly: Boolean(draft.cashbackLossOnly),
     freebet: Boolean(draft.freebet),
   };
 }
@@ -351,6 +353,14 @@ function formatProcedureCurrency(value: number) {
   return formatCurrency(normalizeCurrencyAmount(value));
 }
 
+function formatDecimalDisplay(value: number, fractionDigits = 2) {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.005) {
+    return "";
+  }
+
+  return value.toFixed(fractionDigits).replace(".", ",");
+}
+
 function calculateAdjustedOdd(odd: number, increase: number) {
   if (odd <= 1) {
     return odd;
@@ -364,6 +374,7 @@ function calculateLayReturn(
   effectiveOdd: number,
   commission: number,
   cashback: number,
+  cashbackLossOnly: boolean,
 ) {
   if (responsibility <= 0 || effectiveOdd <= 1) {
     return 0;
@@ -371,11 +382,12 @@ function calculateLayReturn(
 
   const layStake = responsibility / (effectiveOdd - 1);
   const commissionMultiplier = 1 - commission / 100;
-  const cashbackRate = cashback / 100;
+  // Cashback pago so na derrota nao existe no cenario em que o lay ganha.
+  const cashbackRate = cashbackLossOnly ? 0 : cashback / 100;
 
   return (
     layStake *
-    (effectiveOdd - 1 + commissionMultiplier - (effectiveOdd - 1) * cashbackRate)
+    (effectiveOdd - 1 + commissionMultiplier + (effectiveOdd - 1) * cashbackRate)
   );
 }
 
@@ -393,6 +405,7 @@ function calculateSportsProfit(
     commissionInput?: string;
     increaseInput?: string;
     cashbackInput?: string;
+    cashbackLossOnly?: boolean;
     freebet?: boolean;
   }>,
   selectedResults: SportResultSelection[],
@@ -423,9 +436,11 @@ function calculateSportsProfit(
       commission: parseDecimalInput(entry.commissionInput ?? ""),
       increase,
       cashback,
+      cashbackLossOnly: Boolean(entry.cashbackLossOnly),
       freebet: Boolean(entry.freebet),
     };
   });
+  
   const baseIndex = normalizedEntries.findIndex((entry) => entry.stake > 0);
   const fallbackInvestment = normalizedEntries.reduce(
     (sum, entry) =>
@@ -435,7 +450,7 @@ function calculateSportsProfit(
   );
 
   let investment = fallbackInvestment;
-  let returnsByIndex = new Map<number, number>();
+  let returnByIndex = new Map<number, number>();
 
   if (baseIndex >= 0) {
     try {
@@ -448,69 +463,64 @@ function calculateSportsProfit(
           aumento_percentual: entry.increase,
           comissao_percentual: entry.commission,
           cashback_percentual: entry.cashback,
+          cashback_apenas_perda: entry.cashbackLossOnly,
           freebet: entry.freebet,
         })),
         baseIndex,
       );
 
       investment = Number(calculation?.investimento_efetivo ?? fallbackInvestment);
-      returnsByIndex = new Map(
-        normalizedEntries.map((_, index) => [
-          index,
-          Number(calculation?.linhas?.[index]?.retorno_bruto ?? 0),
-        ]),
+      
+      returnByIndex = new Map(
+        normalizedEntries.map((_, index) => {
+          const lucroLiquido = Number(calculation?.linhas?.[index]?.lucro_liquido ?? 0);
+
+          return [index, lucroLiquido + investment]; 
+        }),
       );
     } catch {
-      returnsByIndex = new Map(
+      returnByIndex = new Map(
         normalizedEntries.map((entry, index) => {
           const layReturn = calculateLayReturn(
             entry.responsibility,
             entry.effectiveOdd,
             entry.commission,
             entry.cashback,
+            entry.cashbackLossOnly,
           );
           const backReturn = entry.freebet
             ? entry.stake *
               ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
             : entry.stake *
               (1 +
-                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
-                entry.cashback / 100);
+                (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
+                (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
 
-          return [
-            index,
-            entry.side === "lay" ? layReturn : backReturn,
-          ];
+          return [index, entry.side === "lay" ? layReturn : backReturn];
         }),
       );
     }
   } else {
-    returnsByIndex = new Map(
+    returnByIndex = new Map(
       normalizedEntries.map((entry, index) => {
         const layReturn = calculateLayReturn(
           entry.responsibility,
           entry.effectiveOdd,
           entry.commission,
           entry.cashback,
+          entry.cashbackLossOnly,
         );
         const backReturn = entry.freebet
           ? entry.stake *
             ((entry.effectiveOdd - 1) * (1 - entry.commission / 100))
           : entry.stake *
             (1 +
-              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) -
-              entry.cashback / 100);
+              (entry.effectiveOdd - 1) * (1 - entry.commission / 100) +
+              (entry.cashbackLossOnly ? 0 : entry.cashback / 100));
 
-        return [
-          index,
-          entry.side === "lay" ? layReturn : backReturn,
-        ];
+        return [index, entry.side === "lay" ? layReturn : backReturn];
       }),
     );
-  }
-
-  if (selectedResults.includes("defeat")) {
-    return -investment;
   }
 
   if (selectedResults.length === 0) {
@@ -518,21 +528,25 @@ function calculateSportsProfit(
   }
 
   const selectedResultSet = new Set(selectedResults);
-  const totalReturn = normalizedEntries.reduce((sum, entry, index) => {
-    const entryReturn = returnsByIndex.get(index) ?? 0;
+  const selectedReturns = normalizedEntries
+    .map((entry, index) =>
+      selectedResultSet.has(entry.resultId) ? (returnByIndex.get(index) ?? 0) : null,
+    )
+    .filter((value): value is number => value !== null);
 
-    if (entry.side === "lay") {
-      return selectedResultSet.has(entry.resultId) ? sum : sum + entryReturn;
-    }
+  if (selectedReturns.length === 0) {
 
-    if (!selectedResultSet.has(entry.resultId)) {
-      return sum;
-    }
+    return selectedResultSet.has("defeat") ? -investment : 0;
+  }
 
-    return sum + entryReturn;
-  }, 0);
 
-  return normalizeCurrencyAmount(totalReturn - investment);
+  const totalGrossReturn = selectedReturns.reduce(
+    (sum, returnVal) => sum + returnVal,
+    0,
+  );
+
+
+  return normalizeCurrencyAmount(totalGrossReturn - investment);
 }
 
 function toChildCalculationEntries(
@@ -566,30 +580,6 @@ function DisclosureIcon({ open }: { open: boolean }) {
     <span className="inline-flex h-9 w-12 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition group-hover:border-white/20 group-hover:text-white">
       {open ? <CloseIcon /> : <ChevronDownIcon />}
     </span>
-  );
-}
-
-function RiskWarningIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4 shrink-0"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="M12 4.75 20.25 19H3.75L12 4.75Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M12 9.5v4.25M12 16.5h.01"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
   );
 }
 
@@ -702,6 +692,7 @@ function createProtectionDraftRecord(
         commission: draft.commission,
         increase: draft.increase,
         cashback: draft.cashback,
+        cashbackLossOnly: draft.cashbackLossOnly,
         freebet: draft.freebet,
       });
     }
@@ -961,6 +952,9 @@ export function ProcedureModal({
   const [primaryCashback, setPrimaryCashback] = useState(
     defaultValues?.primaryCashback ?? "",
   );
+  const [primaryCashbackLossOnly, setPrimaryCashbackLossOnly] = useState(
+    Boolean(defaultValues?.primaryCashbackLossOnly),
+  );
   const [primaryFreebet, setPrimaryFreebet] = useState(
     Boolean(defaultValues?.primaryFreebet),
   );
@@ -982,6 +976,10 @@ export function ProcedureModal({
     useState(defaultValues?.collectionPrimaryIncrease ?? "");
   const [collectionPrimaryCashback, setCollectionPrimaryCashback] =
     useState(defaultValues?.collectionPrimaryCashback ?? "");
+  const [
+    collectionPrimaryCashbackLossOnly,
+    setCollectionPrimaryCashbackLossOnly,
+  ] = useState(Boolean(defaultValues?.collectionPrimaryCashbackLossOnly));
   const [collectionPrimaryFreebet, setCollectionPrimaryFreebet] = useState(
     Boolean(defaultValues?.collectionPrimaryFreebet),
   );
@@ -1116,6 +1114,7 @@ export function ProcedureModal({
       commissionInput: primaryCommission,
       increaseInput: primaryIncrease,
       cashbackInput: primaryCashback,
+      cashbackLossOnly: primaryCashbackLossOnly,
       freebet: primaryFreebet,
     },
     ...protectionKeys.map((key) => ({
@@ -1127,6 +1126,7 @@ export function ProcedureModal({
       commissionInput: protectionDrafts[key]?.commission ?? "",
       increaseInput: protectionDrafts[key]?.increase ?? "",
       cashbackInput: protectionDrafts[key]?.cashback ?? "",
+      cashbackLossOnly: Boolean(protectionDrafts[key]?.cashbackLossOnly),
       freebet: Boolean(protectionDrafts[key]?.freebet),
     })),
     ...toChildCalculationEntries(
@@ -1143,6 +1143,7 @@ export function ProcedureModal({
       commissionInput: collectionPrimaryCommission,
       increaseInput: collectionPrimaryIncrease,
       cashbackInput: collectionPrimaryCashback,
+      cashbackLossOnly: collectionPrimaryCashbackLossOnly,
       freebet: collectionPrimaryFreebet,
     },
     ...collectionProtectionKeys.map((key) => ({
@@ -1154,6 +1155,9 @@ export function ProcedureModal({
       commissionInput: collectionProtectionDrafts[key]?.commission ?? "",
       increaseInput: collectionProtectionDrafts[key]?.increase ?? "",
       cashbackInput: collectionProtectionDrafts[key]?.cashback ?? "",
+      cashbackLossOnly: Boolean(
+        collectionProtectionDrafts[key]?.cashbackLossOnly,
+      ),
       freebet: Boolean(collectionProtectionDrafts[key]?.freebet),
     })),
     ...toChildCalculationEntries(
@@ -1374,6 +1378,7 @@ export function ProcedureModal({
     commission,
     increase,
     cashback,
+    cashbackLossOnly,
     freebet,
     operationDate: detailOperationDate,
   }: {
@@ -1389,6 +1394,7 @@ export function ProcedureModal({
     commission: string;
     increase: string;
     cashback: string;
+    cashbackLossOnly: boolean;
     freebet: boolean;
     operationDate?: string;
   }): ProcedureShareEntryDetail {
@@ -1405,6 +1411,7 @@ export function ProcedureModal({
       commission: parseDecimalInput(commission),
       increase: parseDecimalInput(increase),
       cashback: parseDecimalInput(cashback),
+      cashbackLossOnly,
       freebet,
       operationDate: detailOperationDate ?? "",
     };
@@ -1514,6 +1521,7 @@ export function ProcedureModal({
         commission: child.commission,
         increase: child.increase,
         cashback: child.cashback,
+        cashbackLossOnly: Boolean(child.cashbackLossOnly),
         freebet: child.freebet,
         operationDate: detailOperationDate,
       }),
@@ -1565,6 +1573,7 @@ export function ProcedureModal({
       commission: string;
       increase: string;
       cashback: string;
+      cashbackLossOnly: boolean;
       freebet: boolean;
     };
     protections: Array<{
@@ -1587,6 +1596,7 @@ export function ProcedureModal({
         commission: primary.commission,
         increase: primary.increase,
         cashback: primary.cashback,
+        cashbackLossOnly: primary.cashbackLossOnly,
         freebet: primary.freebet,
         operationDate: detailOperationDate,
       }),
@@ -1605,6 +1615,7 @@ export function ProcedureModal({
           commission: draft.commission,
           increase: draft.increase,
           cashback: draft.cashback,
+          cashbackLossOnly: draft.cashbackLossOnly,
           freebet: draft.freebet,
           operationDate: detailOperationDate,
         }),
@@ -1638,6 +1649,7 @@ export function ProcedureModal({
             commission: "",
             increase: "",
             cashback: "",
+            cashbackLossOnly: false,
             freebet: false,
             operationDate: operationDateForSubmit,
           }),
@@ -1662,6 +1674,7 @@ export function ProcedureModal({
             commission: primaryCommission,
             increase: primaryIncrease,
             cashback: primaryCashback,
+            cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
           },
           protections: (isNormalBet ? [] : protectionKeys).map((key) => ({
@@ -1693,6 +1706,7 @@ export function ProcedureModal({
             commission: primaryCommission,
             increase: primaryIncrease,
             cashback: primaryCashback,
+            cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
           },
           protections: protectionKeys.map((key) => ({
@@ -1723,6 +1737,7 @@ export function ProcedureModal({
             commission: collectionPrimaryCommission,
             increase: collectionPrimaryIncrease,
             cashback: collectionPrimaryCashback,
+            cashbackLossOnly: collectionPrimaryCashbackLossOnly,
             freebet: collectionPrimaryFreebet,
           },
           protections: collectionProtectionKeys.map((key) => ({
@@ -1852,6 +1867,7 @@ export function ProcedureModal({
     if (value === FREEBET_CONDITION_CONVERSION_ONLY) {
       setFreebetCollectionOpen(false);
       setFreebetConversionOpen(true);
+      setPrimaryFreebet(true);
     }
   }
 
@@ -1903,6 +1919,7 @@ export function ProcedureModal({
     commissionValue,
     increaseValue,
     cashbackValue,
+    cashbackLossOnlyChecked,
     freebetChecked,
     configOpen,
     onStakeChange,
@@ -1912,6 +1929,7 @@ export function ProcedureModal({
     onCommissionChange,
     onIncreaseChange,
     onCashbackChange,
+    onCashbackLossOnlyChange,
     onFreebetChange,
     onToggleConfig,
   }: {
@@ -1924,6 +1942,7 @@ export function ProcedureModal({
     commissionValue: string;
     increaseValue: string;
     cashbackValue: string;
+    cashbackLossOnlyChecked: boolean;
     freebetChecked: boolean;
     configOpen: boolean;
     onStakeChange: (value: string) => void;
@@ -1933,11 +1952,19 @@ export function ProcedureModal({
     onCommissionChange: (value: string) => void;
     onIncreaseChange: (value: string) => void;
     onCashbackChange: (value: string) => void;
+    onCashbackLossOnlyChange: (checked: boolean) => void;
     onFreebetChange: (checked: boolean) => void;
     onToggleConfig: () => void;
   }) {
     const isLay = side === "lay";
     const displayedOddValue = isLay ? (layOddValue || oddValue) : oddValue;
+    const responsibilityValue = stakeValue;
+    const layOddNumber = parseDecimalInput(displayedOddValue);
+    const responsibilityNumber = parseDecimalInput(responsibilityValue);
+    const displayedLayStake =
+      isLay && layOddNumber > 1
+        ? formatDecimalDisplay(responsibilityNumber / (layOddNumber - 1))
+        : "";
     const hasCustomConfig =
       parseDecimalInput(increaseValue) !== 0 ||
       parseDecimalInput(commissionValue) !== 0 ||
@@ -1948,64 +1975,125 @@ export function ProcedureModal({
 
     return (
       <>
-        <label className="space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">Stake</span>
-          <input
-            className="lz-input w-full rounded-2xl px-3 py-3"
-            inputMode="decimal"
-            name={stakeName}
-            onChange={(event) => onStakeChange(event.target.value)}
-            placeholder="0,00"
-            value={stakeValue}
-          />
-          {isLay ? (
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-soft)]">
-              <RiskWarningIcon />
-              Valor do risco!
-            </p>
-          ) : null}
-        </label>
-
-        <div className="space-y-2 text-sm">
-          <span className="text-[var(--text-muted)]">
-            {isLay ? "Odd Lay" : "Odd"}
-          </span>
-          <div className="flex gap-2">
+        {isLay ? (
+          <label className="min-w-0 space-y-2 text-sm sm:col-span-2">
+            <span className="block text-[var(--text-muted)]">
+              Responsabilidade
+            </span>
             <input
-              className="lz-input w-0 min-w-0 flex-1 rounded-2xl px-3 py-3"
+              className="lz-input w-full rounded-2xl px-3 py-3"
               inputMode="decimal"
-              name={oddName}
-              onChange={(event) => {
-                const nextValue = event.target.value;
+              name={stakeName}
+              onChange={(event) => onStakeChange(event.target.value)}
+              placeholder="0,00"
+              value={responsibilityValue}
+            />
+          </label>
+        ) : (
+          <label className="min-w-0 space-y-2 text-sm">
+            <span className="block text-[var(--text-muted)]">Stake</span>
+            <input
+              className="lz-input w-full rounded-2xl px-3 py-3"
+              inputMode="decimal"
+              name={stakeName}
+              onChange={(event) => onStakeChange(event.target.value)}
+              placeholder="0,00"
+              value={stakeValue}
+            />
+          </label>
+        )}
 
-                if (isLay) {
+        <div className="min-w-0 space-y-2 text-sm">
+          <span className="block text-[var(--text-muted)]">
+            {isLay ? "Stake" : "Odd"}
+          </span>
+          {isLay ? (
+            <input
+              className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
+              inputMode="decimal"
+              onChange={(event) => {
+                const nextStake = parseDecimalInput(event.target.value);
+                const effectiveOdd = parseDecimalInput(displayedOddValue);
+
+                if (effectiveOdd > 1) {
+                  onStakeChange(
+                    formatDecimalDisplay(nextStake * (effectiveOdd - 1)),
+                  );
+                }
+              }}
+              placeholder="0,00"
+              value={displayedLayStake}
+            />
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
+              <input
+                className="lz-input min-w-0 flex-1 rounded-2xl px-3 py-3"
+                inputMode="decimal"
+                name={oddName}
+                onChange={(event) => onOddChange(event.target.value)}
+                placeholder="0.000"
+                value={displayedOddValue}
+              />
+              <button
+                aria-label="Alternar para lay"
+                className="lz-button-primary rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3"
+                onClick={onToggleSide}
+                title="Back"
+                type="button"
+              >
+                B
+              </button>
+              <button
+                aria-expanded={configOpen}
+                aria-label="Configurações da entrada"
+                className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
+                  configOpen || hasCustomConfig
+                    ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
+                    : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
+                }`}
+                onClick={onToggleConfig}
+                title="Configurações"
+                type="button"
+              >
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.7} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {isLay ? (
+          <div className="min-w-0 space-y-2 text-sm">
+            <span className="block text-[var(--text-muted)]">Odd Lay</span>
+            <div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_48px_48px]">
+              <input
+                className="lz-input min-w-0 w-full rounded-2xl px-3 py-3"
+                inputMode="decimal"
+                name={oddName}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+
                   onLayOddChange(nextValue);
 
                   if (!oddValue.trim()) {
                     onOddChange(nextValue);
                   }
-
-                  return;
-                }
-
-                onOddChange(nextValue);
-              }}
-              placeholder="0.000"
-              value={displayedOddValue}
-            />
-            <button
-              aria-label={isLay ? "Alternar para back" : "Alternar para lay"}
-              className="lz-button-primary w-11 shrink-0 rounded-2xl px-0 py-3 text-sm font-bold transition sm:w-12"
-              onClick={onToggleSide}
-              title={isLay ? "Lay" : "Back"}
-              type="button"
-            >
-              {isLay ? "L" : "B"}
-            </button>
+                }}
+                placeholder="0.000"
+                value={displayedOddValue}
+              />
+              <button
+                aria-label="Alternar para back"
+                className="lz-button-primary rounded-2xl px-2 py-3 text-sm font-bold transition sm:px-3"
+                onClick={onToggleSide}
+                title="Lay"
+                type="button"
+              >
+                L
+              </button>
             <button
               aria-expanded={configOpen}
               aria-label="Configurações da entrada"
-              className={`inline-flex w-11 shrink-0 items-center justify-center rounded-2xl border px-0 py-3 transition sm:w-12 ${
+              className={`inline-flex items-center justify-center rounded-2xl border px-2 py-3 transition sm:px-3 ${
                 configOpen || hasCustomConfig
                   ? "border-[rgba(216,31,89,0.48)] bg-[rgba(216,31,89,0.16)] text-white"
                   : "border-white/10 bg-white/4 text-[var(--text-dim)] hover:border-white/20 hover:text-white"
@@ -2018,9 +2106,10 @@ export function ProcedureModal({
             </button>
           </div>
         </div>
+        ) : null}
 
         {configOpen ? (
-          <div className="grid items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+          <div className="grid min-w-0 items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
             <label className={configFieldClass}>
               <span className="text-[var(--text-muted)]">Aumento (%)</span>
               <input
@@ -2054,7 +2143,22 @@ export function ProcedureModal({
               />
             </label>
 
-            <label className="inline-flex min-h-[84px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] lg:min-w-28 lg:justify-center">
+            <label
+              className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-36 2xl:justify-center"
+              title="A casa so paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
+            >
+              <input
+                checked={cashbackLossOnlyChecked}
+                className="lz-checkbox"
+                onChange={(event) =>
+                  onCashbackLossOnlyChange(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>Cashback so na derrota</span>
+            </label>
+
+            <label className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-28 2xl:justify-center">
               <input
                 checked={freebetChecked}
                 className="lz-checkbox"
@@ -2136,6 +2240,7 @@ export function ProcedureModal({
                   increaseValue: child.increase,
                   cashbackValue: child.cashback,
                   freebetChecked: child.freebet,
+                  cashbackLossOnlyChecked: Boolean(child.cashbackLossOnly),
                   configOpen: Boolean(sportsConfigOpen[configKey]),
                   onStakeChange: (value) =>
                     setChildValue(section, parent, index, "stake", value),
@@ -2159,6 +2264,8 @@ export function ProcedureModal({
                     setChildValue(section, parent, index, "cashback", value),
                   onFreebetChange: (checked) =>
                     setChildValue(section, parent, index, "freebet", checked),
+                  onCashbackLossOnlyChange: (checked) =>
+                    setChildValue(section, parent, index, "cashbackLossOnly", checked),
                   onToggleConfig: () => toggleSportsConfig(configKey),
                 })}
               </div>
@@ -2199,6 +2306,7 @@ export function ProcedureModal({
     setPrimaryCommission("");
     setPrimaryIncrease("");
     setPrimaryCashback("");
+    setPrimaryCashbackLossOnly(false);
     setPrimaryFreebet(false);
     setProtectionDrafts({});
     setSportChildren({});
@@ -2245,6 +2353,7 @@ export function ProcedureModal({
     setCollectionPrimaryCommission(primaryCommission);
     setCollectionPrimaryIncrease(primaryIncrease);
     setCollectionPrimaryCashback(primaryCashback);
+    setCollectionPrimaryCashbackLossOnly(primaryCashbackLossOnly);
     setCollectionPrimaryFreebet(primaryFreebet);
     setCollectionProtectionKeys(nextCollectionKeys);
     setCollectionProtectionDrafts(nextCollectionDrafts);
@@ -2280,6 +2389,7 @@ export function ProcedureModal({
     setPrimaryCommission(collectionPrimaryCommission);
     setPrimaryIncrease(collectionPrimaryIncrease);
     setPrimaryCashback(collectionPrimaryCashback);
+    setPrimaryCashbackLossOnly(collectionPrimaryCashbackLossOnly);
     setPrimaryFreebet(collectionPrimaryFreebet);
     setProtectionKeys(nextProtectionKeys);
     setProtectionDrafts(nextProtectionDrafts);
@@ -2626,6 +2736,9 @@ export function ProcedureModal({
     setPrimaryCommission(defaultValues?.primaryCommission ?? "");
     setPrimaryIncrease(defaultValues?.primaryIncrease ?? "");
     setPrimaryCashback(defaultValues?.primaryCashback ?? "");
+    setPrimaryCashbackLossOnly(
+      Boolean(defaultValues?.primaryCashbackLossOnly),
+    );
     setPrimaryFreebet(Boolean(defaultValues?.primaryFreebet));
     setCollectionPrimaryStake(
       defaultValues?.collectionPrimaryStake ??
@@ -2639,6 +2752,9 @@ export function ProcedureModal({
     );
     setCollectionPrimaryIncrease(defaultValues?.collectionPrimaryIncrease ?? "");
     setCollectionPrimaryCashback(defaultValues?.collectionPrimaryCashback ?? "");
+    setCollectionPrimaryCashbackLossOnly(
+      Boolean(defaultValues?.collectionPrimaryCashbackLossOnly),
+    );
     setCollectionPrimaryFreebet(Boolean(defaultValues?.collectionPrimaryFreebet));
     setProtectionDrafts(
       createProtectionDraftRecord(
@@ -2721,7 +2837,7 @@ export function ProcedureModal({
 
       {open && typeof document !== "undefined"
         ? createPortal(
-            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-2 backdrop-blur-sm sm:p-4">
+            <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-black/65 p-2 backdrop-blur-sm sm:p-4">
           <div className="flex min-h-full items-start justify-center py-2 md:py-4">
           <div className="lz-panel w-full min-w-0 max-w-7xl rounded-[26px] shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:rounded-[34px] md:[zoom:0.8]">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5 sm:px-6 sm:py-4">
@@ -3069,6 +3185,8 @@ export function ProcedureModal({
                               commissionValue: collectionPrimaryCommission,
                               increaseValue: collectionPrimaryIncrease,
                               cashbackValue: collectionPrimaryCashback,
+                              cashbackLossOnlyChecked:
+                                collectionPrimaryCashbackLossOnly,
                               freebetChecked: collectionPrimaryFreebet,
                               configOpen: Boolean(
                                 sportsConfigOpen["collection-primary"],
@@ -3083,6 +3201,8 @@ export function ProcedureModal({
                               onCommissionChange: setCollectionPrimaryCommission,
                               onIncreaseChange: setCollectionPrimaryIncrease,
                               onCashbackChange: setCollectionPrimaryCashback,
+                              onCashbackLossOnlyChange:
+                                setCollectionPrimaryCashbackLossOnly,
                               onFreebetChange: setCollectionPrimaryFreebet,
                               onToggleConfig: () =>
                                 toggleSportsConfig("collection-primary"),
@@ -3155,6 +3275,10 @@ export function ProcedureModal({
                                     collectionProtectionDrafts[key]?.increase ?? "",
                                   cashbackValue:
                                     collectionProtectionDrafts[key]?.cashback ?? "",
+                                  cashbackLossOnlyChecked: Boolean(
+                                    collectionProtectionDrafts[key]
+                                      ?.cashbackLossOnly,
+                                  ),
                                   freebetChecked: Boolean(
                                     collectionProtectionDrafts[key]?.freebet,
                                   ),
@@ -3205,6 +3329,12 @@ export function ProcedureModal({
                                       key,
                                       "cashback",
                                       value,
+                                    ),
+                                  onCashbackLossOnlyChange: (checked) =>
+                                    setCollectionProtectionDraftValue(
+                                      key,
+                                      "cashbackLossOnly",
+                                      checked,
                                     ),
                                   onFreebetChange: (checked) =>
                                     setCollectionProtectionDraftValue(
@@ -3380,6 +3510,7 @@ export function ProcedureModal({
                           commissionValue: primaryCommission,
                           increaseValue: primaryIncrease,
                           cashbackValue: primaryCashback,
+                          cashbackLossOnlyChecked: primaryCashbackLossOnly,
                           freebetChecked: primaryFreebet,
                           configOpen: Boolean(sportsConfigOpen["sports-primary"]),
                           onStakeChange: setPrimaryStake,
@@ -3392,6 +3523,7 @@ export function ProcedureModal({
                           onCommissionChange: setPrimaryCommission,
                           onIncreaseChange: setPrimaryIncrease,
                           onCashbackChange: setPrimaryCashback,
+                          onCashbackLossOnlyChange: setPrimaryCashbackLossOnly,
                           onFreebetChange: setPrimaryFreebet,
                           onToggleConfig: () =>
                             toggleSportsConfig("sports-primary"),
@@ -3461,6 +3593,9 @@ export function ProcedureModal({
                                     protectionDrafts[key]?.increase ?? "",
                                   cashbackValue:
                                     protectionDrafts[key]?.cashback ?? "",
+                                  cashbackLossOnlyChecked: Boolean(
+                                    protectionDrafts[key]?.cashbackLossOnly,
+                                  ),
                                   freebetChecked: Boolean(
                                     protectionDrafts[key]?.freebet,
                                   ),
@@ -3499,6 +3634,12 @@ export function ProcedureModal({
                                       key,
                                       "cashback",
                                       value,
+                                    ),
+                                  onCashbackLossOnlyChange: (checked) =>
+                                    setProtectionDraftValue(
+                                      key,
+                                      "cashbackLossOnly",
+                                      checked,
                                     ),
                                   onFreebetChange: (checked) =>
                                     setProtectionDraftValue(

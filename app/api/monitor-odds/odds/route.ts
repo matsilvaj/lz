@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 import {
   getOddsFeedStatus,
   getOddsSnapshotsByFixtureIds,
+  MAX_ODDS_FIXTURE_IDS,
 } from "@/lib/monitor-odds/odds-data";
 import { authorizeActiveApiUser } from "@/lib/auth/session";
 import { normalizeText } from "@/lib/security/input";
@@ -28,7 +29,7 @@ function parseFixtureIds(value: unknown) {
     .map((fixtureId) => normalizeText(String(fixtureId), 160))
     .filter((fixtureId) => /^[\w:-]{1,160}$/u.test(fixtureId))
     .filter(Boolean)
-    .slice(0, 100);
+    .slice(0, MAX_ODDS_FIXTURE_IDS);
 }
 
 function parseOddsVersion(value: unknown) {

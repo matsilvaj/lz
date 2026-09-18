@@ -54,6 +54,7 @@ type ProcedureRowActionsProps = {
       comissao_percentual: number;
       aumento_percentual: number;
       cashback_percentual: number;
+  cashback_apenas_perda?: boolean;
       freebet_somente_lucro: boolean;
       data_operacao: string;
     }>;
@@ -139,6 +140,7 @@ function toProtectionDraft(entry: ProcedureEntryDetail): ProcedureShareProtectio
     commission: formatDraftNumber(entry.comissao_percentual),
     increase: formatDraftNumber(entry.aumento_percentual),
     cashback: formatDraftNumber(entry.cashback_percentual),
+    cashbackLossOnly: Boolean(entry.cashback_apenas_perda),
     freebet: Boolean(entry.freebet_somente_lucro),
   };
 }
@@ -233,6 +235,9 @@ function buildDetailedDefaultValues(
     ),
     primaryIncrease: formatDraftNumber(conversionPrimary?.aumento_percentual),
     primaryCashback: formatDraftNumber(conversionPrimary?.cashback_percentual),
+    primaryCashbackLossOnly: Boolean(
+      conversionPrimary?.cashback_apenas_perda,
+    ),
     primaryFreebet: Boolean(conversionPrimary?.freebet_somente_lucro),
     sportProtections: conversionProtections.map(toProtectionDraft),
     sportChildren: buildChildDraftsFromEntries(procedure.entradas, conversionScope),
@@ -255,12 +260,13 @@ function buildDetailedDefaultValues(
   const freebetVisibleScope =
     hasCollectionEntries && hasConversionEntries
       ? "all"
-      : procedure.tipo_procedimento === "Coletar Freebet"
-        ? "collection"
-        : procedure.tipo_procedimento === "Converter Freebet" &&
-            !hasCollectionEntries
-          ? "conversion"
-          : "all";
+      : hasConversionEntries
+        ? "conversion"
+        : hasCollectionEntries
+          ? "collection"
+          : procedure.tipo_procedimento === "Converter Freebet"
+            ? "conversion"
+            : "collection";
 
   return {
     ...baseDefaults,
@@ -285,6 +291,9 @@ function buildDetailedDefaultValues(
     ),
     collectionPrimaryCashback: formatDraftNumber(
       collectionPrimary?.cashback_percentual,
+    ),
+    collectionPrimaryCashbackLossOnly: Boolean(
+      collectionPrimary?.cashback_apenas_perda,
     ),
     collectionPrimaryFreebet: Boolean(collectionPrimary?.freebet_somente_lucro),
     collectionProtections: collectionProtections.map(toProtectionDraft),

@@ -52,7 +52,12 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getClaims();
+  try {
+    await supabase.auth.getClaims();
+  } catch {
+    // Refresh token inválido/expirado — limpa a sessão local
+    await supabase.auth.signOut();
+  }
 
   return response;
 }

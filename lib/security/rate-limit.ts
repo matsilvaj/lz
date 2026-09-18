@@ -20,8 +20,11 @@ type Bucket = {
 const buckets = new Map<string, Bucket>();
 const distributedLimiters = new Map<string, Ratelimit>();
 
+const DISTRIBUTED_FAILURE_COOLDOWN_MS = 60_000;
+
 let redisClient: Redis | null | undefined;
 let memoryOperations = 0;
+let distributedDisabledUntil = 0;
 
 async function getRequestIdentity() {
   const headerStore = await headers();
@@ -46,6 +49,10 @@ function getRedisClient() {
 }
 
 function getDistributedLimiter(key: string, limit: number, windowMs: number) {
+  if (Date.now() < distributedDisabledUntil) {
+    return null;
+  }
+
   const redis = getRedisClient();
 
   if (!redis) {
@@ -69,6 +76,22 @@ function getDistributedLimiter(key: string, limit: number, windowMs: number) {
   }
 
   return limiter;
+}
+
+function describeRateLimitError(error: unknown) {
+  if (error instanceof Error) {
+    const message = error.message.split(/,?\s*command was:/iu)[0]?.trim() || error.message;
+
+    return {
+      name: error.name,
+      message,
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: String(error),
+  };
 }
 
 function consumeMemoryRateLimit(bucketKey: string, limit: number, windowMs: number) {
@@ -115,9 +138,12 @@ export async function consumeRateLimit({
       const result = await distributedLimiter.limit(resolvedIdentity);
       return result.success;
     } catch (error) {
-      console.warn("Distributed rate limit failed, falling back to local memory.", {
+      distributedDisabledUntil = Date.now() + DISTRIBUTED_FAILURE_COOLDOWN_MS;
+
+      console.warn("Distributed rate limit failed; using local memory temporarily.", {
         key,
-        error,
+        error: describeRateLimitError(error),
+        retryAfterMs: DISTRIBUTED_FAILURE_COOLDOWN_MS,
       });
     }
   }

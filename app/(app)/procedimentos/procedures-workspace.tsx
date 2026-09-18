@@ -82,6 +82,7 @@ type ProcedureRow = {
     comissao_percentual: number;
     aumento_percentual: number;
     cashback_percentual: number;
+  cashback_apenas_perda?: boolean;
     freebet_somente_lucro: boolean;
     data_operacao: string;
   }>;

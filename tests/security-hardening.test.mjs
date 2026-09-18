@@ -219,6 +219,29 @@ test("procedure entry freebet flag migration is additive", async () => {
   assert.match(repositorySource, /freebet_somente_lucro/iu);
 });
 
+test("procedure entry cashback loss-only migration is additive and defaults to unchecked", async () => {
+  const migration = await readFile(
+    projectFile(
+      "core",
+      "server",
+      "database",
+      "migrations",
+      "021_procedure_entry_cashback_loss_only.sql",
+    ),
+    "utf8",
+  );
+  const repositorySource = await readFile(
+    projectFile("core", "server", "database", "postgresRepository.js"),
+    "utf8",
+  );
+
+  assert.match(migration, /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+cashback_apenas_perda/iu);
+  // A caixa nasce desmarcada, entao a coluna precisa acompanhar o padrao da tela.
+  assert.match(migration, /cashback_apenas_perda\s+BOOLEAN\s+NOT\s+NULL\s+DEFAULT\s+FALSE/iu);
+  assert.equal(/DROP\s+COLUMN|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/iu.test(migration), false);
+  assert.match(repositorySource, /cashback_apenas_perda/iu);
+});
+
 test("procedure entry operation date migration is additive", async () => {
   const migration = await readFile(
     projectFile(

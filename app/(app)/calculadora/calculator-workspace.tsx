@@ -67,6 +67,7 @@ type CalculatorLineFields = {
   aumento_percentual: string;
   comissao_percentual: string;
   cashback_percentual: string;
+  cashback_apenas_perda: boolean;
   freebet: boolean;
 };
 
@@ -76,6 +77,8 @@ type CalculatorResultLine = {
   lucro_liquido?: number;
   custo?: number;
   cashback?: number;
+  cashback_no_cenario?: number;
+  tipo?: string;
   retorno_bruto?: number;
   retorno_grupo?: number;
   custo_grupo?: number;
@@ -83,6 +86,8 @@ type CalculatorResultLine = {
   filhas?: CalculatorResultLine[];
   math?: {
     M?: number;
+    k?: number;
+    bGarantido?: number;
   };
 };
 
@@ -129,6 +134,7 @@ function createInitialFields(): CalculatorLineFields {
     aumento_percentual: "0",
     comissao_percentual: "0",
     cashback_percentual: "0",
+    cashback_apenas_perda: false,
     freebet: false,
   };
 }
@@ -239,6 +245,7 @@ function toSharedFields(line: CalculatorLineFields): SharedCalculatorLine {
     aumento_percentual: line.aumento_percentual,
     comissao_percentual: line.comissao_percentual,
     cashback_percentual: line.cashback_percentual,
+    cashback_apenas_perda: line.cashback_apenas_perda,
     freebet: line.freebet,
   };
 }
@@ -252,6 +259,7 @@ function toCalculationFields(line: CalculatorLineFields, locked: boolean) {
     aumento_percentual: toNumber(line.aumento_percentual),
     comissao_percentual: toNumber(line.comissao_percentual),
     cashback_percentual: toNumber(line.cashback_percentual),
+    cashback_apenas_perda: line.cashback_apenas_perda,
     freebet: line.freebet,
   };
 }
@@ -287,6 +295,7 @@ function normalizeSharedCalculatorFields(
       line.cashback_percentual,
       initialLine.cashback_percentual,
     ),
+    cashback_apenas_perda: Boolean(line.cashback_apenas_perda),
     freebet: Boolean(line.freebet),
   };
 }
@@ -375,17 +384,22 @@ function calculateEffectiveOdd(line: CalculatorLineFields) {
   return 1 + (odd - 1) * (1 + toNumber(line.aumento_percentual) / 100);
 }
 
+// Espelha o calculateSurebet: retorno bruto por unidade de stake dividido pelo
+// custo liquido do credito que a casa garante. Cashback pago so na derrota nao
+// abate custo nenhum aqui, porque nao vale no cenario em que esta linha ganha.
 function calculateRealOdd(line: CalculatorLineFields) {
   const effectiveOdd = calculateEffectiveOdd(line);
   const commissionMultiplier = 1 - toNumber(line.comissao_percentual) / 100;
   const cashbackRate = toNumber(line.cashback_percentual) / 100;
+  const guaranteedCashback = line.cashback_apenas_perda ? 0 : cashbackRate;
 
   if (line.tipo === "L") {
-    return (
-      effectiveOdd -
-      1 +
-      commissionMultiplier -
-      (effectiveOdd - 1) * cashbackRate
+    const liability = effectiveOdd - 1;
+
+    return getRealOddRatio(
+      liability + commissionMultiplier,
+      liability,
+      liability * guaranteedCashback,
     );
   }
 
@@ -393,7 +407,26 @@ function calculateRealOdd(line: CalculatorLineFields) {
     return (effectiveOdd - 1) * commissionMultiplier;
   }
 
-  return 1 + (effectiveOdd - 1) * commissionMultiplier - cashbackRate;
+  return getRealOddRatio(
+    1 + (effectiveOdd - 1) * commissionMultiplier,
+    1,
+    guaranteedCashback,
+  );
+}
+
+// Lay investe a responsabilidade, não a stake.
+function getInvestedAmount(line: { responsabilidade?: number; stake?: number; tipo?: string }) {
+  return line.tipo === "L" ? Number(line.responsabilidade ?? 0) : Number(line.stake ?? 0);
+}
+
+function getRealOddRatio(
+  grossMultiplier: number,
+  costMultiplier: number,
+  guaranteedCashback: number,
+) {
+  const netCost = costMultiplier - guaranteedCashback;
+
+  return netCost > 0 ? grossMultiplier / netCost : grossMultiplier;
 }
 
 function roundCurrencyValue(value: number) {
@@ -1229,8 +1262,8 @@ export function CalculatorWorkspace({
     calculation?.linhas?.reduce(
       (total, line) =>
         total +
-        Number(line.stake ?? 0) +
-        (line.filhas ?? []).reduce((sum, child) => sum + Number(child.stake ?? 0), 0),
+        getInvestedAmount(line) +
+        (line.filhas ?? []).reduce((sum, child) => sum + getInvestedAmount(child), 0),
       0,
     ) ?? 0;
   const freebetStakeTotal =
@@ -1277,6 +1310,7 @@ export function CalculatorWorkspace({
       commission: formatProcedureNumber(line.comissao_percentual),
       increase: formatProcedureNumber(line.aumento_percentual),
       cashback: formatProcedureNumber(line.cashback_percentual),
+      cashbackLossOnly: line.cashback_apenas_perda,
       freebet: line.freebet,
     };
   };
@@ -1311,6 +1345,7 @@ export function CalculatorWorkspace({
     commission: "",
     increase: "",
     cashback: "",
+    cashbackLossOnly: false,
     freebet: false,
     children: [],
   };
@@ -1357,6 +1392,7 @@ export function CalculatorWorkspace({
       primaryCommission: procedurePrimary.commission,
       primaryIncrease: procedurePrimary.increase,
       primaryCashback: procedurePrimary.cashback,
+      primaryCashbackLossOnly: procedurePrimary.cashbackLossOnly,
       primaryFreebet: procedurePrimary.freebet,
       sportChildren: procedureChildren,
       collectionChildren: procedureChildren,
@@ -1368,6 +1404,7 @@ export function CalculatorWorkspace({
         commission: entry.commission,
         increase: entry.increase,
         cashback: entry.cashback,
+        cashbackLossOnly: entry.cashbackLossOnly,
         freebet: entry.freebet,
       })),
       sportResultSelections: [],
@@ -1379,6 +1416,7 @@ export function CalculatorWorkspace({
       collectionPrimaryCommission: procedurePrimary.commission,
       collectionPrimaryIncrease: procedurePrimary.increase,
       collectionPrimaryCashback: procedurePrimary.cashback,
+      collectionPrimaryCashbackLossOnly: procedurePrimary.cashbackLossOnly,
       collectionPrimaryFreebet: procedurePrimary.freebet,
       collectionProtections: procedureProtections.map((entry) => ({
         stake: entry.stake,
@@ -1388,6 +1426,7 @@ export function CalculatorWorkspace({
         commission: entry.commission,
         increase: entry.increase,
         cashback: entry.cashback,
+        cashbackLossOnly: entry.cashbackLossOnly,
         freebet: entry.freebet,
       })),
       collectionResultSelections: [],
@@ -1425,7 +1464,13 @@ export function CalculatorWorkspace({
       toNumber(member.aumento_percentual) !== 0 ||
       toNumber(member.comissao_percentual) !== 0 ||
       toNumber(member.cashback_percentual) !== 0;
-    const realOddValue = memberResult?.math?.M ?? calculateRealOdd(member);
+    const realOddValue = memberResult?.math
+      ? getRealOddRatio(
+          Number(memberResult.math.M ?? 0),
+          Number(memberResult.math.k ?? 0),
+          Number(memberResult.math.bGarantido ?? 0),
+        )
+      : calculateRealOdd(member);
     const displayedStake = getDisplayedStake(path);
     const displayedResponsabilidade =
       member.responsabilidadeEdited || !memberResult
@@ -1782,6 +1827,20 @@ export function CalculatorWorkspace({
             </label>
 
             <label className={`${calculatorConfigFieldClass} cursor-pointer`}>
+              <span className="min-w-0 text-[var(--text-secondary)]">Cashback só se perder</span>
+              <span className="flex justify-end pr-1">
+                <input
+                  checked={member.cashback_apenas_perda}
+                  className="lz-checkbox"
+                  onChange={(event) =>
+                    updateMember(path, { cashback_apenas_perda: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+              </span>
+            </label>
+
+            <label className={`${calculatorConfigFieldClass} cursor-pointer`}>
               <span className="min-w-0 text-[var(--text-secondary)]">Freebet</span>
               <span className="flex justify-end pr-1">
                 <input
@@ -1836,8 +1895,11 @@ export function CalculatorWorkspace({
         {lines.flatMap((line, index) => {
           const lineResult = calculation?.linhas?.[index];
           const lineProfit = Number(lineResult?.lucro_liquido ?? 0);
+          // O cashback que a casa nao paga quando esta linha ganha nao pode
+          // abater o investimento usado no ROI deste cenario.
           const lineInvestment =
-            Number(lineResult?.custo ?? 0) - Number(lineResult?.cashback ?? 0);
+            Number(lineResult?.custo ?? 0) -
+            Number(lineResult?.cashback_no_cenario ?? 0);
           const roundedLineProfit = roundCurrencyValue(lineProfit);
           const roundedLineInvestment = roundCurrencyValue(lineInvestment);
           const lineFreebetStake = line.freebet ? Number(lineResult?.stake ?? 0) : 0;
