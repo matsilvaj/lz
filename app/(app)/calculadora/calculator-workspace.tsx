@@ -9,19 +9,15 @@ import {
   Plus,
   RotateCcw,
   Scissors,
-  Target,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   type CSSProperties,
-  type ReactNode,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import type { ProcedureShareValues } from "../_components/procedure-share-types";
 
 import { useToast } from "@/app/_components/toast-provider";
@@ -37,6 +33,23 @@ import { LzSelect } from "../_components/lz-select";
 import { ProcedureModal } from "../_components/procedure-modal";
 import { formatCurrency } from "../_components/ui";
 
+import {
+  BookmakerAutocompleteInput,
+} from "./calculator-bookmaker-input";
+import {
+  type CalculatorLine,
+  type CalculatorLineFields,
+  OptionHint,
+  type ProfitTargetMode,
+  toNumber,
+} from "./calculator-shared";
+import {
+  MemberConfigPanel,
+} from "./calculator-member-config";
+import {
+  ProfitTargetPanel,
+} from "./calculator-profit-target";
+
 type CalculatorWorkspaceProps = {
   bookmakers: string[];
   initialSearchParams?: Record<string, string | string[] | undefined>;
@@ -44,31 +57,6 @@ type CalculatorWorkspaceProps = {
 
 type CalculatorProcedureDefaults = ProcedureShareValues & {
   originIds?: number[];
-};
-
-type ProfitTargetMode = "normal" | "zerar" | "valor";
-type ProfitTargetUnit = "R$" | "%";
-
-type CalculatorLine = CalculatorLineFields & {
-  children: CalculatorLineFields[];
-  targetMode: ProfitTargetMode;
-  targetUnit: ProfitTargetUnit;
-  targetValue: string;
-};
-
-type CalculatorLineFields = {
-  house: string;
-  odd: string;
-  stake: string;
-  stakeEdited: boolean;
-  tipo: "B" | "L";
-  responsabilidade: string;
-  responsabilidadeEdited: boolean;
-  aumento_percentual: string;
-  comissao_percentual: string;
-  cashback_percentual: string;
-  cashback_apenas_perda: boolean;
-  freebet: boolean;
 };
 
 type CalculatorResultLine = {
@@ -103,6 +91,7 @@ type CalculatorDraft = {
 };
 
 const CALCULATOR_DRAFT_KEY = "lz:calculator-draft";
+
 const CALCULATOR_DRAFT_TTL_MS = 15 * 60 * 1000;
 
 const MAX_CHILD_LINES = 5;
@@ -113,13 +102,6 @@ type CalculatorResult = {
   lucro_liquido: number;
   lucro_percentual: number;
   duplo_calculado_final: number;
-};
-
-type BookmakerAutocompleteInputProps = {
-  placeholder: string;
-  bookmakers: string[];
-  onValueChange: (value: string) => void;
-  value: string;
 };
 
 function createInitialFields(): CalculatorLineFields {
@@ -162,20 +144,6 @@ function toProfitTarget(line: CalculatorLine) {
   }
 
   return { modo: "normal", valor: 0 };
-}
-
-function getProfitTargetLabel(line: CalculatorLine) {
-  if (line.targetMode === "zerar") {
-    return "Zerar";
-  }
-
-  if (line.targetMode === "valor" && line.targetValue.trim() !== "") {
-    return line.targetUnit === "%"
-      ? `${line.targetValue}% do lucro`
-      : formatCurrency(toNumber(line.targetValue));
-  }
-
-  return "Normal";
 }
 
 function createConversionLine(house: string, freebetValue: number): CalculatorLine {
@@ -350,11 +318,6 @@ function formatPercent(value: number) {
   return `${value.toFixed(4)}%`;
 }
 
-function toNumber(value: string) {
-  const parsed = Number(String(value).trim().replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function formatCalculatedValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed.toFixed(2) : "0.00";
@@ -433,12 +396,6 @@ function roundCurrencyValue(value: number) {
   return Number(value.toFixed(2));
 }
 
-const calculatorConfigFieldClass =
-  "grid min-w-0 grid-cols-[minmax(0,1fr)_64px] items-center gap-2 rounded-2xl border border-white/10 bg-white/4 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_74px] sm:gap-3 sm:px-3 sm:py-2.5 sm:text-sm";
-
-const calculatorConfigInputClass =
-  "lz-input min-w-0 w-full rounded-xl px-2 py-1 text-right text-xs sm:py-1.5 sm:text-sm";
-
 const maxCalculatorColumnsPerRow = 5;
 
 function getInitialSearchParam(
@@ -461,229 +418,6 @@ function getAllInitialSearchParams(
   }
 
   return value ? [value] : [];
-}
-
-function OptionHint({
-  description,
-  icon,
-  title,
-}: {
-  description: string;
-  icon: ReactNode;
-  title: string;
-}) {
-  const anchorRef = useRef<HTMLSpanElement | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-
-  function show() {
-    const rect = anchorRef.current?.getBoundingClientRect();
-
-    if (!rect) {
-      return;
-    }
-
-    const width = 300;
-    setPosition({
-      left: Math.min(Math.max(rect.left - 12, 12), window.innerWidth - width - 12),
-      top: rect.bottom + 10,
-    });
-  }
-
-  return (
-    <>
-      <span
-        aria-label={title}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/4 text-[var(--text-secondary)] transition hover:border-white/20 hover:text-white"
-        onBlur={() => setPosition(null)}
-        onFocus={show}
-        onMouseEnter={show}
-        onMouseLeave={() => setPosition(null)}
-        ref={anchorRef}
-        role="img"
-        tabIndex={0}
-      >
-        {icon}
-      </span>
-
-      {position && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="pointer-events-none fixed z-[95] flex w-[300px] gap-3 rounded-[20px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
-              role="tooltip"
-              style={{ left: position.left, top: position.top }}
-            >
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[rgba(255,119,163,0.24)] bg-[rgba(216,31,89,0.14)] text-[#ff9bbd]">
-                {icon}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-white">{title}</span>
-                <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">
-                  {description}
-                </span>
-              </span>
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
-  );
-}
-
-function BookmakerAutocompleteInput({
-  placeholder,
-  bookmakers,
-  onValueChange,
-  value,
-}: BookmakerAutocompleteInputProps) {
-  const generatedId = useId();
-  const menuId = `${generatedId}-bookmaker-menu`;
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [menuStyle, setMenuStyle] = useState({ top: 0, left: 0, width: 0 });
-  const normalizedValue = value.trim().toLowerCase();
-  const visibleBookmakers = useMemo(() => {
-    const availableBookmakers = bookmakers.filter(Boolean);
-
-    if (!normalizedValue) {
-      return availableBookmakers.slice(0, 10);
-    }
-
-    return availableBookmakers
-      .filter((bookmaker) =>
-        bookmaker.toLowerCase().includes(normalizedValue),
-      )
-      .slice(0, 10);
-  }, [bookmakers, normalizedValue]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function updatePosition() {
-      const rect = inputRef.current?.getBoundingClientRect();
-
-      if (!rect) {
-        return;
-      }
-
-      setMenuStyle({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: Math.max(rect.width, 220),
-      });
-    }
-
-    function handlePointerDown(event: MouseEvent) {
-      const target = event.target;
-
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (inputRef.current?.contains(target) || menuRef.current?.contains(target)) {
-        return;
-      }
-
-      setOpen(false);
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  function handleSelect(bookmaker: string) {
-    onValueChange(bookmaker);
-    setOpen(false);
-  }
-
-  return (
-    <>
-      <input
-        aria-autocomplete="list"
-        aria-controls={menuId}
-        aria-expanded={open}
-        className="calculator-house-input min-w-0 flex-1 rounded-lg bg-transparent px-0 text-base font-semibold text-white outline-none"
-        onChange={(event) => {
-          onValueChange(event.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder={placeholder}
-        ref={inputRef}
-        role="combobox"
-        type="text"
-        value={value}
-      />
-
-      {open && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="fixed z-[90]"
-              style={{
-                left: `${menuStyle.left}px`,
-                top: `${menuStyle.top}px`,
-                width: `${menuStyle.width}px`,
-              }}
-            >
-              <div
-                className="rounded-[22px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl"
-                id={menuId}
-                ref={menuRef}
-                role="listbox"
-              >
-                <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-                  {visibleBookmakers.length > 0 ? (
-                    visibleBookmakers.map((bookmaker) => {
-                      const active = bookmaker === value;
-
-                      return (
-                        <button
-                          aria-selected={active}
-                          className={`flex w-full items-center justify-between gap-3 rounded-[16px] px-3 py-2.5 text-left text-sm transition ${
-                            active
-                              ? "border border-[rgba(255,119,163,0.18)] bg-[rgba(216,31,89,0.18)] text-white"
-                              : "text-[var(--text-secondary)] hover:bg-white/6 hover:text-white"
-                          }`}
-                          key={bookmaker}
-                          onClick={() => handleSelect(bookmaker)}
-                          role="option"
-                          type="button"
-                        >
-                          <span className="min-w-0 truncate">{bookmaker}</span>
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <p className="px-3 py-2.5 text-sm text-[var(--text-muted)]">
-                      Nenhuma casa encontrada.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
-  );
 }
 
 export function CalculatorWorkspace({
@@ -1583,124 +1317,6 @@ export function CalculatorWorkspace({
     );
   }
 
-  function renderProfitTarget(index: number, line: CalculatorLine) {
-    const open = targetPanelIndex === index;
-    const active = line.targetMode !== "normal";
-    const hasFreeStake =
-      index === workspaceIndex ||
-      !line.stakeEdited ||
-      line.children.some((child) => !child.stakeEdited);
-    const options: Array<{ mode: ProfitTargetMode; label: string }> = [
-      { mode: "normal", label: "Lucro normal" },
-      { mode: "zerar", label: "Zerar lucro" },
-      { mode: "valor", label: "Deixar lucro" },
-    ];
-
-    return (
-      <div
-        className={`rounded-[24px] border p-3 transition ${
-          active
-            ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
-            : "border-white/10 bg-white/4"
-        }`}
-      >
-        <button
-          aria-expanded={open}
-          className="flex w-full items-center justify-between gap-3 text-sm"
-          onClick={() => setTargetPanelIndex(open ? null : index)}
-          type="button"
-        >
-          <span className="inline-flex items-center gap-2 font-medium text-[var(--text-secondary)]">
-            <OptionHint
-              description="Define quanto esta casa deve lucrar se bater: normal, zerado, um valor em R$ ou uma % do lucro das outras casas."
-              icon={<Target aria-hidden="true" className="h-3.5 w-3.5" />}
-              title="Lucro alvo"
-            />
-            Lucro alvo
-            {active ? (
-              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
-            ) : null}
-          </span>
-          <span
-            className={`truncate text-xs ${active ? "text-[#ff9bbd]" : "text-[var(--text-dim)]"}`}
-          >
-            {getProfitTargetLabel(line)}
-          </span>
-        </button>
-
-        {open ? (
-          <div className="mt-3 space-y-1.5">
-            <p className="text-xs text-[var(--text-dim)]">
-              Quanto de lucro esta casa deve ficar?
-            </p>
-            {options.map((option) => {
-              const selected = line.targetMode === option.mode;
-
-              return (
-                <div
-                  className={`rounded-2xl border px-3 py-2.5 text-sm transition ${
-                    selected
-                      ? "border-[rgba(255,119,163,0.4)] bg-[rgba(216,31,89,0.1)]"
-                      : "border-white/10 bg-white/4 hover:border-white/20"
-                  }`}
-                  key={option.mode}
-                >
-                  <label className="flex cursor-pointer items-center gap-2.5">
-                    <input
-                      checked={selected}
-                      className="accent-[#ff77a3]"
-                      name={`profit-target-${index}`}
-                      onChange={() => updateProfitTarget(index, { targetMode: option.mode })}
-                      type="radio"
-                    />
-                    <span className="text-[var(--text-secondary)]">{option.label}</span>
-                  </label>
-
-                  {selected && option.mode === "valor" ? (
-                    <div className="mt-2.5 flex gap-2">
-                      <input
-                        className="lz-input min-w-0 flex-1 rounded-xl px-3 py-2 text-sm text-white"
-                        onChange={(event) =>
-                          updateProfitTarget(index, { targetValue: event.target.value })
-                        }
-                        placeholder={line.targetUnit === "%" ? "50" : "0,00"}
-                        step="0.01"
-                        type="number"
-                        value={line.targetValue}
-                      />
-                      <div className="flex shrink-0 rounded-xl border border-white/10 bg-white/4 p-0.5">
-                        {(["R$", "%"] as const).map((unit) => (
-                          <button
-                            className={`rounded-lg px-2.5 text-xs font-semibold transition ${
-                              line.targetUnit === unit
-                                ? "lz-button-primary"
-                                : "text-[var(--text-dim)] hover:text-white"
-                            }`}
-                            key={unit}
-                            onClick={() => updateProfitTarget(index, { targetUnit: unit })}
-                            type="button"
-                          >
-                            {unit}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {active && !hasFreeStake ? (
-          <p className="mt-2 text-xs text-[var(--warning)]">
-            Destrave uma stake desta casa para aplicar o lucro alvo.
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
   function renderHouseField(
     value: string,
     placeholder: string,
@@ -1718,143 +1334,6 @@ export function CalculatorWorkspace({
             value={value}
           />
         </div>
-      </div>
-    );
-  }
-
-  function renderMemberConfig(
-    path: MemberPath,
-    member: CalculatorLineFields,
-    alwaysOpen = false,
-  ) {
-    const expanded = alwaysOpen || configExpanded;
-    const hasCustomConfig =
-      member.freebet ||
-      toNumber(member.aumento_percentual) !== 0 ||
-      toNumber(member.comissao_percentual) !== 0 ||
-      toNumber(member.cashback_percentual) !== 0;
-
-    return (
-      <div
-        className={`rounded-[24px] border p-3 transition ${
-          hasCustomConfig
-            ? "border-[rgba(255,119,163,0.24)] bg-[rgba(255,255,255,0.05)]"
-            : "border-white/10 bg-white/4"
-        }`}
-      >
-        {alwaysOpen ? (
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-[var(--text-secondary)]">
-              Configurações
-            </p>
-            {hasCustomConfig ? (
-              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
-            ) : null}
-          </div>
-        ) : (
-        <button
-          aria-expanded={expanded}
-          className="flex w-full items-center justify-between gap-3"
-          onClick={() => setConfigExpanded((current) => !current)}
-          type="button"
-        >
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-[var(--text-secondary)]">
-              Configurações
-            </p>
-            {hasCustomConfig ? (
-              <span className="h-2 w-2 rounded-full bg-[var(--accent-soft)]" />
-            ) : null}
-          </div>
-            <svg
-              aria-hidden="true"
-              className={`h-4 w-4 shrink-0 text-[var(--text-dim)] transition ${
-                expanded ? "rotate-180" : ""
-              }`}
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <path
-                d="M6.75 9.75 12 15l5.25-5.25"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.8"
-              />
-            </svg>
-        </button>
-        )}
-
-        {expanded ? (
-          <div className={alwaysOpen ? "mt-2.5 space-y-1.5" : "mt-3 space-y-2"}>
-            <label className={calculatorConfigFieldClass}>
-              <span className="min-w-0 text-[var(--text-secondary)]">Aumento (%)</span>
-              <input
-                className={calculatorConfigInputClass}
-                onChange={(event) =>
-                  updateMember(path, { aumento_percentual: event.target.value })
-                }
-                step="0.01"
-                type="number"
-                value={member.aumento_percentual}
-              />
-            </label>
-
-            <label className={calculatorConfigFieldClass}>
-              <span className="min-w-0 text-[var(--text-secondary)]">Comissão (%)</span>
-              <input
-                className={calculatorConfigInputClass}
-                onChange={(event) =>
-                  updateMember(path, { comissao_percentual: event.target.value })
-                }
-                step="0.01"
-                type="number"
-                value={member.comissao_percentual}
-              />
-            </label>
-
-            <label className={calculatorConfigFieldClass}>
-              <span className="min-w-0 text-[var(--text-secondary)]">Cashback (%)</span>
-              <input
-                className={calculatorConfigInputClass}
-                onChange={(event) =>
-                  updateMember(path, { cashback_percentual: event.target.value })
-                }
-                step="0.01"
-                type="number"
-                value={member.cashback_percentual}
-              />
-            </label>
-
-            <label className={`${calculatorConfigFieldClass} cursor-pointer`}>
-              <span className="min-w-0 text-[var(--text-secondary)]">Cashback só se perder</span>
-              <span className="flex justify-end pr-1">
-                <input
-                  checked={member.cashback_apenas_perda}
-                  className="lz-checkbox"
-                  onChange={(event) =>
-                    updateMember(path, { cashback_apenas_perda: event.target.checked })
-                  }
-                  type="checkbox"
-                />
-              </span>
-            </label>
-
-            <label className={`${calculatorConfigFieldClass} cursor-pointer`}>
-              <span className="min-w-0 text-[var(--text-secondary)]">Freebet</span>
-              <span className="flex justify-end pr-1">
-                <input
-                  checked={member.freebet}
-                  className="lz-checkbox"
-                  onChange={(event) =>
-                    updateMember(path, { freebet: event.target.checked })
-                  }
-                  type="checkbox"
-                />
-              </span>
-            </label>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -1925,7 +1404,12 @@ export function CalculatorWorkspace({
 
               {renderMemberInputs(motherPath, line, lineResult)}
 
-              {renderMemberConfig(motherPath, line)}
+              <MemberConfigPanel
+                configExpanded={configExpanded}
+                member={line}
+                onChange={(patch) => updateMember(motherPath, patch)}
+                onToggleExpanded={() => setConfigExpanded((current) => !current)}
+              />
 
               <button
                 className={`flex w-full items-center justify-between gap-3 rounded-[24px] border px-3 py-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -1955,7 +1439,16 @@ export function CalculatorWorkspace({
                 </span>
               </button>
 
-              {renderProfitTarget(index, line)}
+              <ProfitTargetPanel
+                index={index}
+                isBaseLine={index === workspaceIndex}
+                line={line}
+                onChange={(patch) => updateProfitTarget(index, patch)}
+                onToggleOpen={() =>
+                  setTargetPanelIndex((current) => (current === index ? null : index))
+                }
+                open={targetPanelIndex === index}
+              />
 
               <div className="rounded-[24px] border border-white/10 bg-white/4 p-3">
                 <div className="mb-3">
@@ -2048,7 +1541,13 @@ export function CalculatorWorkspace({
                   </div>
                 </div>
 
-                {renderMemberConfig(childPath, child, true)}
+                <MemberConfigPanel
+                  alwaysOpen
+                  configExpanded={configExpanded}
+                  member={child}
+                  onChange={(patch) => updateMember(childPath, patch)}
+                  onToggleExpanded={() => setConfigExpanded((current) => !current)}
+                />
               </div>
             );
           });
