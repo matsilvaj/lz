@@ -7,6 +7,7 @@ import {
   ChevronDown,
   RotateCcw,
   SlidersHorizontal,
+  Star,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,9 +30,14 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { FavoriteStarButton } from "@/app/(app)/_components/favorite-star-button";
+import { TrendingBadge } from "@/app/(app)/_components/trending-badge";
+import { useMonitorFavorites } from "@/app/(app)/_components/use-monitor-favorites";
+import { useTrendingFixtures } from "@/app/(app)/_components/use-trending-fixtures";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
+import { getFavoriteLeagueKey, sortByFavorites, sortByTrending } from "@/lib/monitor-odds/favorites";
 import { LzSelect } from "../../_components/lz-select";
 import { formatFreebetCount } from "../../_components/ui";
 import {
@@ -92,7 +98,9 @@ type SortMode =
   | "nearest"
   | "farthest"
   | "recent"
-  | "oldest";
+  | "oldest"
+  | "favorites"
+  | "trending";
 
 type OddsSnapshot = {
   fixture_id: string;
@@ -160,6 +168,8 @@ const sortLabels: Record<SortMode, string> = {
   nearest: "Mais próximo",
   oldest: "Mais antigos",
   recent: "Mais recentes",
+  favorites: "Favoritos primeiro",
+  trending: "Mais acessados",
 };
 const sortOptions: SortMode[] = [
   "conversion_desc",
@@ -168,6 +178,8 @@ const sortOptions: SortMode[] = [
   "farthest",
   "recent",
   "oldest",
+  "favorites",
+  "trending",
 ];
 const converterOddsSnapshotMemoryLimit = 300;
 const converterOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
@@ -1118,6 +1130,8 @@ function FiltersDialog({
   onDateFilterChange,
   onModeChange,
   onClearPreset,
+  onlyFavorites,
+  onToggleOnlyFavorites,
   onReset,
   onSavePreset,
   hasPreset,
@@ -1141,6 +1155,8 @@ function FiltersDialog({
   onDateFilterChange: (filter: DateFilter) => void;
   onModeChange: (mode: ModeFilter) => void;
   onClearPreset: () => void;
+  onlyFavorites: boolean;
+  onToggleOnlyFavorites: () => void;
   onReset: () => void;
   onSavePreset: () => void;
   hasPreset: boolean;
@@ -1197,6 +1213,29 @@ function FiltersDialog({
         </div>
 
         <div className="mt-5 space-y-5">
+          <button
+            aria-pressed={onlyFavorites}
+            className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+              onlyFavorites
+                ? "border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.12)] text-white"
+                : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:text-white"
+            }`}
+            onClick={onToggleOnlyFavorites}
+            type="button"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Star
+                aria-hidden="true"
+                className="h-4 w-4 text-amber-300"
+                fill={onlyFavorites ? "currentColor" : "none"}
+              />
+              Só favoritos
+            </span>
+            <span className="text-xs font-medium text-[var(--text-dim)]">
+              Jogos favoritos e campeonatos fixados
+            </span>
+          </button>
+
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-white">Período</h3>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -1609,12 +1648,18 @@ function SignalCard({
   row,
   selectedIds,
   showRelativeDateLabel,
+  favorite,
+  trending,
+  onToggleFavorite,
 }: {
   conversionContext: CalculatorConversionContext | null;
   onToggleCalculator: (row: SignalRow) => void;
   row: SignalRow;
   selectedIds: ReadonlySet<string>;
   showRelativeDateLabel: boolean;
+  favorite: boolean;
+  trending: boolean;
+  onToggleFavorite: () => void;
 }) {
   const { event, opportunity } = row;
   const teams = formatFixtureTeams(event);
@@ -1647,6 +1692,12 @@ function SignalCard({
       <div className="pointer-events-none relative z-10 grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(460px,1.35fr)_170px] lg:items-center">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+            <FavoriteStarButton
+              active={favorite}
+              label={teams.label}
+              onToggle={onToggleFavorite}
+              size="sm"
+            />
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
               {formatDate(event.starts_at)}
             </span>
@@ -1658,6 +1709,7 @@ function SignalCard({
             <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1">
               {formatTime(event.starts_at)}
             </span>
+            {trending ? <TrendingBadge /> : null}
           </div>
 
           <h3 className="truncate text-base font-semibold text-white md:text-lg">
@@ -1740,6 +1792,9 @@ export function FreebetConverterMonitorWorkspace({
   const [hiddenLeagueKeys, setHiddenLeagueKeys] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenBookmakers, setHiddenBookmakers] = useState<string[]>([]);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const { favoriteGames, favoriteLeagues, toggleGame } = useMonitorFavorites();
+  const { trendingRank } = useTrendingFixtures();
   const [sortMode, setSortMode] = useState<SortMode>("conversion_desc");
   const [calculatorSelections, setCalculatorSelections] = useState<
     CalculatorSelectionLine[]
@@ -2039,6 +2094,23 @@ export function FreebetConverterMonitorWorkspace({
       state.events,
     ],
   );
+  const displayRows = useMemo(() => {
+    const visible = onlyFavorites
+      ? rows.filter(
+          (row) =>
+            favoriteGames.has(row.event.fixture_id) ||
+            favoriteLeagues.has(getFavoriteLeagueKey(row.event)),
+        )
+      : rows;
+
+    if (sortMode === "favorites") {
+      return sortByFavorites(visible, (row) => row.event, favoriteGames, favoriteLeagues);
+    }
+
+    return sortMode === "trending"
+      ? sortByTrending(visible, (row) => row.event.fixture_id, trendingRank)
+      : visible;
+  }, [favoriteGames, favoriteLeagues, onlyFavorites, rows, sortMode, trendingRank]);
   const visibleCalculatorSelectionIds = useMemo(() => {
     const ids = new Set<string>();
 
@@ -2255,6 +2327,7 @@ export function FreebetConverterMonitorWorkspace({
       hiddenLeagueKeys,
       maxOddValue,
       minOddValue,
+      onlyFavorites,
       sortMode,
     }),
     [
@@ -2264,6 +2337,7 @@ export function FreebetConverterMonitorWorkspace({
       hiddenLeagueKeys,
       maxOddValue,
       minOddValue,
+      onlyFavorites,
       sortMode,
     ],
   );
@@ -2273,10 +2347,12 @@ export function FreebetConverterMonitorWorkspace({
     activeMode: ModeFilter;
     hiddenBookmakers: string[];
     hiddenLeagueKeys: string[];
+    onlyFavorites: boolean;
     maxOddValue: string;
     minOddValue: string;
     sortMode: SortMode;
   }>) => {
+      if (typeof filters.onlyFavorites === "boolean") setOnlyFavorites(filters.onlyFavorites);
       if (filters.activeDateFilter) setActiveDateFilter(filters.activeDateFilter);
       if (filters.activeMode) setActiveMode(filters.activeMode);
       if (Array.isArray(filters.hiddenBookmakers)) setHiddenBookmakers(filters.hiddenBookmakers);
@@ -2703,6 +2779,8 @@ export function FreebetConverterMonitorWorkspace({
           onModeChange={setActiveMode}
           hasPreset={hasPreset}
           onClearPreset={() => void clearPreset()}
+          onlyFavorites={onlyFavorites}
+          onToggleOnlyFavorites={() => setOnlyFavorites((current) => !current)}
           onReset={handleResetFilters}
           onSavePreset={() => void savePreset()}
           savingPreset={savingPreset}
@@ -2726,9 +2804,12 @@ export function FreebetConverterMonitorWorkspace({
                 <SignalSkeleton />
                 <SignalSkeleton />
               </>
-            ) : rows.length ? (
-              rows.map((row) => (
+            ) : displayRows.length ? (
+              displayRows.map((row) => (
                 <SignalCard
+                  favorite={favoriteGames.has(row.event.fixture_id)}
+                  trending={trendingRank.has(row.event.fixture_id)}
+                  onToggleFavorite={() => toggleGame(row.event.fixture_id)}
                   key={`${row.event.fixture_id}:${row.opportunity.lines
                     .map((line) => `${line.bookmakerSlug}:${line.selectionLabel}`)
                     .join("|")}`}

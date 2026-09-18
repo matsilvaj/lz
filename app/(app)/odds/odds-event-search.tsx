@@ -5,8 +5,10 @@ import {
   ArrowUpDown,
   Check,
   ChevronDown,
+  Flame,
   Gift,
   SlidersHorizontal,
+  Star,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -32,6 +34,10 @@ import {
   type CalculatorConversionContext,
   type CalculatorSelectionLine,
 } from "@/app/_components/calculator-selection-dock";
+import { FavoriteStarButton } from "@/app/(app)/_components/favorite-star-button";
+import { TrendingBadge } from "@/app/(app)/_components/trending-badge";
+import { useMonitorFavorites } from "@/app/(app)/_components/use-monitor-favorites";
+import { useTrendingFixtures } from "@/app/(app)/_components/use-trending-fixtures";
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { ExchangeCommissionTag } from "@/app/(app)/_components/exchange-commission-tag";
 import { redirectToLoginOnUnauthorized } from "@/lib/auth/client-redirect";
@@ -46,6 +52,7 @@ import {
   formatNationalTeamName,
 } from "@/lib/monitor-odds/display-names";
 import { getBookmakerCommission } from "@/lib/monitor-odds/exchange";
+import { getFavoriteLeagueKey, sortByFavorites, sortByTrending } from "@/lib/monitor-odds/favorites";
 import {
   buildFreebetConversionAnalysis,
   formatFreebetConversionPercent,
@@ -157,7 +164,7 @@ type OddsRefreshResult = {
 
 type DatePreset = "all" | "today" | "tomorrow" | "day2" | "day3" | "day4";
 type DateRangePreset = Exclude<DatePreset, "all">;
-type EventListSortMode = "league" | "nearest" | "farthest";
+type EventListSortMode = "league" | "nearest" | "farthest" | "trending";
 type EventsRequest =
   | {
       kind: "available";
@@ -278,6 +285,7 @@ const eventListSortOptions: Array<{
   { label: "Por campeonato", value: "league" },
   { label: "Mais próximos", value: "nearest" },
   { label: "Mais distantes", value: "farthest" },
+  { label: "Mais acessados", value: "trending" },
 ];
 const leagueLogoOutlinePositions = [
   "top",
@@ -1115,6 +1123,10 @@ function getEventStartTime(event: OddsEvent) {
 }
 
 function sortEventsForList(events: OddsEvent[], mode: EventListSortMode) {
+  if (mode === "trending") {
+    return sortEventsForList(events, "nearest");
+  }
+
   if (mode === "league") {
     return events;
   }
@@ -1503,11 +1515,17 @@ function OddPricePulse({
 function EventCard({
   event,
   eventBasePath,
+  favorite = false,
+  onToggleFavorite,
   showLeague = true,
   showRelativeDateLabel = false,
+  trending = false,
 }: {
   event: OddsEvent;
   eventBasePath: string;
+  favorite?: boolean;
+  onToggleFavorite?: () => void;
+  trending?: boolean;
   showLeague?: boolean;
   showRelativeDateLabel?: boolean;
 }) {
@@ -1526,8 +1544,19 @@ function EventCard({
         href={getEventHref(event, eventBasePath)}
       />
 
+      {onToggleFavorite ? (
+        <div className="absolute right-3 top-3 z-20">
+          <FavoriteStarButton
+            active={favorite}
+            label={teams.label}
+            onToggle={onToggleFavorite}
+            size="sm"
+          />
+        </div>
+      ) : null}
+
       <div className="pointer-events-none relative z-10 flex h-full flex-1 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+        <div className="flex flex-wrap items-center gap-2 pr-9 text-xs font-medium text-[var(--text-secondary)]">
           <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1">
             {formatDate(event.starts_at)}
           </span>
@@ -1539,6 +1568,7 @@ function EventCard({
           <span className="inline-flex rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-[var(--text-muted)]">
             {formatTime(event.starts_at)}
           </span>
+          {trending ? <TrendingBadge /> : null}
         </div>
 
         <div className="min-w-0">
@@ -1850,11 +1880,21 @@ function LeagueIcon({
 function LeagueEventsSection({
   group,
   eventBasePath,
+  favoriteGames,
+  leagueFavorite,
+  onToggleGame,
+  onToggleLeague,
   showRelativeDateLabel,
+  trendingRank,
 }: {
   group: LeagueGroup;
   eventBasePath: string;
+  favoriteGames: ReadonlySet<string>;
+  leagueFavorite: boolean;
+  onToggleGame: (fixtureId: string) => void;
+  onToggleLeague: () => void;
   showRelativeDateLabel: boolean;
+  trendingRank: ReadonlyMap<string, number>;
 }) {
   const country = formatLeagueCountry(group.leagueCountry);
   const leagueName = formatLeagueName(group.leagueName, group.leagueCountry);
@@ -1881,9 +1921,17 @@ function LeagueEventsSection({
           </div>
         </div>
 
-        <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-          {group.events.length} {group.events.length === 1 ? "jogo" : "jogos"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+            {group.events.length} {group.events.length === 1 ? "jogo" : "jogos"}
+          </span>
+          <FavoriteStarButton
+            active={leagueFavorite}
+            label={leagueName}
+            onToggle={onToggleLeague}
+            size="sm"
+          />
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1891,9 +1939,12 @@ function LeagueEventsSection({
           <EventCard
             event={event}
             eventBasePath={eventBasePath}
+            favorite={favoriteGames.has(event.fixture_id)}
             key={event.fixture_id}
+            onToggleFavorite={() => onToggleGame(event.fixture_id)}
             showLeague={false}
             showRelativeDateLabel={showRelativeDateLabel}
+            trending={trendingRank.has(event.fixture_id)}
           />
         ))}
       </div>
@@ -2189,9 +2240,11 @@ function LeagueFiltersDialog({
   onClearPreset,
   onClose,
   onHideAll,
+  onlyFavorites,
   onSavePreset,
   onShowAll,
   onToggleLeague,
+  onToggleOnlyFavorites,
   savingPreset,
 }: {
   availableLeagues: LeagueFilterOption[];
@@ -2200,9 +2253,11 @@ function LeagueFiltersDialog({
   onClearPreset: () => void;
   onClose: () => void;
   onHideAll: () => void;
+  onlyFavorites: boolean;
   onSavePreset: () => void;
   onShowAll: () => void;
   onToggleLeague: (key: string) => void;
+  onToggleOnlyFavorites: () => void;
   savingPreset: boolean;
 }) {
   if (typeof document === "undefined") {
@@ -2243,6 +2298,29 @@ function LeagueFiltersDialog({
         </div>
 
         <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+          <button
+            aria-pressed={onlyFavorites}
+            className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+              onlyFavorites
+                ? "border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.12)] text-white"
+                : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:text-white"
+            }`}
+            onClick={onToggleOnlyFavorites}
+            type="button"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Star
+                aria-hidden="true"
+                className="h-4 w-4 text-amber-300"
+                fill={onlyFavorites ? "currentColor" : "none"}
+              />
+              Só favoritos
+            </span>
+            <span className="text-xs font-medium text-[var(--text-dim)]">
+              Jogos favoritos e campeonatos fixados
+            </span>
+          </button>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-white">Campeonatos visíveis</h3>
             <div className="flex items-center gap-3 text-xs font-semibold">
@@ -3146,18 +3224,27 @@ export function OddsEventSearch({
     error: null,
   });
   const [hiddenLeagueKeys, setHiddenLeagueKeys] = useState<string[]>([]);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [leagueFiltersOpen, setLeagueFiltersOpen] = useState(false);
+  const { favoriteGames, favoriteLeagues, toggleGame, toggleLeague } =
+    useMonitorFavorites();
+  const { trendingRank } = useTrendingFixtures();
   const [availableDayKeys, setAvailableDayKeys] = useState<string[]>([]);
   const screenFilterState = useMemo(
-    () => ({ activeDatePreset, activeListSort, hiddenLeagueKeys }),
-    [activeDatePreset, activeListSort, hiddenLeagueKeys],
+    () => ({ activeDatePreset, activeListSort, hiddenLeagueKeys, onlyFavorites }),
+    [activeDatePreset, activeListSort, hiddenLeagueKeys, onlyFavorites],
   );
   const applyScreenFilters = useCallback(
     (filters: Partial<{
       activeDatePreset: DatePreset | null;
       activeListSort: EventListSortMode;
       hiddenLeagueKeys: string[];
+      onlyFavorites: boolean;
     }>) => {
+      if (typeof filters.onlyFavorites === "boolean") {
+        setOnlyFavorites(filters.onlyFavorites);
+      }
+
       if (filters.activeDatePreset !== undefined) {
         setActiveDatePreset(filters.activeDatePreset);
       }
@@ -3555,21 +3642,71 @@ export function OddsEventSearch({
     const availableKeys = new Set(availableLeagues.map((league) => league.key));
     return new Set(hiddenLeagueKeys.filter((key) => availableKeys.has(key)));
   }, [availableLeagues, hiddenLeagueKeys]);
-  const events = useMemo(
+  const filteredEvents = useMemo(
     () =>
-      activeHiddenLeagues.size
-        ? loadedEvents.filter((event) => !activeHiddenLeagues.has(getEventLeagueKey(event)))
-        : loadedEvents,
-    [activeHiddenLeagues, loadedEvents],
+      loadedEvents.filter((event) => {
+        if (activeHiddenLeagues.has(getEventLeagueKey(event))) {
+          return false;
+        }
+
+        return (
+          !onlyFavorites ||
+          favoriteGames.has(event.fixture_id) ||
+          favoriteLeagues.has(getFavoriteLeagueKey(event))
+        );
+      }),
+    [activeHiddenLeagues, favoriteGames, favoriteLeagues, loadedEvents, onlyFavorites],
   );
-  const sortedEvents = useMemo(
-    () => sortEventsForList(events, activeListSort),
-    [activeListSort, events],
+  const favoriteEvents = useMemo(
+    () => filteredEvents.filter((event) => favoriteGames.has(event.fixture_id)),
+    [favoriteGames, filteredEvents],
+  );
+  const events = useMemo(
+    () => filteredEvents.filter((event) => !favoriteGames.has(event.fixture_id)),
+    [favoriteGames, filteredEvents],
+  );
+  const sortedEvents = useMemo(() => {
+    const sorted = sortByFavorites(
+      sortEventsForList(events, activeListSort),
+      (event) => event,
+      favoriteGames,
+      favoriteLeagues,
+    );
+
+    return activeListSort === "trending"
+      ? sortByTrending(sorted, (event) => event.fixture_id, trendingRank)
+      : sorted;
+  }, [activeListSort, events, favoriteGames, favoriteLeagues, trendingRank]);
+  // Top 10 do ranking que estão na lista atual (respeita data, campeonatos e "Só favoritos").
+  const trendingEvents = useMemo(
+    () =>
+      sortByTrending(
+        filteredEvents.filter((event) => trendingRank.has(event.fixture_id)),
+        (event) => event.fixture_id,
+        trendingRank,
+      ),
+    [filteredEvents, trendingRank],
   );
   const leagueGroups =
-    activeListSort === "league" ? groupEventsByLeague(events) : [];
+    activeListSort === "league"
+      ? sortByFavorites(
+          groupEventsByLeague(events),
+          (group) => ({
+            fixture_id: "",
+            league_country: group.leagueCountry,
+            league_name: group.leagueName,
+          }),
+          favoriteGames,
+          favoriteLeagues,
+        )
+      : [];
+  const sortedFavoriteEvents = sortEventsForList(favoriteEvents, "nearest");
   const showEmpty =
-    hasActiveList && !state.loading && !state.error && events.length === 0;
+    hasActiveList &&
+    !state.loading &&
+    !state.error &&
+    events.length === 0 &&
+    favoriteEvents.length === 0;
   const activeDateLabel = activeDatePreset
     ? getDatePresetLabel(activeDatePreset).toLocaleLowerCase("pt-BR")
     : "";
@@ -3618,7 +3755,7 @@ export function OddsEventSearch({
 
               <button
                 className={`inline-flex h-13 items-center justify-center gap-2 rounded-full border px-5 text-sm font-semibold transition ${
-                  activeHiddenLeagues.size
+                  activeHiddenLeagues.size || onlyFavorites
                     ? "border-[rgba(211,27,91,0.72)] bg-[rgba(211,27,91,0.18)] text-white"
                     : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
                 }`}
@@ -3649,6 +3786,8 @@ export function OddsEventSearch({
           onHideAll={() =>
             setHiddenLeagueKeys(availableLeagues.map((league) => league.key))
           }
+          onlyFavorites={onlyFavorites}
+          onToggleOnlyFavorites={() => setOnlyFavorites((current) => !current)}
           onSavePreset={() => void savePreset()}
           onShowAll={() => setHiddenLeagueKeys([])}
           onToggleLeague={(key) =>
@@ -3678,16 +3817,76 @@ export function OddsEventSearch({
         </div>
       ) : null}
 
+      {sortedFavoriteEvents.length && hasActiveList && !state.loading ? (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+            <Star aria-hidden="true" className="h-4 w-4 text-amber-300" fill="currentColor" />
+            <h2 className="text-sm font-semibold text-white">Jogos favoritos</h2>
+            <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+              {sortedFavoriteEvents.length}
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {sortedFavoriteEvents.map((event) => (
+              <EventCard
+                event={event}
+                eventBasePath={eventBasePath}
+                favorite
+                key={event.fixture_id}
+                onToggleFavorite={() => toggleGame(event.fixture_id)}
+                showRelativeDateLabel={showRelativeDateLabel}
+                trending={trendingRank.has(event.fixture_id)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {trendingEvents.length && hasActiveList && !state.loading ? (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+            <Flame aria-hidden="true" className="h-4 w-4 text-orange-300" />
+            <h2 className="text-sm font-semibold text-white">Mais acessados</h2>
+            <span className="text-xs font-medium text-[var(--text-muted)]">últimas 24h</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {trendingEvents.map((event) => (
+              <EventCard
+                event={event}
+                eventBasePath={eventBasePath}
+                favorite={favoriteGames.has(event.fixture_id)}
+                key={event.fixture_id}
+                onToggleFavorite={() => toggleGame(event.fixture_id)}
+                showRelativeDateLabel={showRelativeDateLabel}
+                trending
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {events.length && activeListSort === "league" && !state.loading ? (
         <section className="space-y-4">
-          {leagueGroups.map((group) => (
-            <LeagueEventsSection
-              eventBasePath={eventBasePath}
-              group={group}
-              key={group.key}
-              showRelativeDateLabel={showRelativeDateLabel}
-            />
-          ))}
+          {leagueGroups.map((group) => {
+            const leagueKey = getFavoriteLeagueKey({
+              league_country: group.leagueCountry,
+              league_name: group.leagueName,
+            });
+
+            return (
+              <LeagueEventsSection
+                eventBasePath={eventBasePath}
+                favoriteGames={favoriteGames}
+                group={group}
+                key={group.key}
+                leagueFavorite={favoriteLeagues.has(leagueKey)}
+                onToggleGame={toggleGame}
+                onToggleLeague={() => toggleLeague(leagueKey)}
+                showRelativeDateLabel={showRelativeDateLabel}
+                trendingRank={trendingRank}
+              />
+            );
+          })}
         </section>
       ) : null}
 
@@ -3697,8 +3896,11 @@ export function OddsEventSearch({
             <EventCard
               event={event}
               eventBasePath={eventBasePath}
+              favorite={favoriteGames.has(event.fixture_id)}
               key={event.fixture_id}
+              onToggleFavorite={() => toggleGame(event.fixture_id)}
               showRelativeDateLabel={showRelativeDateLabel}
+              trending={trendingRank.has(event.fixture_id)}
             />
           ))}
         </section>
