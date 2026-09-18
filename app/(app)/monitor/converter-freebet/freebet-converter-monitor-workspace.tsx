@@ -87,6 +87,12 @@ import {
   type FilterOption,
   type SignalDateFilter,
 } from "@/lib/monitor-odds/signal-helpers";
+import {
+  cloneSignalEvent,
+  mergeSignalOddsSnapshots,
+  SignalOddsMemory,
+  type SignalOddsSnapshot,
+} from "@/lib/monitor-odds/signal-odds-memory";
 
 type FreebetQueueItem = {
   casa: string;
@@ -126,11 +132,7 @@ type SortMode =
   | "favorites"
   | "trending";
 
-type OddsSnapshot = {
-  fixture_id: string;
-  latest_odd_updated_at: string | null;
-  odds: DuploOddItem[];
-};
+type OddsSnapshot = SignalOddsSnapshot;
 
 type EventsResponse = {
   events?: DuploEvent[];
@@ -198,8 +200,7 @@ const sortOptions: SortMode[] = [
   "nearest",
   "farthest",
 ];
-const converterOddsSnapshotMemoryLimit = 300;
-const converterOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
+const converterOddsMemory = new SignalOddsMemory(300);
 const selectedConversionStorageKey = CONVERTER_SELECTED_STORAGE_KEY;
 const converterViewStateStorageKey = CONVERTER_VIEW_STATE_STORAGE_KEY;
 
@@ -239,111 +240,13 @@ function writeConverterViewState(state: StoredConverterViewState) {
 const consultationFreebetCondition = "Converter freebet apenas";
 let converterRememberedEvents: DuploEvent[] = [];
 
-function cloneOdd(odd: DuploOddItem): DuploOddItem {
-  return { ...odd };
-}
-
-function cloneEvent(event: DuploEvent): DuploEvent {
-  return {
-    ...event,
-    odds: event.odds.map(cloneOdd),
-  };
-}
-
-function getSnapshotFromEvent(event: DuploEvent): OddsSnapshot | null {
-  if (!event.odds.length) {
-    return null;
-  }
-
-  return {
-    fixture_id: event.fixture_id,
-    latest_odd_updated_at: null,
-    odds: event.odds.map(cloneOdd),
-  };
-}
-
-function rememberOddsSnapshots(snapshots: OddsSnapshot[]) {
-  for (const snapshot of snapshots) {
-    if (!snapshot.fixture_id || !snapshot.odds.length) {
-      continue;
-    }
-
-    converterOddsSnapshotsByFixtureId.delete(snapshot.fixture_id);
-    converterOddsSnapshotsByFixtureId.set(snapshot.fixture_id, {
-      ...snapshot,
-      odds: snapshot.odds.map(cloneOdd),
-    });
-  }
-
-  while (converterOddsSnapshotsByFixtureId.size > converterOddsSnapshotMemoryLimit) {
-    const oldestFixtureId = converterOddsSnapshotsByFixtureId.keys().next().value;
-
-    if (!oldestFixtureId) {
-      return;
-    }
-
-    converterOddsSnapshotsByFixtureId.delete(oldestFixtureId);
-  }
-}
-
-function rememberEventOdds(events: DuploEvent[]) {
-  const snapshots = events
-    .map(getSnapshotFromEvent)
-    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
-
-  rememberOddsSnapshots(snapshots);
-}
-
-function mergeOddsSnapshots(events: DuploEvent[], snapshots: OddsSnapshot[]) {
-  const snapshotsByFixtureId = new Map(
-    snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
-  );
-
-  return events.map((event) => {
-    const snapshot = snapshotsByFixtureId.get(event.fixture_id);
-
-    if (!snapshot?.odds?.length) {
-      return event;
-    }
-
-    const odds = snapshot.odds.map((odd) => ({
-      ...odd,
-      away_team: event.away_team,
-      fixture_id: event.fixture_id,
-      fixture_name: event.fixture_name,
-      home_team: event.home_team,
-      league_country: event.league_country,
-      league_name: event.league_name,
-      starts_at: event.starts_at,
-    }));
-
-    return {
-      ...event,
-      latest_odd_updated_at: snapshot.latest_odd_updated_at,
-      odds,
-    };
-  });
-}
-
-function hydrateEventsWithRememberedOdds(events: DuploEvent[]) {
-  const snapshots = events
-    .map((event) => converterOddsSnapshotsByFixtureId.get(event.fixture_id))
-    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
-
-  if (!snapshots.length) {
-    return events;
-  }
-
-  return mergeOddsSnapshots(events, snapshots);
-}
-
 function rememberConverterEvents(events: DuploEvent[]) {
-  converterRememberedEvents = events.map(cloneEvent);
-  rememberEventOdds(events);
+  converterRememberedEvents = events.map(cloneSignalEvent);
+  converterOddsMemory.rememberEvents(events);
 }
 
 function getRememberedConverterEvents() {
-  return converterRememberedEvents.map(cloneEvent);
+  return converterRememberedEvents.map(cloneSignalEvent);
 }
 
 function getConvertibleGroupKey(group: ConvertibleFreebetGroup, index: number) {
@@ -1538,7 +1441,7 @@ export function FreebetConverterMonitorWorkspace({
           return;
         }
 
-        const events = hydrateEventsWithRememberedOdds(payload.events ?? []);
+        const events = converterOddsMemory.hydrate(payload.events ?? []);
         const oddsVersion =
           payload.odds_version ?? payload.latest_odd_updated_at ?? null;
         rememberConverterEvents(events);
@@ -1569,12 +1472,12 @@ export function FreebetConverterMonitorWorkspace({
         }
 
         if (oddsResult.complete) {
-          rememberOddsSnapshots(oddsResult.snapshots);
+          converterOddsMemory.remember(oddsResult.snapshots);
         }
 
         const hydratedEvents = oddsResult.complete
-          ? mergeOddsSnapshots(events, oddsResult.snapshots)
-          : hydrateEventsWithRememberedOdds(events);
+          ? mergeSignalOddsSnapshots(events, oddsResult.snapshots)
+          : converterOddsMemory.hydrate(events);
         rememberConverterEvents(hydratedEvents);
 
         setState({
@@ -1754,9 +1657,9 @@ export function FreebetConverterMonitorWorkspace({
       }
 
       oddsVersionRef.current = result.oddsVersion;
-      rememberOddsSnapshots(result.snapshots);
+      converterOddsMemory.remember(result.snapshots);
 
-      const updatedEvents = mergeOddsSnapshots(currentEvents, result.snapshots);
+      const updatedEvents = mergeSignalOddsSnapshots(currentEvents, result.snapshots);
 
       setState((previous) => ({ ...previous, events: updatedEvents }));
     } catch {

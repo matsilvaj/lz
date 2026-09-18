@@ -44,7 +44,6 @@ import {
   isRequiredBookmaker,
   getDuploModeLabel,
   type DuploEvent,
-  type DuploOddItem,
   type DuploOpportunity,
 } from "@/lib/monitor-odds/duplo";
 import { fetchOddsSnapshots } from "@/lib/monitor-odds/odds-fetch";
@@ -80,6 +79,12 @@ import {
   type FilterOption,
   type SignalDateFilter,
 } from "@/lib/monitor-odds/signal-helpers";
+import {
+  cloneSignalEvent,
+  mergeSignalOddsSnapshots,
+  SignalOddsMemory,
+  type SignalOddsSnapshot,
+} from "@/lib/monitor-odds/signal-odds-memory";
 
 type DateFilter = SignalDateFilter;
 type ModeFilter = "all" | "sem_pa" | "pa_um_lado" | "pa_dois_lados";
@@ -107,11 +112,7 @@ type EventsResponse = {
   odds_version?: string | null;
 };
 
-type OddsSnapshot = {
-  fixture_id: string;
-  latest_odd_updated_at: string | null;
-  odds: DuploOddItem[];
-};
+type OddsSnapshot = SignalOddsSnapshot;
 
 type SignalRow = {
   event: DuploEvent;
@@ -165,9 +166,8 @@ const sortOptions: SortMode[] = [
 // os jogos custa ~200 KB, entao a lista se atualiza no maximo a cada 20s.
 const oddsRefreshIntervalMs = 20_000;
 const duploEventsMemoryLimit = 20;
-const duploOddsSnapshotMemoryLimit = 300;
 const duploEventsByRequestKey = new Map<string, DuploEvent[]>();
-const duploOddsSnapshotsByFixtureId = new Map<string, OddsSnapshot>();
+const duploOddsMemory = new SignalOddsMemory(300);
 
 function getEventsRequestParams(request: EventsRequest) {
   const params = new URLSearchParams();
@@ -191,73 +191,6 @@ function isSameEventsRequest(
   return Boolean(left && getEventsRequestKey(left) === getEventsRequestKey(right));
 }
 
-function cloneDuploOdd(odd: DuploOddItem): DuploOddItem {
-  return { ...odd };
-}
-
-function cloneDuploEvent(event: DuploEvent): DuploEvent {
-  return {
-    ...event,
-    odds: event.odds.map(cloneDuploOdd),
-  };
-}
-
-function getSnapshotFromEvent(event: DuploEvent): OddsSnapshot | null {
-  if (!event.odds.length) {
-    return null;
-  }
-
-  return {
-    fixture_id: event.fixture_id,
-    latest_odd_updated_at: null,
-    odds: event.odds.map(cloneDuploOdd),
-  };
-}
-
-function rememberOddsSnapshots(snapshots: OddsSnapshot[]) {
-  for (const snapshot of snapshots) {
-    if (!snapshot.fixture_id || !snapshot.odds.length) {
-      continue;
-    }
-
-    duploOddsSnapshotsByFixtureId.delete(snapshot.fixture_id);
-    duploOddsSnapshotsByFixtureId.set(snapshot.fixture_id, {
-      ...snapshot,
-      odds: snapshot.odds.map(cloneDuploOdd),
-    });
-  }
-
-  while (duploOddsSnapshotsByFixtureId.size > duploOddsSnapshotMemoryLimit) {
-    const oldestFixtureId = duploOddsSnapshotsByFixtureId.keys().next().value;
-
-    if (!oldestFixtureId) {
-      return;
-    }
-
-    duploOddsSnapshotsByFixtureId.delete(oldestFixtureId);
-  }
-}
-
-function rememberEventOdds(events: DuploEvent[]) {
-  const snapshots = events
-    .map(getSnapshotFromEvent)
-    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
-
-  rememberOddsSnapshots(snapshots);
-}
-
-function hydrateEventsWithRememberedOdds(events: DuploEvent[]) {
-  const snapshots = events
-    .map((event) => duploOddsSnapshotsByFixtureId.get(event.fixture_id))
-    .filter((snapshot): snapshot is OddsSnapshot => Boolean(snapshot));
-
-  if (!snapshots.length) {
-    return events;
-  }
-
-  return mergeOddsSnapshots(events, snapshots);
-}
-
 function rememberDuploEvents(request: EventsRequest, events: DuploEvent[]) {
   const key = getEventsRequestKey(request);
 
@@ -267,8 +200,8 @@ function rememberDuploEvents(request: EventsRequest, events: DuploEvent[]) {
   }
 
   duploEventsByRequestKey.delete(key);
-  duploEventsByRequestKey.set(key, events.map(cloneDuploEvent));
-  rememberEventOdds(events);
+  duploEventsByRequestKey.set(key, events.map(cloneSignalEvent));
+  duploOddsMemory.rememberEvents(events);
 
   while (duploEventsByRequestKey.size > duploEventsMemoryLimit) {
     const oldestKey = duploEventsByRequestKey.keys().next().value;
@@ -285,39 +218,8 @@ function getRememberedDuploEvents(request: EventsRequest) {
   return (
     duploEventsByRequestKey
       .get(getEventsRequestKey(request))
-      ?.map(cloneDuploEvent) ?? []
+      ?.map(cloneSignalEvent) ?? []
   );
-}
-
-function mergeOddsSnapshots(events: DuploEvent[], snapshots: OddsSnapshot[]) {
-  const snapshotsByFixtureId = new Map(
-    snapshots.map((snapshot) => [snapshot.fixture_id, snapshot]),
-  );
-
-  return events.map((event) => {
-    const snapshot = snapshotsByFixtureId.get(event.fixture_id);
-
-    if (!snapshot?.odds?.length) {
-      return event;
-    }
-
-    const odds = snapshot.odds.map((odd) => ({
-      ...odd,
-      fixture_id: event.fixture_id,
-      fixture_name: event.fixture_name,
-      home_team: event.home_team,
-      away_team: event.away_team,
-      starts_at: event.starts_at,
-      league_name: event.league_name,
-      league_country: event.league_country,
-    }));
-
-    return {
-      ...event,
-      latest_odd_updated_at: snapshot.latest_odd_updated_at,
-      odds,
-    };
-  });
 }
 
 function getBookmakerKey(slug: string | null | undefined, name: string) {
@@ -992,7 +894,7 @@ export function DoubleMonitorWorkspace({
           return;
         }
 
-        const events = hydrateEventsWithRememberedOdds(payload.events ?? []);
+        const events = duploOddsMemory.hydrate(payload.events ?? []);
         const oddsVersion =
           payload.odds_version ?? payload.latest_odd_updated_at ?? null;
         rememberDuploEvents(request, events);
@@ -1026,12 +928,12 @@ export function DoubleMonitorWorkspace({
         }
 
         if (oddsResult.complete) {
-          rememberOddsSnapshots(oddsResult.snapshots);
+          duploOddsMemory.remember(oddsResult.snapshots);
         }
 
         const hydratedEvents = oddsResult.complete
-          ? mergeOddsSnapshots(events, oddsResult.snapshots)
-          : hydrateEventsWithRememberedOdds(events);
+          ? mergeSignalOddsSnapshots(events, oddsResult.snapshots)
+          : duploOddsMemory.hydrate(events);
         rememberDuploEvents(request, hydratedEvents);
 
         setState({
@@ -1201,9 +1103,9 @@ export function DoubleMonitorWorkspace({
       }
 
       oddsVersionRef.current = result.oddsVersion;
-      rememberOddsSnapshots(result.snapshots);
+      duploOddsMemory.remember(result.snapshots);
 
-      const updatedEvents = mergeOddsSnapshots(currentEvents, result.snapshots);
+      const updatedEvents = mergeSignalOddsSnapshots(currentEvents, result.snapshots);
 
       setState((previous) => ({ ...previous, events: updatedEvents }));
     } catch {

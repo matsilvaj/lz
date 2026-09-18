@@ -407,7 +407,7 @@ test("calculator route keeps app chrome without protected workspace lookup", () 
 
 test("monitor duplo keeps remembered odds while refresh is pending", () => {
   assert.match(doubleMonitorUi, /getRememberedDuploEvents/);
-  assert.match(doubleMonitorUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(doubleMonitorUi, /duploOddsMemory\.hydrate\(/);
   assert.match(doubleMonitorUi, /rememberDuploEvents/);
   assert.match(doubleMonitorUi, /showSignalSkeleton/);
   assert.match(doubleMonitorUi, /state\.refreshingOdds && !rows\.length/);
@@ -448,7 +448,7 @@ test("freebet converter monitor uses available freebets and the calculator engin
   assert.doesNotMatch(freebetConverterUi, /freebet\(s\)/);
   assert.match(freebetConverterUi, /formatFreebetCount/);
   assert.match(freebetConverterUi, /getRememberedConverterEvents/);
-  assert.match(freebetConverterUi, /hydrateEventsWithRememberedOdds/);
+  assert.match(freebetConverterUi, /converterOddsMemory\.hydrate\(/);
   assert.match(freebetConverterUi, /showSignalSkeleton/);
   assert.match(freebetConversionLib, /calculateSurebet/);
   assert.match(freebetConversionLib, /calculationLines/);
