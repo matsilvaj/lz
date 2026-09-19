@@ -12,7 +12,6 @@ function toPartner(row) {
     id: Number(row.id),
     name: row.nome,
     bookmakersCount: Number(row.bookmakers_count ?? 0),
-    entriesCount: Number(row.entries_count ?? 0),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
   };
 }
@@ -36,9 +35,7 @@ export const partnerMethods = {
           p.id,
           p.nome,
           p.created_at,
-          (SELECT COUNT(*) FROM parceiros_bancas pb WHERE pb.parceiro_id = p.id) AS bookmakers_count,
-          (SELECT COUNT(*) FROM procedimentos_entradas pe
-            WHERE pe.user_id = p.user_id AND pe.parceiro_id = p.id) AS entries_count
+          (SELECT COUNT(*) FROM parceiros_bancas pb WHERE pb.parceiro_id = p.id) AS bookmakers_count
         FROM parceiros p
         WHERE p.user_id = $1
           AND p.removido_em IS NULL

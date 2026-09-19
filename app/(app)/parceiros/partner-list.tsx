@@ -10,16 +10,12 @@ import { removePartnerAction, renamePartnerAction } from "./actions";
 
 export type PartnerItem = {
   bookmakersCount: number;
-  entriesCount: number;
   id: number;
   name: string;
 };
 
 function formatUsage(partner: PartnerItem) {
-  const bookmakers = `${partner.bookmakersCount} ${partner.bookmakersCount === 1 ? "casa" : "casas"}`;
-  const entries = `${partner.entriesCount} ${partner.entriesCount === 1 ? "entrada" : "entradas"}`;
-
-  return `${bookmakers} · ${entries}`;
+  return `${partner.bookmakersCount} ${partner.bookmakersCount === 1 ? "casa" : "casas"}`;
 }
 
 export function PartnerList({ partners }: { partners: PartnerItem[] }) {
@@ -56,7 +52,7 @@ export function PartnerList({ partners }: { partners: PartnerItem[] }) {
   if (!partners.length) {
     return (
       <section className="lz-panel rounded-[28px] p-6 text-sm text-[var(--text-muted)]">
-        Nenhum parceiro cadastrado. Adicione o primeiro acima para vincular casas e entradas a ele.
+        Nenhum parceiro cadastrado. Adicione o primeiro acima para vincular casas a ele.
       </section>
     );
   }
@@ -163,9 +159,9 @@ export function PartnerList({ partners }: { partners: PartnerItem[] }) {
 
       <ConfirmationDialog
         description={
-          removing && (removing.bookmakersCount > 0 || removing.entriesCount > 0)
-            ? `${removing.name} sai da lista de parceiros. As ${formatUsage(removing)} continuam guardadas e aparecem no histórico com o nome dele.`
-            : "O parceiro sai da lista de parceiros."
+          removing && removing.bookmakersCount > 0
+            ? `${removing.name} sai da lista de parceiros. As casas e os procedimentos dele continuam guardados e aparecem no histórico com o nome dele.`
+            : "O parceiro sai da lista de parceiros. Os procedimentos com ele continuam no histórico."
         }
         onOpenChange={(open) => setRemoveId(open ? removeId : null)}
         open={removing !== null}
