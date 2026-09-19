@@ -28,6 +28,7 @@ import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
 import { revalidateAppData } from "@/lib/server/revalidate";
 import { calculateAdjustedOdd } from "@/core/domain/shared/odds.js";
+import { normalizeProcedureType } from "@/core/domain/shared/procedure-type.js";
 
 function parseText(value: FormDataEntryValue | null) {
   return normalizeText(value, 180);
@@ -44,7 +45,7 @@ function parseBoolean(value: FormDataEntryValue | null) {
 }
 
 function parseProcedureType(value: FormDataEntryValue | null, fallback = "SureBet") {
-  const procedureType = parseText(value) || fallback;
+  const procedureType = normalizeProcedureType(parseText(value)) || fallback;
   return procedureType === "Freebet" ? "Coletar Freebet" : procedureType;
 }
 

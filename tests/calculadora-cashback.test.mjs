@@ -139,3 +139,22 @@ test("odd ajustada aplica o aumento só sobre o lucro e é a mesma em todo o pro
   assert.equal(calculateAdjustedOdd(1, 50), 1);
   assert.equal(calculateAdjustedOdd(0.8, 50), 0.8);
 });
+
+test("tipo de procedimento digitado só aceita texto simples e até 60 caracteres", async () => {
+  const { normalizeProcedureType, sanitizeProcedureTypeInput, PROCEDURE_TYPES } = await import(
+    "../core/domain/shared/index.js"
+  );
+
+  for (const type of PROCEDURE_TYPES) {
+    assert.equal(normalizeProcedureType(type), type);
+  }
+
+  assert.equal(normalizeProcedureType("  Reembolso   de   bônus "), "Reembolso de bônus");
+  assert.equal(normalizeProcedureType('<script>alert("x")</script>'), "scriptalert(x)/script");
+  assert.equal(normalizeProcedureType("Missão\u0000\n semanal"), "Missão semanal");
+  assert.equal(normalizeProcedureType("=CMD|'/c calc'!A0"), "CMD'/c calc'A0");
+  assert.equal(normalizeProcedureType("a".repeat(100)).length, 60);
+  assert.equal(normalizeProcedureType("   "), "");
+  // Enquanto digita, o espaço no fim é mantido para a próxima palavra.
+  assert.equal(sanitizeProcedureTypeInput("Missão "), "Missão ");
+});

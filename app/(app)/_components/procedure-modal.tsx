@@ -57,6 +57,11 @@ import {
 import {
   calculateSportsProfit,
 } from "./procedure-sports-profit";
+import {
+  normalizeProcedureType,
+  PROCEDURE_TYPE_MAX_LENGTH,
+  sanitizeProcedureTypeInput,
+} from "@/core/domain/shared/procedure-type.js";
 
 type ProcedureType = string;
 
@@ -564,6 +569,8 @@ export function ProcedureModal({
       ? defaultValues.procedureType
       : "",
   );
+  // "Outro": o campo do tipo digitado só aparece depois de clicar no botão.
+  const [customTypeOpen, setCustomTypeOpen] = useState(() => Boolean(customProcedureType));
   const [selectedGroup, setSelectedGroup] =
     useState<ProcedureGroup>(initialProcedureGroup);
   const [operationDate, setOperationDate] = useState(
@@ -1548,6 +1555,15 @@ export function ProcedureModal({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (customTypeOpen && !normalizeProcedureType(customProcedureType)) {
+      event.preventDefault();
+      showToast({
+        title: "Digite o tipo do procedimento.",
+        tone: "error",
+      });
+      return;
+    }
+
     if (isFreebetType && !selectedFreebetHouse.trim()) {
       event.preventDefault();
       setFreebetHousePickerOpen(true);
@@ -1826,6 +1842,7 @@ export function ProcedureModal({
     setSelectedGroup(group);
     setSelectedType(nextType);
     setCustomProcedureType("");
+    setCustomTypeOpen(false);
 
     if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
       moveSportsFieldsToCollection();
@@ -1864,6 +1881,7 @@ export function ProcedureModal({
 
     setSelectedType(type);
     setCustomProcedureType("");
+    setCustomTypeOpen(false);
 
     if (!currentIsFreebet && nextIsFreebet && hasSportsCalculationInput) {
       moveSportsFieldsToCollection();
@@ -2099,14 +2117,15 @@ export function ProcedureModal({
 
     setSelectedGroup(nextGroup);
     setSelectedType(nextType);
-    setCustomProcedureType(
+    const nextCustomType =
       defaultValues?.procedureType &&
-        !getDefaultProcedureOptions(nextGroup, typeOptions).some(
-          (option) => option.value === defaultValues.procedureType,
-        )
+      !getDefaultProcedureOptions(nextGroup, typeOptions).some(
+        (option) => option.value === defaultValues.procedureType,
+      )
         ? defaultValues.procedureType
-        : "",
-    );
+        : "";
+    setCustomProcedureType(nextCustomType);
+    setCustomTypeOpen(Boolean(nextCustomType));
     setOperationDate(defaultValues?.operationDate ?? getTodayInputValue());
     setCollectionDate(
       defaultValues?.collectionDate ??
@@ -2341,9 +2360,11 @@ export function ProcedureModal({
                     <p className="text-sm font-medium text-white">Tipo de procedimento</p>
                     <div className="flex flex-wrap gap-2">
                       {visibleProcedureOptions.map((option) => {
-                        const active = isFreebetProcedureType(option.value)
-                          ? isFreebetType
-                          : selectedType === option.value;
+                        const active =
+                          !customTypeOpen &&
+                          (isFreebetProcedureType(option.value)
+                            ? isFreebetType
+                            : selectedType === option.value);
 
                         return (
                           <button
@@ -2364,28 +2385,41 @@ export function ProcedureModal({
                           </button>
                         );
                       })}
+                      <button
+                        aria-expanded={customTypeOpen}
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                          customTypeOpen ? "lz-button-primary" : "lz-button-secondary"
+                        }`}
+                        onClick={() => setCustomTypeOpen(true)}
+                        type="button"
+                      >
+                        Outro
+                      </button>
                     </div>
-                    <label className="block max-w-md space-y-2 text-sm">
-                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
-                        Ou digite o tipo
-                      </span>
-                      <input
-                        className="lz-input w-full rounded-2xl px-3 py-3"
-                        maxLength={60}
-                        onChange={(event) => {
-                          const value = event.target.value.slice(0, 60);
-                          setCustomProcedureType(value);
-                          const normalized = value.trim().replace(/\s+/g, " ");
+                    {customTypeOpen ? (
+                      <label className="block max-w-md space-y-2 text-sm">
+                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                          Qual tipo?
+                        </span>
+                        <input
+                          autoFocus
+                          className="lz-input w-full rounded-2xl px-3 py-3"
+                          maxLength={PROCEDURE_TYPE_MAX_LENGTH}
+                          onChange={(event) => {
+                            const value = sanitizeProcedureTypeInput(event.target.value);
+                            setCustomProcedureType(value);
+                            const normalized = normalizeProcedureType(value);
 
-                          if (normalized) {
-                            setSelectedType(normalized);
-                          }
-                        }}
-                        placeholder="Ex.: Reembolso, bônus, missão..."
-                        type="text"
-                        value={customProcedureType}
-                      />
-                    </label>
+                            if (normalized) {
+                              setSelectedType(normalized);
+                            }
+                          }}
+                          placeholder="Ex.: Reembolso, bônus, missão..."
+                          type="text"
+                          value={customProcedureType}
+                        />
+                      </label>
+                    ) : null}
                     <input name="procedureType" type="hidden" value={selectedType} />
                   </div>
                 </div>

@@ -649,26 +649,6 @@ export function ProceduresWorkspace({
             </button>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
-            <button
-              className="text-[var(--text-secondary)] transition hover:text-white disabled:opacity-60"
-              disabled={savingPreset}
-              onClick={() => void savePreset()}
-              type="button"
-            >
-              Salvar como padrão
-            </button>
-            {hasPreset ? (
-              <button
-                className="text-[var(--text-dim)] transition hover:text-white disabled:opacity-60"
-                disabled={savingPreset}
-                onClick={() => void clearPreset()}
-                type="button"
-              >
-                Remover padrão
-              </button>
-            ) : null}
-          </div>
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
@@ -957,6 +937,27 @@ export function ProceduresWorkspace({
                 />
               </label>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/10 pt-4 lg:order-4 lg:col-span-3">
+            {hasPreset ? (
+              <button
+                className="lz-button-secondary inline-flex h-10 items-center rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+                disabled={savingPreset}
+                onClick={() => void clearPreset()}
+                type="button"
+              >
+                Remover padrão
+              </button>
+            ) : null}
+            <button
+              className="lz-button-secondary inline-flex h-10 items-center rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+              disabled={savingPreset}
+              onClick={() => void savePreset()}
+              type="button"
+            >
+              {savingPreset ? "Salvando..." : "Salvar como padrão"}
+            </button>
           </div>
         </div>
       ) : null}
