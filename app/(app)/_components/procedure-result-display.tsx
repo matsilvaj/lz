@@ -1,6 +1,6 @@
 import { isFreebetProcedure } from "@/lib/procedures";
 
-import { UserRound } from "lucide-react";
+import { PartnerHousesChip } from "./partner-houses-chip";
 
 type ResultDisplayEntry = {
   escopo: string;
@@ -111,6 +111,19 @@ export function ProcedureMultipleTag({ multiple }: { multiple?: ProcedureMultipl
   );
 }
 
+// Casa que bateu em destaque, as outras apagadas; casa de parceiro em roxo claro.
+function getHouseClassName(won: boolean | null, isPartner: boolean) {
+  if (won === null) {
+    return isPartner ? "text-violet-200" : undefined;
+  }
+
+  if (won) {
+    return isPartner ? "font-semibold text-violet-200" : "font-semibold text-white";
+  }
+
+  return isPartner ? "text-violet-200/50" : "text-[var(--text-dim)]";
+}
+
 export function ProcedureHousesDisplay({
   houses: housesText,
   procedure,
@@ -131,15 +144,25 @@ export function ProcedureHousesDisplay({
     getResultHouses(procedure).map((house) => house.toLowerCase()),
   );
   // Parceiros de cada casa (a mesma casa pode ser sua e de um parceiro).
-  const partnersByHouse = new Map<string, Set<string>>();
+  const partnerHouses = new Set<string>();
+  const housesByPartner = new Map<string, string[]>();
 
   for (const entry of procedure.entradas ?? []) {
     const partner = entry.parceiro_nome?.trim();
-    const house = entry.casa.trim().toLowerCase();
+    const house = entry.casa.trim();
 
-    if (partner && house) {
-      partnersByHouse.set(house, (partnersByHouse.get(house) ?? new Set()).add(partner));
+    if (!partner || !house) {
+      continue;
     }
+
+    partnerHouses.add(house.toLowerCase());
+    const list = housesByPartner.get(partner) ?? [];
+
+    if (!list.includes(house)) {
+      list.push(house);
+    }
+
+    housesByPartner.set(partner, list);
   }
 
   return (
@@ -148,28 +171,18 @@ export function ProcedureHousesDisplay({
         <span key={`${house}-${index}`}>
           {index > 0 ? <span className="text-[var(--text-dim)]">, </span> : null}
           <span
-            className={
-              winners.size === 0
-                ? undefined
-                : winners.has(house.toLowerCase())
-                  ? "font-semibold text-white"
-                  : "text-[var(--text-dim)]"
-            }
+            className={getHouseClassName(
+              winners.size === 0 ? null : winners.has(house.toLowerCase()),
+              partnerHouses.has(house.toLowerCase()),
+            )}
           >
             {house}
           </span>
-          {[...(partnersByHouse.get(house.toLowerCase()) ?? [])].map((partner) => (
-            <span
-              className="ml-1 inline-flex items-center gap-0.5 whitespace-nowrap align-baseline text-violet-300"
-              key={partner}
-              title={`Casa do parceiro ${partner}`}
-            >
-              <UserRound aria-hidden="true" className="h-3 w-3 shrink-0 self-center" />
-              <span>{partner}</span>
-            </span>
-          ))}
         </span>
       ))}
+      <PartnerHousesChip
+        housesByPartner={[...housesByPartner].map(([partner, list]) => ({ partner, houses: list }))}
+      />
     </>
   );
 }
