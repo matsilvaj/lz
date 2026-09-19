@@ -8,6 +8,7 @@ export type ProcedureShareProtectionDraft = {
   cashback?: string;
   cashbackLossOnly?: boolean;
   freebet?: boolean;
+  partnerId?: number | null;
 };
 
 export type ProcedureShareChildDraft = ProcedureShareProtectionDraft & {
@@ -30,6 +31,8 @@ export type ProcedureShareEntryDetail = {
   cashbackLossOnly?: boolean;
   freebet?: boolean;
   operationDate?: string;
+  // Casa de um parceiro; vazio = casa do próprio usuário.
+  partnerId?: number | null;
 };
 
 export type ProcedureShareResultDetail = {
@@ -66,6 +69,7 @@ export type ProcedureShareValues = {
   primaryCashback?: string;
   primaryCashbackLossOnly?: boolean;
   primaryFreebet?: boolean;
+  primaryPartnerId?: number | null;
   sportProtections?: ProcedureShareProtectionDraft[];
   sportChildren?: Record<string, ProcedureShareChildDraft[]>;
   sportResultSelections?: string[];
@@ -78,6 +82,7 @@ export type ProcedureShareValues = {
   collectionPrimaryCashback?: string;
   collectionPrimaryCashbackLossOnly?: boolean;
   collectionPrimaryFreebet?: boolean;
+  collectionPrimaryPartnerId?: number | null;
   collectionProtections?: ProcedureShareProtectionDraft[];
   collectionChildren?: Record<string, ProcedureShareChildDraft[]>;
   collectionResultSelections?: string[];

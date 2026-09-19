@@ -69,3 +69,14 @@ export async function removePartnerAction(partnerId: number) {
 
   finish(removed ? { ok: true } : { error: "not_found" }, "Parceiro removido.");
 }
+
+// Opções do seletor de parceiro (modal de procedimento): só os parceiros ativos do usuário.
+export async function listPartnerOptionsAction() {
+  const user = await requireUser();
+  const partners = (await getProceduresRepository().listPartners(user.id)) as Array<{
+    id: number;
+    name: string;
+  }>;
+
+  return partners.map((partner) => ({ id: partner.id, name: partner.name }));
+}

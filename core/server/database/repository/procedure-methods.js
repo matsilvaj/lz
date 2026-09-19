@@ -694,7 +694,13 @@ export const procedureMethods = {
             cashback_apenas_perda,
             freebet_somente_lucro,
             data_operacao,
-            parceiro_id
+            parceiro_id,
+            (
+              SELECT pa.nome
+              FROM parceiros pa
+              WHERE pa.id = procedimentos_entradas.parceiro_id
+                AND pa.user_id = procedimentos_entradas.user_id
+            ) AS parceiro_nome
           FROM procedimentos_entradas
           WHERE procedimento_id = ANY($1::bigint[])
           ORDER BY procedimento_id ASC, escopo ASC, ordem ASC, id ASC
@@ -742,6 +748,7 @@ export const procedureMethods = {
         data_operacao: parseText(entry.data_operacao).trim(),
         // Sem isso a reconciliação trataria a casa do parceiro como do usuário.
         parceiro_id: normalizeEntryPartnerId(entry.parceiro_id),
+        parceiro_nome: entry.parceiro_nome ? parseText(entry.parceiro_nome) : null,
       });
       entriesByProcedure.set(procedureId, current);
     }

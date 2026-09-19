@@ -59,6 +59,7 @@ type ProcedureRowActionsProps = {
       cashback_percentual: number;
   cashback_apenas_perda?: boolean;
       freebet_somente_lucro: boolean;
+      parceiro_id?: number | null;
       data_operacao: string;
     }>;
     resultados?: Array<{
@@ -124,6 +125,7 @@ function toProtectionDraft(entry: ProcedureEntryDetail): ProcedureShareProtectio
     cashback: formatDraftNumber(entry.cashback_percentual),
     cashbackLossOnly: Boolean(entry.cashback_apenas_perda),
     freebet: Boolean(entry.freebet_somente_lucro),
+    partnerId: entry.parceiro_id ?? null,
   };
 }
 
@@ -221,6 +223,7 @@ function buildDetailedDefaultValues(
       conversionPrimary?.cashback_apenas_perda,
     ),
     primaryFreebet: Boolean(conversionPrimary?.freebet_somente_lucro),
+    primaryPartnerId: conversionPrimary?.parceiro_id ?? null,
     sportProtections: conversionProtections.map(toProtectionDraft),
     sportChildren: buildChildDraftsFromEntries(procedure.entradas, conversionScope),
     sportResultSelections: getResultsByScope(procedure, conversionScope),
@@ -278,6 +281,7 @@ function buildDetailedDefaultValues(
       collectionPrimary?.cashback_apenas_perda,
     ),
     collectionPrimaryFreebet: Boolean(collectionPrimary?.freebet_somente_lucro),
+    collectionPrimaryPartnerId: collectionPrimary?.parceiro_id ?? null,
     collectionProtections: collectionProtections.map(toProtectionDraft),
     collectionChildren: buildChildDraftsFromEntries(
       procedure.entradas,

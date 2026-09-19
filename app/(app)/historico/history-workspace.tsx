@@ -42,6 +42,7 @@ type HistoryEntry = {
   cashback_percentual: number;
   cashback_apenas_perda?: boolean;
   freebet_somente_lucro: boolean;
+  parceiro_id?: number | null;
   data_operacao: string;
 };
 

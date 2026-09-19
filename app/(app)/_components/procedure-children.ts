@@ -15,6 +15,7 @@ type StoredEntry = {
   aumento_percentual: number;
   cashback_percentual: number;
   freebet_somente_lucro: boolean;
+  parceiro_id?: number | null;
 };
 
 // Filhas compartilham a chave de resultado da mãe; o modal indexa proteções pela posição.
@@ -56,6 +57,7 @@ export function buildChildDraftsFromEntries(
         increase: formatDraftNumber(entry.aumento_percentual),
         cashback: formatDraftNumber(entry.cashback_percentual),
         freebet: Boolean(entry.freebet_somente_lucro),
+        partnerId: entry.parceiro_id ?? null,
       },
     ];
   }

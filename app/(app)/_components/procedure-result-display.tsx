@@ -1,10 +1,13 @@
 import { isFreebetProcedure } from "@/lib/procedures";
 
+import { PartnerBadge } from "./partner-picker";
+
 type ResultDisplayEntry = {
   escopo: string;
   resultado_chave: string;
   casa: string;
   data_operacao: string;
+  parceiro_nome?: string | null;
 };
 
 type ResultDisplayProcedure = {
@@ -127,6 +130,17 @@ export function ProcedureHousesDisplay({
   const winners = new Set(
     getResultHouses(procedure).map((house) => house.toLowerCase()),
   );
+  // Parceiros de cada casa (a mesma casa pode ser sua e de um parceiro).
+  const partnersByHouse = new Map<string, Set<string>>();
+
+  for (const entry of procedure.entradas ?? []) {
+    const partner = entry.parceiro_nome?.trim();
+    const house = entry.casa.trim().toLowerCase();
+
+    if (partner && house) {
+      partnersByHouse.set(house, (partnersByHouse.get(house) ?? new Set()).add(partner));
+    }
+  }
 
   return (
     <>
@@ -144,6 +158,11 @@ export function ProcedureHousesDisplay({
           >
             {house}
           </span>
+          {[...(partnersByHouse.get(house.toLowerCase()) ?? [])].map((partner) => (
+            <span className="ml-1 inline-flex align-middle" key={partner}>
+              <PartnerBadge name={partner} />
+            </span>
+          ))}
         </span>
       ))}
     </>

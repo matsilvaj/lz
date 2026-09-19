@@ -62,6 +62,8 @@ import {
   PROCEDURE_TYPE_MAX_LENGTH,
   sanitizeProcedureTypeInput,
 } from "@/core/domain/shared/procedure-type.js";
+import { PartnerPicker } from "./partner-picker";
+import { usePartnerOptions } from "./use-partner-options";
 
 type ProcedureType = string;
 
@@ -77,6 +79,8 @@ type ProtectionDraft = {
   cashback: string;
   cashbackLossOnly: boolean;
   freebet: boolean;
+  // Casa de um parceiro; null = casa do próprio usuário.
+  partnerId?: number | null;
 };
 
 type ProcedureStatus = "Pendente" | "Concluído";
@@ -250,6 +254,7 @@ function createProtectionDraft(
     cashback: draft.cashback ?? "",
     cashbackLossOnly: Boolean(draft.cashbackLossOnly),
     freebet: Boolean(draft.freebet),
+    partnerId: draft.partnerId ?? null,
   };
 }
 
@@ -641,6 +646,12 @@ export function ProcedureModal({
   const [primaryFreebet, setPrimaryFreebet] = useState(
     Boolean(defaultValues?.primaryFreebet),
   );
+  const [primaryPartnerId, setPrimaryPartnerId] = useState<number | null>(
+    defaultValues?.primaryPartnerId ?? null,
+  );
+  const [collectionPrimaryPartnerId, setCollectionPrimaryPartnerId] = useState<number | null>(
+    defaultValues?.collectionPrimaryPartnerId ?? null,
+  );
   const [collectionPrimaryStake, setCollectionPrimaryStake] = useState(
     defaultValues?.collectionPrimaryStake ??
       (isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : ""),
@@ -725,6 +736,7 @@ export function ProcedureModal({
     useState<HousePickerTarget | null>(null);
   const [freebetHousePickerOpen, setFreebetHousePickerOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
+  const partners = usePartnerOptions(open);
   const isReadOnly = readOnly;
   const visibleGroups = isReadOnly
     ? PROCEDURE_GROUPS.filter((group) => group.id === selectedGroup)
@@ -1064,6 +1076,7 @@ export function ProcedureModal({
     cashbackLossOnly,
     freebet,
     operationDate: detailOperationDate,
+    partnerId = null,
   }: {
     scope: ProcedureShareEntryDetail["scope"];
     role: ProcedureShareEntryDetail["role"];
@@ -1080,6 +1093,7 @@ export function ProcedureModal({
     cashbackLossOnly: boolean;
     freebet: boolean;
     operationDate?: string;
+    partnerId?: number | null;
   }): ProcedureShareEntryDetail {
     return {
       scope,
@@ -1097,6 +1111,7 @@ export function ProcedureModal({
       cashbackLossOnly,
       freebet,
       operationDate: detailOperationDate ?? "",
+      partnerId: house ? partnerId : null,
     };
   }
 
@@ -1207,6 +1222,7 @@ export function ProcedureModal({
         cashbackLossOnly: Boolean(child.cashbackLossOnly),
         freebet: child.freebet,
         operationDate: detailOperationDate,
+        partnerId: child.partnerId ?? null,
       }),
     );
   }
@@ -1258,6 +1274,7 @@ export function ProcedureModal({
       cashback: string;
       cashbackLossOnly: boolean;
       freebet: boolean;
+      partnerId?: number | null;
     };
     protections: Array<{
       key: number;
@@ -1282,6 +1299,7 @@ export function ProcedureModal({
         cashbackLossOnly: primary.cashbackLossOnly,
         freebet: primary.freebet,
         operationDate: detailOperationDate,
+        partnerId: primary.partnerId ?? null,
       }),
       ...buildChildEntryDetails(scope, children.principal, "principal", detailOperationDate),
       ...protections.flatMap(({ key, draft }, index) => [
@@ -1301,6 +1319,7 @@ export function ProcedureModal({
           cashbackLossOnly: draft.cashbackLossOnly,
           freebet: draft.freebet,
           operationDate: detailOperationDate,
+          partnerId: draft.partnerId ?? null,
         }),
         ...buildChildEntryDetails(
           scope,
@@ -1335,6 +1354,7 @@ export function ProcedureModal({
             cashbackLossOnly: false,
             freebet: false,
             operationDate: operationDateForSubmit,
+            partnerId: selectedGroup === "casino" ? primaryPartnerId : null,
           }),
         ],
         results: procedureStatus === "Conclu\u00eddo"
@@ -1359,6 +1379,7 @@ export function ProcedureModal({
             cashback: primaryCashback,
             cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
+            partnerId: primaryPartnerId,
           },
           protections: (isNormalBet ? [] : protectionKeys).map((key) => ({
             key,
@@ -1391,6 +1412,7 @@ export function ProcedureModal({
             cashback: primaryCashback,
             cashbackLossOnly: primaryCashbackLossOnly,
             freebet: primaryFreebet,
+            partnerId: primaryPartnerId,
           },
           protections: protectionKeys.map((key) => ({
             key,
@@ -1422,6 +1444,7 @@ export function ProcedureModal({
             cashback: collectionPrimaryCashback,
             cashbackLossOnly: collectionPrimaryCashbackLossOnly,
             freebet: collectionPrimaryFreebet,
+            partnerId: collectionPrimaryPartnerId,
           },
           protections: collectionProtectionKeys.map((key) => ({
             key,
@@ -1642,19 +1665,27 @@ export function ProcedureModal({
               <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                 <div className="space-y-2 text-sm sm:col-span-2">
                   <span className="text-[var(--text-muted)]">Casa</span>
-                  <button
-                    className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                    onClick={() =>
-                      setHousePickerTarget({
-                        section,
-                        index: 0,
-                        child: { parent, index },
-                      })
-                    }
-                    type="button"
-                  >
-                    {child.house || "Escolher casa"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      className="lz-button-secondary min-w-0 flex-1 rounded-2xl px-3 py-3 text-left"
+                      onClick={() =>
+                        setHousePickerTarget({
+                          section,
+                          index: 0,
+                          child: { parent, index },
+                        })
+                      }
+                      type="button"
+                    >
+                      {child.house || "Escolher casa"}
+                    </button>
+                    <PartnerPicker
+                      disabled={isReadOnly}
+                      onChange={(partnerId) => setChildValue(section, parent, index, "partnerId", partnerId)}
+                      partners={partners}
+                      value={child.partnerId ?? null}
+                    />
+                  </div>
                 </div>
 
                 <SportsBetFields
@@ -2162,6 +2193,8 @@ export function ProcedureModal({
         (shouldSeedFreebetValue ? nextFreebetValue : ""),
     );
     setPrimaryOdd(defaultValues?.primaryOdd ?? "");
+    setPrimaryPartnerId(defaultValues?.primaryPartnerId ?? null);
+    setCollectionPrimaryPartnerId(defaultValues?.collectionPrimaryPartnerId ?? null);
     setPrimarySide(getInitialBetSide(defaultValues?.primarySide));
     setPrimaryLayOdd(defaultValues?.primaryLayOdd ?? "");
     setPrimaryCommission(defaultValues?.primaryCommission ?? "");
@@ -2480,18 +2513,26 @@ export function ProcedureModal({
                 <div className="grid gap-4 rounded-[20px] border border-white/10 bg-white/4 p-3 sm:rounded-[24px] sm:p-4 md:grid-cols-2">
                   <div className="space-y-2 text-sm">
                     <span className="font-medium text-white">Casa da freebet</span>
-                    <button
-                      className={`w-full rounded-2xl px-3 py-3 text-left transition ${
-                        isConversionOnly
-                          ? "cursor-default border border-white/10 bg-white/5 text-[var(--text-dim)]"
-                          : "lz-button-secondary"
-                      }`}
-                      disabled={isConversionOnly}
-                      onClick={() => setFreebetHousePickerOpen(true)}
-                      type="button"
-                    >
-                      {selectedFreebetHouse || "Escolher casa"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        className={`min-w-0 flex-1 rounded-2xl px-3 py-3 text-left transition ${
+                          isConversionOnly
+                            ? "cursor-default border border-white/10 bg-white/5 text-[var(--text-dim)]"
+                            : "lz-button-secondary"
+                        }`}
+                        disabled={isConversionOnly}
+                        onClick={() => setFreebetHousePickerOpen(true)}
+                        type="button"
+                      >
+                        {selectedFreebetHouse || "Escolher casa"}
+                      </button>
+                      <PartnerPicker
+                        disabled={isReadOnly}
+                        onChange={setCollectionPrimaryPartnerId}
+                        partners={partners}
+                        value={collectionPrimaryPartnerId}
+                      />
+                    </div>
                   </div>
 
                   <label className="space-y-2 text-sm">
@@ -2687,18 +2728,26 @@ export function ProcedureModal({
                               <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
-                                  <button
-                                    className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                                    onClick={() =>
-                                      setHousePickerTarget({
-                                        section: "collection",
-                                        index: index + 1,
-                                      })
-                                    }
-                                    type="button"
-                                  >
-                                    {collectionHouses[index + 1] || "Escolher casa"}
-                                  </button>
+                                  <div className="flex gap-2">
+                                    <button
+                                      className="lz-button-secondary min-w-0 flex-1 rounded-2xl px-3 py-3 text-left"
+                                      onClick={() =>
+                                        setHousePickerTarget({
+                                          section: "collection",
+                                          index: index + 1,
+                                        })
+                                      }
+                                      type="button"
+                                    >
+                                      {collectionHouses[index + 1] || "Escolher casa"}
+                                    </button>
+                                    <PartnerPicker
+                                      disabled={isReadOnly}
+                                      onChange={(partnerId) => setCollectionProtectionDraftValue(key, "partnerId", partnerId)}
+                                      partners={partners}
+                                      value={collectionProtectionDrafts[key]?.partnerId ?? null}
+                                    />
+                                  </div>
                                 </div>
 
                                 <SportsBetFields
@@ -2925,15 +2974,23 @@ export function ProcedureModal({
                         {!isFreebetType ? (
                           <div className="space-y-2 text-sm sm:col-span-2">
                             <span className="text-[var(--text-muted)]">Casa</span>
-                            <button
-                              className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                              onClick={() =>
-                                setHousePickerTarget({ section: "main", index: 0 })
-                              }
-                              type="button"
-                            >
-                              {selectedHouses[0] || "Escolher casa"}
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                className="lz-button-secondary min-w-0 flex-1 rounded-2xl px-3 py-3 text-left"
+                                onClick={() =>
+                                  setHousePickerTarget({ section: "main", index: 0 })
+                                }
+                                type="button"
+                              >
+                                {selectedHouses[0] || "Escolher casa"}
+                              </button>
+                              <PartnerPicker
+                                disabled={isReadOnly}
+                                onChange={setPrimaryPartnerId}
+                                partners={partners}
+                                value={primaryPartnerId}
+                              />
+                            </div>
                           </div>
                         ) : null}
 
@@ -3000,18 +3057,26 @@ export function ProcedureModal({
                               <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                                 <div className="space-y-2 text-sm sm:col-span-2">
                                   <span className="text-[var(--text-muted)]">Casa</span>
-                                  <button
-                                    className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                                    onClick={() =>
-                                      setHousePickerTarget({
-                                        section: "main",
-                                        index: index + 1,
-                                      })
-                                    }
-                                    type="button"
-                                  >
-                                    {selectedHouses[index + 1] || "Escolher casa"}
-                                  </button>
+                                  <div className="flex gap-2">
+                                    <button
+                                      className="lz-button-secondary min-w-0 flex-1 rounded-2xl px-3 py-3 text-left"
+                                      onClick={() =>
+                                        setHousePickerTarget({
+                                          section: "main",
+                                          index: index + 1,
+                                        })
+                                      }
+                                      type="button"
+                                    >
+                                      {selectedHouses[index + 1] || "Escolher casa"}
+                                    </button>
+                                    <PartnerPicker
+                                      disabled={isReadOnly}
+                                      onChange={(partnerId) => setProtectionDraftValue(key, "partnerId", partnerId)}
+                                      partners={partners}
+                                      value={protectionDrafts[key]?.partnerId ?? null}
+                                    />
+                                  </div>
                                 </div>
 
                                 <SportsBetFields
@@ -3305,15 +3370,23 @@ export function ProcedureModal({
                     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
                       <div className="space-y-2 text-sm">
                         <span className="font-medium text-white">Casa</span>
-                        <button
-                          className="lz-button-secondary w-full rounded-2xl px-3 py-3 text-left"
-                          onClick={() =>
-                            setHousePickerTarget({ section: "main", index: 0 })
-                          }
-                          type="button"
-                        >
-                          {selectedHouses[0] || "Escolher casa"}
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            className="lz-button-secondary min-w-0 flex-1 rounded-2xl px-3 py-3 text-left"
+                            onClick={() =>
+                              setHousePickerTarget({ section: "main", index: 0 })
+                            }
+                            type="button"
+                          >
+                            {selectedHouses[0] || "Escolher casa"}
+                          </button>
+                          <PartnerPicker
+                            disabled={isReadOnly}
+                            onChange={setPrimaryPartnerId}
+                            partners={partners}
+                            value={primaryPartnerId}
+                          />
+                        </div>
                       </div>
 
                       <label className="space-y-2 text-sm">
