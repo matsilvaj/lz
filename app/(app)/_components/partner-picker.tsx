@@ -73,7 +73,7 @@ export function PartnerPicker({
         type="button"
       >
         <UserRound aria-hidden="true" className="h-4 w-4 shrink-0" />
-        {selected ? <span className="max-w-[8rem] truncate">{selected.name}</span> : null}
+        {selected ? <span className="max-w-[14rem] truncate">{selected.name}</span> : null}
       </button>
 
       {open ? (

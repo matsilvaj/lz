@@ -273,11 +273,11 @@ export function BookmakersWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,2.3fr)_minmax(280px,0.75fr)]">
         <section className="lz-panel space-y-4 rounded-[30px] p-4 md:p-6">
           <form className="space-y-3" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="relative flex-1" ref={autocompleteRef}>
+              <div className="relative min-w-0 flex-1" ref={autocompleteRef}>
                 <Search
                   aria-hidden="true"
                   className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
@@ -337,7 +337,7 @@ export function BookmakersWorkspace({
               />
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label className="flex min-w-[10rem] items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2.5 text-sm text-[var(--text-secondary)]">
+                <label className="flex w-full items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2.5 text-sm text-[var(--text-secondary)] sm:w-32">
                   <span className="shrink-0 font-semibold">R$</span>
                   <input
                     className="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)]"
