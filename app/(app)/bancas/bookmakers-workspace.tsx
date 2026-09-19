@@ -445,7 +445,7 @@ export function BookmakersWorkspace({
                         )}
                       </h3>
                     ) : null}
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(270px,1fr))] sm:gap-4">
     {group.cards.map((bookmaker) => {
                     const balanceInputId = `balance-${bookmaker.nome
                       .toLowerCase()
@@ -458,9 +458,9 @@ export function BookmakersWorkspace({
                       >
                         {/* Uma linha: nome, saldo (R$ junto do valor) e remover. */}
                         <div className="flex items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-white">{bookmaker.nome}</p>
+                          <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-tight text-white">{bookmaker.nome}</p>
                           {setBalance ? (
-                            <div className="flex w-[7.5rem] shrink-0 items-center gap-1 rounded-full border border-white/10 bg-[rgba(255,255,255,0.055)] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-[rgba(216,31,89,0.55)] focus-within:bg-[rgba(216,31,89,0.08)]">
+                            <div className="flex w-[6.75rem] shrink-0 items-center gap-1 rounded-full border border-white/10 bg-[rgba(255,255,255,0.055)] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-[rgba(216,31,89,0.55)] focus-within:bg-[rgba(216,31,89,0.08)]">
                               <label
                                 className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]"
                                 htmlFor={balanceInputId}
