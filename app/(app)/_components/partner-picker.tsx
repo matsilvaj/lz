@@ -136,3 +136,17 @@ export function PartnerBadge({ name }: { name: string }) {
     </span>
   );
 }
+
+// Nome do parceiro ao lado de uma casa (freebets e converter): some quando a casa é do usuário.
+export function PartnerInlineName({ name }: { name?: string | null }) {
+  if (!name) {
+    return null;
+  }
+
+  return (
+    <span className="ml-1.5 inline-flex items-center gap-0.5 align-baseline text-[0.85em] font-medium text-violet-300">
+      <UserRound aria-hidden="true" className="h-3 w-3 shrink-0 self-center" />
+      {name}
+    </span>
+  );
+}

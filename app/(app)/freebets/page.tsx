@@ -12,6 +12,7 @@ export default async function FreebetsPage() {
       bookmakers={data.bookmakers}
       convertibleGroups={data.convertibleGroups}
       convertedHistory={data.convertedHistory}
+      partners={data.partners}
       pendingConfirmation={data.pendingConfirmation}
     />
   );

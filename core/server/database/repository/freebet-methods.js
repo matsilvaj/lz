@@ -24,6 +24,7 @@ import {
 } from "../../../domain/shared/normalizers.js";
 
 import {
+  buildPartnerFilterCondition,
   buildRealProfitSql,
   calculateScopeProfit,
   createFreebetConversionBatchId,
@@ -31,6 +32,7 @@ import {
   getProcedureScopeProfit,
   hasProcedureScopeEntries,
   hasProcedureScopeResults,
+  normalizePartnerFilter,
   normalizePositiveInteger,
   normalizeProcedureDetailEntries,
   normalizeProcedureDetailResults,
@@ -451,7 +453,7 @@ export const freebetMethods = {
     return limit > 0 ? history.slice(0, limit) : history;
   },
 
-  async getFreebetsSummary(userId, workspaceId, executor = this.db) {
+  async getFreebetsSummary(userId, workspaceId, partners = [], executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
 
@@ -467,6 +469,15 @@ export const freebetMethods = {
     }
 
     const realProfitSql = buildRealProfitSql();
+    const summaryParams = [normalizedUserId, normalizedWorkspaceId];
+    const summaryPartnerCondition = buildPartnerFilterCondition(
+      "procedimentos_historico",
+      normalizePartnerFilter(partners),
+      (value) => {
+        summaryParams.push(value);
+        return `$${summaryParams.length}`;
+      },
+    );
     const { rows } = await executor.query(
       `
         WITH scoped AS (
@@ -476,6 +487,7 @@ export const freebetMethods = {
           FROM procedimentos_historico
           WHERE user_id = $1
             AND base_id = $2
+            ${summaryPartnerCondition ? `AND ${summaryPartnerCondition}` : ""}
         ),
         collection_state AS (
           SELECT
@@ -549,7 +561,7 @@ export const freebetMethods = {
           (SELECT COALESCE(SUM(lucro_total), 0) FROM converted) AS converted_profit
         FROM collection_state
       `,
-      [normalizedUserId, normalizedWorkspaceId],
+      summaryParams,
     );
 
     const row = rows[0] ?? {};

@@ -142,6 +142,20 @@ function didCollectionFinishWithoutFreebet(freebet) {
   return isCollectionResolved(freebet) && !didCollectionGenerateFreebet(freebet);
 }
 
+// Dono da freebet: parceiro da casa da freebet na coleta (vazio = do próprio usuário).
+function getFreebetOwner(freebet) {
+  const entry = (Array.isArray(freebet?.entradas) ? freebet.entradas : []).find(
+    (item) =>
+      parseText(item?.escopo) === "freebet_collection" &&
+      parseText(item?.tipo_entrada) === "principal" &&
+      Number(item?.parceiro_id) > 0,
+  );
+
+  return entry
+    ? { id: Number(entry.parceiro_id), name: parseText(entry.parceiro_nome) }
+    : { id: null, name: "" };
+}
+
 function buildFreebetItem(freebet) {
   const operationDate = normalizeOperationDateLabel(freebet.data_operacao);
   const collectionDate = getScopeDateLabel(
@@ -171,12 +185,16 @@ function buildFreebetItem(freebet) {
     parseText(freebet.jogo_conversao_freebet) ||
     (conversionOnly ? legacyGame : "");
 
+  const owner = getFreebetOwner(freebet);
+
   return {
     id: Number(freebet.id),
     data: operationDate,
     data_coleta: collectionDate,
     data_conversao: conversionDate,
     casa: house,
+    parceiro_id: owner.id,
+    parceiro_nome: owner.name,
     valor_fb: freebetValue,
     lucro_real: realProfit,
     resultado_coleta: collectionResult || (conversionOnly ? "-" : "Aguardando"),
@@ -258,10 +276,15 @@ export function groupActiveFreebets(rows) {
       continue;
     }
 
-    if (!grouped.has(item.casa)) {
-      grouped.set(item.casa, {
+    // Bet365 sua e Bet365 de um parceiro são freebets de donos diferentes.
+    const groupKey = `${item.casa}::${item.parceiro_id ?? ""}`;
+
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
         data: item.data,
         casa: item.casa,
+        parceiro_id: item.parceiro_id,
+        parceiro_nome: item.parceiro_nome,
         ids: [],
         itens: [],
         quantidade: 0,
@@ -270,7 +293,7 @@ export function groupActiveFreebets(rows) {
       });
     }
 
-    const current = grouped.get(item.casa);
+    const current = grouped.get(groupKey);
     if (!current.data && item.data_coleta) {
       current.data = item.data_coleta;
     }
@@ -299,6 +322,7 @@ export function buildConvertedFreebetsHistory(rows) {
       parseText(item.condicao_freebet ?? procedure.condicao_freebet) ===
       FREEBET_CONDITION_CONVERSION_ONLY;
     const house = parseText(item.casa, "Desconhecida") || "Desconhecida";
+    const owner = getFreebetOwner(procedure);
     const freebetValue = parseNumber(item.valor_freebet);
     const collectionDoubleValue = resolveProcedureDoubleValue({
       tipo_procedimento: "Coletar Freebet",
@@ -339,6 +363,8 @@ export function buildConvertedFreebetsHistory(rows) {
       data_coleta: collectionDate,
       data_conversao: hasConversion ? conversionDate : null,
       casa: house,
+      parceiro_id: owner.id,
+      parceiro_nome: owner.name,
       valor_freebet: freebetValue,
       lucro_coleta: collectionProfit,
       lucro_conversao: conversionProfit,

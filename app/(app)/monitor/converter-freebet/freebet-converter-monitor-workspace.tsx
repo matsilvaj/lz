@@ -79,6 +79,7 @@ import {
   useCalculatorRowSelections,
   useSignalLiveOdds,
 } from "@/app/(app)/monitor/_components/use-signal-screen";
+import { PartnerInlineName } from "@/app/(app)/_components/partner-picker";
 
 type FreebetQueueItem = {
   casa: string;
@@ -93,6 +94,8 @@ type FreebetQueueItem = {
 
 type ConvertibleFreebetGroup = {
   casa: string;
+  parceiro_id?: number | null;
+  parceiro_nome?: string;
   data: string;
   ids: number[];
   itens?: FreebetQueueItem[];
@@ -633,7 +636,10 @@ function FreebetSelectionDialog({
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
                 Selecionar freebets
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-white">{group.casa}</h2>
+              <h2 className="mt-2 text-xl font-semibold text-white">
+                {group.casa}
+                <PartnerInlineName name={group.parceiro_nome} />
+              </h2>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 {formatFreebetCount(group.quantidade)} de{" "}
                 {formatCurrency(group.valor_total)}
@@ -1463,6 +1469,7 @@ export function FreebetConverterMonitorWorkspace({
                             </td>
                             <td className="px-2 py-2.5 text-center font-semibold text-white">
                               {item.casa}
+                              <PartnerInlineName name={item.parceiro_nome} />
                             </td>
                             <td className="px-2 py-2.5 text-center font-semibold text-white">
                               {formatNumber(item.quantidade)}
@@ -1616,9 +1623,14 @@ export function FreebetConverterMonitorWorkspace({
                 Converter freebet
               </p>
               <h1 className="mt-1 text-2xl font-semibold text-white">
-                {selectedConversionSource === "consultation"
-                  ? "Consulta"
-                  : selectedConversion.casa}
+                {selectedConversionSource === "consultation" ? (
+                  "Consulta"
+                ) : (
+                  <>
+                    {selectedConversion.casa}
+                    <PartnerInlineName name={selectedConversion.parceiro_nome} />
+                  </>
+                )}
               </h1>
               <p className="mt-1 text-sm font-medium text-[var(--text-secondary)]">
                 {selectedConversionSource === "consultation"

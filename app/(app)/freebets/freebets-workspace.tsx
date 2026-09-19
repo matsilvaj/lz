@@ -2,6 +2,7 @@
 
 import { MoreVertical, X } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -22,6 +23,8 @@ import {
 import { formatDraftNumber } from "@/lib/format";
 import { toDateInputValue } from "@/lib/format";
 import { getProfitClass } from "@/app/(app)/_components/ui";
+import { PartnerFilterSelect } from "../_components/partner-filter-select";
+import { PartnerInlineName, type PartnerOption } from "../_components/partner-picker";
 
 const FREEBET_TYPE_OPTIONS = ["Coletar Freebet"] as const;
 type FreebetSubtab = "pending-collection" | "convertible" | "pending-conversion";
@@ -78,6 +81,8 @@ type FreebetQueueItem = {
   data_coleta?: string;
   data_conversao?: string;
   casa: string;
+  parceiro_id?: number | null;
+  parceiro_nome?: string;
   valor_fb: number;
   lucro_real: number;
   resultado_coleta: string;
@@ -91,6 +96,8 @@ type FreebetQueueItem = {
 type ConvertibleFreebetGroup = {
   data: string;
   casa: string;
+  parceiro_id?: number | null;
+  parceiro_nome?: string;
   ids: number[];
   itens?: FreebetQueueItem[];
   quantidade: number;
@@ -104,6 +111,8 @@ type ConvertedFreebetHistoryItem = {
   data_coleta?: string;
   data_conversao?: string | null;
   casa: string;
+  parceiro_id?: number | null;
+  parceiro_nome?: string;
   valor_freebet: number;
   lucro_coleta: number;
   lucro_conversao: number | null;
@@ -118,6 +127,7 @@ type PendingConversionGroup = {
   data: string;
   jogo: string;
   casa: string;
+  parceiro_nome?: string;
   quantidade: number;
   valor_total: number;
   lucro_total: number;
@@ -129,6 +139,7 @@ type FreebetsWorkspaceProps = {
   convertibleGroups: ConvertibleFreebetGroup[];
   pendingConfirmation: FreebetQueueItem[];
   convertedHistory: ConvertedFreebetHistoryItem[];
+  partners: PartnerOption[];
   bookmakers: string[];
 };
 
@@ -410,6 +421,7 @@ function getPendingConversionGroupKey(item: FreebetQueueItem) {
     item.data_conversao || item.data || "",
     getProcedureGame(procedure, "conversion"),
     item.casa,
+    item.parceiro_id ?? "",
     conversionSignature || `freebet-${item.id}`,
   ].join("||");
 }
@@ -503,6 +515,7 @@ function buildPendingConversionGroups(
       data: item.data_conversao || item.data || "-",
       jogo: getProcedureGame(item.procedimento, "conversion"),
       casa: item.casa,
+      parceiro_nome: item.parceiro_nome,
       quantidade: 1,
       valor_total: item.valor_fb,
       lucro_total: item.lucro_real,
@@ -644,6 +657,7 @@ export function FreebetsWorkspace({
   convertibleGroups,
   pendingConfirmation,
   convertedHistory,
+  partners,
 }: FreebetsWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"freebets" | "history">("freebets");
   const [activeSubtab, setActiveSubtab] = useState<FreebetSubtab>("pending-collection");
@@ -655,8 +669,32 @@ export function FreebetsWorkspace({
     visibleScope?: ProcedureShareValues["freebetVisibleScope"];
     originIds?: number[];
   } | null>(null);
-  const pendingCollection = pendingConfirmation.filter((item) => item.fase !== "conversao");
-  const pendingConversion = pendingConfirmation.filter((item) => item.fase === "conversao");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedPartners = searchParams
+    .getAll("partner")
+    .filter((value) => /^(me|\d{1,12})$/u.test(value));
+  const matchesPartnerFilter = (item: { parceiro_id?: number | null }) =>
+    selectedPartners.length === 0 ||
+    selectedPartners.includes(item.parceiro_id ? String(item.parceiro_id) : "me");
+  const visiblePending = pendingConfirmation.filter(matchesPartnerFilter);
+  const visibleConvertibleGroups = convertibleGroups.filter(matchesPartnerFilter);
+  const visibleConvertedHistory = convertedHistory.filter(matchesPartnerFilter);
+  const pendingCollection = visiblePending.filter((item) => item.fase !== "conversao");
+  const pendingConversion = visiblePending.filter((item) => item.fase === "conversao");
+
+  function updateSelectedPartners(nextPartners: string[]) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.delete("partner");
+    for (const partner of nextPartners) {
+      params.append("partner", partner);
+    }
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
   const pendingConversionGroups = buildPendingConversionGroups(pendingConversion);
   const isPendingConversionTab = activeSubtab === "pending-conversion";
   const activePendingItems = pendingCollection;
@@ -673,7 +711,7 @@ export function FreebetsWorkspace({
     {
       id: "convertible",
       label: "Prontas para conversão",
-      count: convertibleGroups.length,
+      count: visibleConvertibleGroups.length,
     },
     {
       id: "pending-conversion",
@@ -831,6 +869,13 @@ export function FreebetsWorkspace({
           >
             Histórico
           </button>
+          {partners.length ? (
+            <PartnerFilterSelect
+              onChange={updateSelectedPartners}
+              partners={partners}
+              value={selectedPartners}
+            />
+          ) : null}
         </div>
 
         <ProcedureModal
@@ -889,7 +934,7 @@ export function FreebetsWorkspace({
 
           <div className="rounded-[22px] border border-white/10 bg-black/10 px-3 py-2 md:px-4">
             {activeSubtab === "convertible" ? (
-              convertibleGroups.length === 0 ? (
+              visibleConvertibleGroups.length === 0 ? (
                 <EmptyState
                   action={
                     <Link
@@ -929,16 +974,17 @@ export function FreebetsWorkspace({
                       </tr>
                     </thead>
                     <tbody>
-                      {convertibleGroups.map((item) => (
+                      {visibleConvertibleGroups.map((item) => (
                         <tr
                           className="border-b border-white/8 align-middle transition hover:bg-white/5"
-                          key={item.casa}
+                          key={`${item.casa}::${item.parceiro_id ?? ""}`}
                         >
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {item.data}
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {item.casa}
+                            <PartnerInlineName name={item.parceiro_nome} />
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {formatNumber(item.quantidade)}
@@ -1024,6 +1070,7 @@ export function FreebetsWorkspace({
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {group.casa}
+                            <PartnerInlineName name={group.parceiro_nome} />
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {formatNumber(group.quantidade)}
@@ -1115,6 +1162,7 @@ export function FreebetsWorkspace({
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {item.casa}
+                            <PartnerInlineName name={item.parceiro_nome} />
                           </td>
                           <td className="px-2 py-2.5 text-center font-semibold text-white">
                             {formatCurrency(item.valor_fb)}
@@ -1151,7 +1199,7 @@ export function FreebetsWorkspace({
         </div>
       ) : (
         <div className="lz-panel rounded-[30px] p-4 md:p-6">
-          {convertedHistory.length === 0 ? (
+          {visibleConvertedHistory.length === 0 ? (
             <EmptyState
               description="Quando houver conversões concluídas, o histórico vai organizar o desempenho por casa e lucro."
               eyebrow="Ainda sem histórico"
@@ -1160,7 +1208,7 @@ export function FreebetsWorkspace({
           ) : (
             <>
               <div className="grid gap-4 md:hidden">
-                {convertedHistory.map((item, index) => {
+                {visibleConvertedHistory.map((item, index) => {
                   const editableProcedure = getHistoryEditableProcedure(item);
                   const editScope = getHistoryEditScope(item);
 
@@ -1176,7 +1224,10 @@ export function FreebetsWorkspace({
                             <ProcedureMultipleSlot procedure={editableProcedure} />
                             <span>{item.texto_data}</span>
                           </div>
-                          <p className="mt-2 text-lg font-semibold text-white">{item.casa}</p>
+                          <p className="mt-2 text-lg font-semibold text-white">
+                            {item.casa}
+                            <PartnerInlineName name={item.parceiro_nome} />
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <StatusTag tone="positive">Concluída</StatusTag>
@@ -1238,7 +1289,7 @@ export function FreebetsWorkspace({
                     </tr>
                   </thead>
                   <tbody>
-                    {convertedHistory.map((item, index) => {
+                    {visibleConvertedHistory.map((item, index) => {
                       const editableProcedure = getHistoryEditableProcedure(item);
                       const editScope = getHistoryEditScope(item);
 
@@ -1256,6 +1307,7 @@ export function FreebetsWorkspace({
                           </td>
                           <td className="px-3 py-4 text-center font-semibold text-white">
                             {item.casa}
+                            <PartnerInlineName name={item.parceiro_nome} />
                           </td>
                           <td className="px-3 py-4 text-center text-[var(--text-secondary)]">
                             {formatCurrency(item.valor_freebet)}
@@ -1306,7 +1358,10 @@ export function FreebetsWorkspace({
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
                   Selecionar freebets
                 </p>
-                <h2 className="mt-2 text-xl font-semibold text-white">{detailsGroup.casa}</h2>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  {detailsGroup.casa}
+                  <PartnerInlineName name={detailsGroup.parceiro_nome} />
+                </h2>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">
                   {formatFreebetCount(detailsGroup.quantidade)} de{" "}
                   {formatCurrency(detailsGroup.valor_total)}
