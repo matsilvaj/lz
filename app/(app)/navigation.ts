@@ -4,6 +4,7 @@ export const appNavigationItems = [
   { href: "/procedimentos", label: "Procedimentos" },
   { href: "/freebets", label: "Freebets" },
   { href: "/bancas", label: "Bancas" },
+  { href: "/parceiros", label: "Parceiros" },
   { href: "/calculadora", label: "Calculadora" },
   { href: "/historico", label: "Histórico" },
 ] as const;

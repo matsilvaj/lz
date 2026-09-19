@@ -1,6 +1,7 @@
 import "server-only";
 
 import { monitorMethods } from "./repository/monitor-methods.js";
+import { partnerMethods } from "./repository/partner-methods.js";
 import { sessionMethods } from "./repository/session-methods.js";
 import { bookmakerMethods } from "./repository/bookmaker-methods.js";
 import { workspaceMethods } from "./repository/workspace-methods.js";
@@ -50,6 +51,7 @@ export class ProceduresPostgresRepository {
 Object.assign(
   ProceduresPostgresRepository.prototype,
   monitorMethods,
+  partnerMethods,
   sessionMethods,
   bookmakerMethods,
   workspaceMethods,

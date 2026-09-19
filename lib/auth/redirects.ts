@@ -12,6 +12,7 @@ const ALLOWED_APP_PATH_PREFIXES = [
   "/monitor",
   "/monitor-de-duplos",
   "/odds",
+  "/parceiros",
   "/perfil",
   "/procedimentos",
   "/redefinir-senha",

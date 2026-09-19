@@ -158,3 +158,15 @@ test("tipo de procedimento digitado só aceita texto simples e até 60 caractere
   // Enquanto digita, o espaço no fim é mantido para a próxima palavra.
   assert.equal(sanitizeProcedureTypeInput("Missão "), "Missão ");
 });
+
+test("nome de parceiro só aceita texto simples e até 60 caracteres", async () => {
+  const { normalizePartnerName } = await import("../core/domain/shared/index.js");
+
+  assert.equal(normalizePartnerName("  Maria   Silva "), "Maria Silva");
+  assert.equal(normalizePartnerName("João D'Ávila"), "João D'Ávila");
+  assert.equal(normalizePartnerName('<img src=x onerror="a()">'), "img srcx onerrora()");
+  assert.equal(normalizePartnerName("=HYPERLINK(1)"), "HYPERLINK(1)");
+  assert.equal(normalizePartnerName("Ana\u0000\nPaula"), "Ana Paula");
+  assert.equal(normalizePartnerName("x".repeat(80)).length, 60);
+  assert.equal(normalizePartnerName(" "), "");
+});
