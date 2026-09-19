@@ -12,6 +12,8 @@ export default async function BookmakersPage() {
       availableBookmakers={data.availableBookmakers}
       bookmakers={data.bookmakers}
       initialNotes={data.notes}
+      partnerBookmakers={data.partnerBookmakers}
+      partners={data.partners}
     />
   );
 }

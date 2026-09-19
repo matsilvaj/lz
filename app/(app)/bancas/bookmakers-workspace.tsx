@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ButtonSpinner } from "@/app/_components/form-submit-button";
 import { useToast } from "@/app/_components/toast-provider";
 
+import { PartnerBadge, PartnerPicker, type PartnerOption } from "../_components/partner-picker";
 import { EmptyState } from "../_components/ui";
 import {
   deleteBookmakerAction,
@@ -20,11 +21,28 @@ type BookmakerItem = {
   saldo: number;
 };
 
+type PartnerBookmakerItem = BookmakerItem & {
+  partnerId: number;
+  partnerName: string;
+};
+
+// Casa do usuário (partnerId null) ou de um parceiro.
+type BookmakerCard = BookmakerItem & {
+  partnerId: number | null;
+  partnerName: string | null;
+};
+
 type BookmakersWorkspaceProps = {
   availableBookmakers: string[];
   bookmakers: BookmakerItem[];
   initialNotes: string;
+  partnerBookmakers: PartnerBookmakerItem[];
+  partners: PartnerOption[];
 };
+
+function getCardKey(card: Pick<BookmakerCard, "nome" | "partnerId">) {
+  return `${card.nome.toLowerCase()}::${card.partnerId ?? "me"}`;
+}
 
 function parseBalanceInput(value: string) {
   const parsed = Number(sanitizeBalanceInput(value));
@@ -44,6 +62,8 @@ export function BookmakersWorkspace({
   availableBookmakers,
   bookmakers,
   initialNotes,
+  partnerBookmakers,
+  partners,
 }: BookmakersWorkspaceProps) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -55,11 +75,31 @@ export function BookmakersWorkspace({
   const [notes, setNotes] = useState(initialNotes);
   const [notesSaved, setNotesSaved] = useState(initialNotes);
   const [isPending, startTransition] = useTransition();
+  const [partnerId, setPartnerId] = useState<number | null>(null);
+  const selectedPartner = partners.find((partner) => partner.id === partnerId) ?? null;
 
+  const cards = useMemo<BookmakerCard[]>(
+    () =>
+      [
+        ...bookmakers.map((bookmaker) => ({ ...bookmaker, partnerId: null, partnerName: null })),
+        ...partnerBookmakers,
+      ].sort(
+        (left, right) =>
+          left.nome.localeCompare(right.nome, "pt-BR") ||
+          (left.partnerName ?? "").localeCompare(right.partnerName ?? "", "pt-BR"),
+      ),
+    [bookmakers, partnerBookmakers],
+  );
+
+  // Casas que o dono escolhido (usuário ou parceiro) já tem.
   const selectedBookmakers = useMemo(
     () =>
-      new Set(bookmakers.map((bookmaker) => bookmaker.nome.toLowerCase())),
-    [bookmakers],
+      new Set(
+        cards
+          .filter((card) => card.partnerId === partnerId)
+          .map((card) => card.nome.toLowerCase()),
+      ),
+    [cards, partnerId],
   );
 
   const suggestions = useMemo(() => {
@@ -92,12 +132,14 @@ export function BookmakersWorkspace({
   }, []);
 
   async function submitBookmaker(bookmakerName: string, balance: number) {
-    await saveBookmakerAction({ name: bookmakerName, balance });
+    await saveBookmakerAction({ name: bookmakerName, balance, partnerId });
     setName("");
     setInitialBalance("");
     setAutocompleteOpen(false);
     showToast({
-      title: "Casa adicionada com sucesso.",
+      title: selectedPartner
+        ? `Casa de ${selectedPartner.name} adicionada.`
+        : "Casa adicionada com sucesso.",
       tone: "success",
     });
     router.refresh();
@@ -145,10 +187,10 @@ export function BookmakersWorkspace({
     });
   }
 
-  function handleDelete(bookmakerName: string) {
+  function handleDelete(card: BookmakerCard) {
     startTransition(async () => {
       try {
-        const result = await deleteBookmakerAction(bookmakerName);
+        const result = await deleteBookmakerAction(card.nome, card.partnerId);
 
         if (result?.blockedByPending) {
           showToast({
@@ -182,22 +224,19 @@ export function BookmakersWorkspace({
     });
   }
 
-  function commitBalance(bookmakerName: string, draftValue: string) {
+  function commitBalance(card: BookmakerCard, draftValue: string) {
     const nextBalance = parseBalanceInput(draftValue);
-    const currentBookmaker = bookmakers.find(
-      (bookmaker) => bookmaker.nome === bookmakerName,
-    );
-    const currentBalance = currentBookmaker?.saldo ?? 0;
 
-    if (nextBalance === currentBalance) {
+    if (nextBalance === card.saldo) {
       return;
     }
 
     startTransition(async () => {
       try {
         await updateBookmakerBalanceAction({
-          name: bookmakerName,
+          name: card.nome,
           balance: nextBalance,
+          partnerId: card.partnerId,
         });
         showToast({
           title: "Saldo atualizado.",
@@ -251,7 +290,11 @@ export function BookmakersWorkspace({
                     setAutocompleteOpen(true);
                   }}
                   onFocus={() => setAutocompleteOpen(true)}
-                  placeholder="Buscar casa predefinida"
+                  placeholder={
+                    selectedPartner
+                      ? `Buscar casa de ${selectedPartner.name}`
+                      : "Buscar casa predefinida"
+                  }
                   type="text"
                   value={name}
                 />
@@ -285,6 +328,13 @@ export function BookmakersWorkspace({
                   </div>
                 ) : null}
               </div>
+
+              <PartnerPicker
+                disabled={isPending}
+                onChange={setPartnerId}
+                partners={partners}
+                value={partnerId}
+              />
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <label className="flex min-w-[10rem] items-center gap-2 rounded-full border border-white/10 bg-white/4 px-4 py-2.5 text-sm text-[var(--text-secondary)]">
@@ -332,7 +382,7 @@ export function BookmakersWorkspace({
             </div>
           </form>
 
-          {bookmakers.length === 0 ? (
+          {cards.length === 0 ? (
             <EmptyState
               description="Escolha as casas da lista predefinida para começar a acompanhar saldo e prioridades."
               eyebrow="Setup inicial"
@@ -340,25 +390,30 @@ export function BookmakersWorkspace({
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {bookmakers.map((bookmaker) => {
+              {cards.map((bookmaker) => {
                 const balanceInputId = `balance-${bookmaker.nome
                   .toLowerCase()
-                  .replace(/\s+/g, "-")}`;
+                  .replace(/\s+/g, "-")}-${bookmaker.partnerId ?? "me"}`;
 
                 return (
                   <div
                     className="rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.16)]"
-                    key={bookmaker.nome}
+                    key={getCardKey(bookmaker)}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1 space-y-1">
                         <p className="text-sm font-semibold text-white">{bookmaker.nome}</p>
+                        {bookmaker.partnerName ? <PartnerBadge name={bookmaker.partnerName} /> : null}
                       </div>
                       <button
-                        aria-label={`Remover ${bookmaker.nome}`}
+                        aria-label={
+                          bookmaker.partnerName
+                            ? `Remover ${bookmaker.nome} de ${bookmaker.partnerName}`
+                            : `Remover ${bookmaker.nome}`
+                        }
                         className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
                         disabled={isPending}
-                        onClick={() => handleDelete(bookmaker.nome)}
+                        onClick={() => handleDelete(bookmaker)}
                         title="Remover casa"
                         type="button"
                       >
@@ -386,10 +441,10 @@ export function BookmakersWorkspace({
                             disabled={isPending}
                             id={balanceInputId}
                             inputMode="numeric"
-                            key={`${bookmaker.nome}-${bookmaker.saldo}`}
+                            key={`${getCardKey(bookmaker)}-${bookmaker.saldo}`}
                             maxLength={7}
                             onBlur={(event) =>
-                              commitBalance(bookmaker.nome, event.target.value)
+                              commitBalance(bookmaker, event.target.value)
                             }
                             onChange={(event) => {
                               event.currentTarget.value = sanitizeBalanceInput(
@@ -399,10 +454,7 @@ export function BookmakersWorkspace({
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
                                 event.preventDefault();
-                                commitBalance(
-                                  bookmaker.nome,
-                                  event.currentTarget.value,
-                                );
+                                commitBalance(bookmaker, event.currentTarget.value);
                               }
                             }}
                             pattern="[0-9]*"

@@ -3,12 +3,23 @@
 import { revalidatePath, updateTag } from "next/cache";
 
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
-import { normalizeLongText, normalizeText, parseLimitedNumber } from "@/lib/security/input";
+import {
+  normalizeLongText,
+  normalizeText,
+  parseLimitedNumber,
+  parsePositiveInteger,
+} from "@/lib/security/input";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getProceduresRepository } from "@/lib/server";
 
 function parseText(value: string | FormDataEntryValue | null) {
   return normalizeText(value, 120);
+}
+
+// Sem parceiro (null) a casa é do usuário.
+function parsePartnerId(value: number | null | undefined) {
+  const partnerId = parsePositiveInteger(value == null ? "" : String(value));
+  return partnerId > 0 ? partnerId : null;
 }
 
 function parseBalance(value: string | number | FormDataEntryValue | null) {
@@ -25,7 +36,7 @@ async function canWriteBookmakers(userId: string) {
 }
 
 function revalidateBookmakerScreens() {
-  const paths = ["/bancas", "/calculadora", "/procedimentos", "/freebets"];
+  const paths = ["/bancas", "/calculadora", "/procedimentos", "/freebets", "/parceiros"];
   for (const path of paths) {
     revalidatePath(path);
   }
@@ -37,15 +48,30 @@ function revalidateBookmakerScreens() {
 export async function saveBookmakerAction({
   name,
   balance = 0,
+  partnerId = null,
 }: {
   name: string;
   balance?: number;
+  partnerId?: number | null;
 }) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
+  const normalizedPartnerId = parsePartnerId(partnerId);
 
   if (!normalizedName || !(await canWriteBookmakers(user.id))) {
+    return;
+  }
+
+  if (normalizedPartnerId) {
+    await repository.savePartnerBookmaker(
+      user.id,
+      activeWorkspace.id,
+      normalizedPartnerId,
+      normalizedName,
+      parseBalance(balance),
+    );
+    revalidateBookmakerScreens();
     return;
   }
 
@@ -62,15 +88,30 @@ export async function saveBookmakerAction({
 export async function updateBookmakerBalanceAction({
   name,
   balance,
+  partnerId = null,
 }: {
   name: string;
   balance: number;
+  partnerId?: number | null;
 }) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
+  const normalizedPartnerId = parsePartnerId(partnerId);
 
   if (!normalizedName || !(await canWriteBookmakers(user.id))) {
+    return;
+  }
+
+  if (normalizedPartnerId) {
+    await repository.savePartnerBookmaker(
+      user.id,
+      activeWorkspace.id,
+      normalizedPartnerId,
+      normalizedName,
+      parseBalance(balance),
+    );
+    revalidateBookmakerScreens();
     return;
   }
 
@@ -83,13 +124,31 @@ export async function updateBookmakerBalanceAction({
   revalidateBookmakerScreens();
 }
 
-export async function deleteBookmakerAction(name: string) {
+export async function deleteBookmakerAction(name: string, partnerId: number | null = null) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();
   const normalizedName = parseText(name);
+  const normalizedPartnerId = parsePartnerId(partnerId);
 
   if (!normalizedName || !(await canWriteBookmakers(user.id))) {
     return { deleted: false, blockedByPending: false };
+  }
+
+  if (normalizedPartnerId) {
+    const deleted = Boolean(
+      await repository.deletePartnerBookmaker(
+        user.id,
+        activeWorkspace.id,
+        normalizedPartnerId,
+        normalizedName,
+      ),
+    );
+
+    if (deleted) {
+      revalidateBookmakerScreens();
+    }
+
+    return { deleted, blockedByPending: false };
   }
 
   const result = await repository.deleteBookmaker(

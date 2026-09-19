@@ -3,6 +3,7 @@
 
 import "server-only";
 
+import { parseNumber, parseText } from "../../../domain/shared/normalizers.js";
 import { normalizePartnerName } from "../../../domain/shared/partner-name.js";
 
 import { normalizeUserId } from "./helpers.js";
@@ -14,6 +15,12 @@ function toPartner(row) {
     bookmakersCount: Number(row.bookmakers_count ?? 0),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
   };
+}
+
+const MAX_BALANCE = 9_999_999;
+
+function normalizeBalance(value) {
+  return Math.min(Math.max(parseNumber(value), 0), MAX_BALANCE);
 }
 
 function normalizePartnerId(value) {
@@ -130,6 +137,97 @@ export const partnerMethods = {
           AND removido_em IS NULL
       `,
       [normalizedUserId, normalizedId],
+    );
+
+    return rowCount > 0;
+  },
+
+  // Casas atreladas a parceiros ativos, com saldo próprio.
+  async listPartnerBookmakers(userId, workspaceId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
+      return [];
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT ca.nome, pb.saldo, p.id AS parceiro_id, p.nome AS parceiro_nome
+        FROM parceiros_bancas pb
+        INNER JOIN parceiros p
+          ON p.id = pb.parceiro_id
+         AND p.user_id = pb.user_id
+         AND p.removido_em IS NULL
+        INNER JOIN casas_de_apostas ca
+          ON ca.id = pb.bookmaker_id
+        WHERE pb.user_id = $1
+          AND pb.base_id = $2
+        ORDER BY lower(ca.nome) ASC, lower(p.nome) ASC
+      `,
+      [normalizedUserId, normalizedWorkspaceId],
+    );
+
+    return rows.map((row) => ({
+      nome: row.nome,
+      saldo: parseNumber(row.saldo),
+      partnerId: Number(row.parceiro_id),
+      partnerName: row.parceiro_nome,
+    }));
+  },
+
+  // Adiciona a casa ao parceiro ou define o saldo dela. Só aceita parceiro ativo do próprio usuário.
+  async savePartnerBookmaker(userId, workspaceId, partnerId, name, balance, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedPartnerId = normalizePartnerId(partnerId);
+    const normalizedName = parseText(name).trim();
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0 || !normalizedPartnerId || !normalizedName) {
+      return false;
+    }
+
+    const { rowCount } = await executor.query(
+      `
+        INSERT INTO parceiros_bancas (user_id, base_id, parceiro_id, bookmaker_id, saldo)
+        SELECT $1, $2, p.id, ca.id, $5
+        FROM parceiros p
+        INNER JOIN casas_de_apostas ca
+          ON lower(ca.nome) = lower($4)
+        WHERE p.id = $3
+          AND p.user_id = $1
+          AND p.removido_em IS NULL
+        ON CONFLICT (base_id, parceiro_id, bookmaker_id)
+        DO UPDATE SET saldo = EXCLUDED.saldo
+        WHERE parceiros_bancas.user_id = EXCLUDED.user_id
+      `,
+      [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName, normalizeBalance(balance)],
+    );
+
+    return rowCount > 0;
+  },
+
+  async deletePartnerBookmaker(userId, workspaceId, partnerId, name, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+    const normalizedPartnerId = normalizePartnerId(partnerId);
+    const normalizedName = parseText(name).trim();
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0 || !normalizedPartnerId || !normalizedName) {
+      return false;
+    }
+
+    const { rowCount } = await executor.query(
+      `
+        DELETE FROM parceiros_bancas pb
+        USING casas_de_apostas ca
+        WHERE pb.bookmaker_id = ca.id
+          AND pb.user_id = $1
+          AND pb.base_id = $2
+          AND pb.parceiro_id = $3
+          AND lower(ca.nome) = lower($4)
+      `,
+      [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName],
     );
 
     return rowCount > 0;
