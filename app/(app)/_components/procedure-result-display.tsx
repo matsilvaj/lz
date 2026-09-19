@@ -1,6 +1,6 @@
 import { isFreebetProcedure } from "@/lib/procedures";
 
-import { PartnerBadge } from "./partner-picker";
+import { UserRound } from "lucide-react";
 
 type ResultDisplayEntry = {
   escopo: string;
@@ -159,8 +159,13 @@ export function ProcedureHousesDisplay({
             {house}
           </span>
           {[...(partnersByHouse.get(house.toLowerCase()) ?? [])].map((partner) => (
-            <span className="ml-1 inline-flex align-middle" key={partner}>
-              <PartnerBadge name={partner} />
+            <span
+              className="ml-1 inline-flex items-center gap-0.5 whitespace-nowrap align-baseline text-violet-300"
+              key={partner}
+              title={`Casa do parceiro ${partner}`}
+            >
+              <UserRound aria-hidden="true" className="h-3 w-3 shrink-0 self-center" />
+              <span>{partner}</span>
             </span>
           ))}
         </span>

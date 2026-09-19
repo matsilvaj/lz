@@ -1,13 +1,13 @@
 "use client";
 
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, UserRound, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { ButtonSpinner } from "@/app/_components/form-submit-button";
 import { useToast } from "@/app/_components/toast-provider";
 
-import { PartnerBadge, PartnerPicker, type PartnerOption } from "../_components/partner-picker";
+import { PartnerPicker, type PartnerOption } from "../_components/partner-picker";
 import { EmptyState } from "../_components/ui";
 import {
   deleteBookmakerAction,
@@ -104,18 +104,38 @@ export function BookmakersWorkspace({
 
   const suggestions = useMemo(() => {
     const normalizedSearch = name.trim().toLowerCase();
-    const workspaceOptions = availableBookmakers.filter(
-      (bookmaker) => !selectedBookmakers.has(bookmaker.toLowerCase()),
-    );
 
-    if (!normalizedSearch) {
-      return workspaceOptions.slice(0, 8);
+    return availableBookmakers
+      .filter((bookmaker) => !normalizedSearch || bookmaker.toLowerCase().includes(normalizedSearch))
+      .slice(0, 8);
+  }, [availableBookmakers, name]);
+
+  // Casas agrupadas por dono: as do usuário primeiro, depois cada parceiro.
+  const cardGroups = useMemo(() => {
+    const groups: Array<{ key: string; partnerName: string | null; cards: BookmakerCard[] }> = [
+      { key: "me", partnerName: null, cards: cards.filter((card) => card.partnerId === null) },
+    ];
+
+    for (const partner of partners) {
+      const partnerCards = cards.filter((card) => card.partnerId === partner.id);
+
+      if (partnerCards.length) {
+        groups.push({ key: `partner-${partner.id}`, partnerName: partner.name, cards: partnerCards });
+      }
     }
 
-    return workspaceOptions
-      .filter((bookmaker) => bookmaker.toLowerCase().includes(normalizedSearch))
-      .slice(0, 8);
-  }, [availableBookmakers, name, selectedBookmakers]);
+    return groups;
+  }, [cards, partners]);
+
+  function warnAlreadyAdded(bookmakerName: string) {
+    showToast({
+      title: selectedPartner
+        ? `${selectedPartner.name} já tem a ${bookmakerName}.`
+        : `Você já tem a ${bookmakerName}.`,
+      description: "Ajuste o saldo direto no card da casa.",
+      tone: "error",
+    });
+  }
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -146,6 +166,11 @@ export function BookmakersWorkspace({
   }
 
   async function addBookmakerWithBalance(bookmakerName: string) {
+    if (selectedBookmakers.has(bookmakerName.toLowerCase())) {
+      warnAlreadyAdded(bookmakerName);
+      return;
+    }
+
     const nextInitialBalance = parseBalanceInput(initialBalance);
 
     if (nextInitialBalance <= 0) {
@@ -167,11 +192,16 @@ export function BookmakersWorkspace({
         (bookmaker) => bookmaker.toLowerCase() === name.trim().toLowerCase(),
       ) ?? "";
 
-    if (!normalizedName || selectedBookmakers.has(normalizedName.toLowerCase())) {
+    if (!normalizedName) {
       showToast({
         title: "Selecione uma casa válida da lista.",
         tone: "error",
       });
+      return;
+    }
+
+    if (selectedBookmakers.has(normalizedName.toLowerCase())) {
+      warnAlreadyAdded(normalizedName);
       return;
     }
 
@@ -321,7 +351,12 @@ export function BookmakersWorkspace({
                           }}
                           type="button"
                         >
-                          {bookmaker}
+                          <span className="flex items-center justify-between gap-3">
+                            <span>{bookmaker}</span>
+                            {selectedBookmakers.has(bookmaker.toLowerCase()) ? (
+                              <span className="shrink-0 text-xs text-[var(--text-dim)]">já adicionada</span>
+                            ) : null}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -389,84 +424,105 @@ export function BookmakersWorkspace({
               title="Nenhuma casa selecionada"
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {cards.map((bookmaker) => {
-                const balanceInputId = `balance-${bookmaker.nome
-                  .toLowerCase()
-                  .replace(/\s+/g, "-")}-${bookmaker.partnerId ?? "me"}`;
-
-                return (
-                  <div
-                    className="rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.16)]"
-                    key={getCardKey(bookmaker)}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="text-sm font-semibold text-white">{bookmaker.nome}</p>
-                        {bookmaker.partnerName ? <PartnerBadge name={bookmaker.partnerName} /> : null}
-                      </div>
-                      <button
-                        aria-label={
-                          bookmaker.partnerName
-                            ? `Remover ${bookmaker.nome} de ${bookmaker.partnerName}`
-                            : `Remover ${bookmaker.nome}`
-                        }
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
-                        disabled={isPending}
-                        onClick={() => handleDelete(bookmaker)}
-                        title="Remover casa"
-                        type="button"
-                      >
-                        <X aria-hidden="true" className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    {setBalance ? (
-                      <div className="mt-3 flex items-center gap-2">
-                        <label
-                          className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]"
-                          htmlFor={balanceInputId}
-                        >
-                          Saldo
-                        </label>
-                        <div className="flex min-w-0 flex-1 items-center justify-end gap-1 rounded-[16px] border border-white/10 bg-[rgba(255,255,255,0.055)] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-[rgba(216,31,89,0.55)] focus-within:bg-[rgba(216,31,89,0.08)]">
-                          <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">
-                            R$
-                          </span>
-                          <input
-                            className="w-auto min-w-0 max-w-[7rem] flex-1 border-0 bg-transparent py-1 text-right text-base font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:cursor-not-allowed"
-                            defaultValue={
-                              formatBalanceInput(bookmaker.saldo)
-                            }
-                            disabled={isPending}
-                            id={balanceInputId}
-                            inputMode="numeric"
-                            key={`${getCardKey(bookmaker)}-${bookmaker.saldo}`}
-                            maxLength={7}
-                            onBlur={(event) =>
-                              commitBalance(bookmaker, event.target.value)
-                            }
-                            onChange={(event) => {
-                              event.currentTarget.value = sanitizeBalanceInput(
-                                event.currentTarget.value,
-                              );
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                commitBalance(bookmaker, event.currentTarget.value);
-                              }
-                            }}
-                            pattern="[0-9]*"
-                            placeholder="0"
-                            type="text"
-                          />
-                        </div>
-                      </div>
+            <div className="space-y-5">
+              {cardGroups.map((group) =>
+                group.cards.length === 0 && group.partnerName === null ? null : (
+                  <div className="space-y-3" key={group.key}>
+                    {cardGroups.length > 1 ? (
+                      <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                        {group.partnerName ? (
+                          <>
+                            <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-violet-300" />
+                            <span className="normal-case tracking-normal text-violet-200">
+                              Casas de {group.partnerName}
+                            </span>
+                          </>
+                        ) : (
+                          "Minhas casas"
+                        )}
+                      </h3>
                     ) : null}
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    {group.cards.map((bookmaker) => {
+                    const balanceInputId = `balance-${bookmaker.nome
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}-${bookmaker.partnerId ?? "me"}`;
+
+                    return (
+                      <div
+                        className="rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.16)]"
+                        key={getCardKey(bookmaker)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-white">{bookmaker.nome}</p>
+                          </div>
+                          <button
+                            aria-label={
+                              bookmaker.partnerName
+                                ? `Remover ${bookmaker.nome} de ${bookmaker.partnerName}`
+                                : `Remover ${bookmaker.nome}`
+                            }
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/4 text-[var(--text-dim)] transition hover:border-[rgba(255,107,133,0.3)] hover:bg-[rgba(255,107,133,0.12)] hover:text-[var(--negative)]"
+                            disabled={isPending}
+                            onClick={() => handleDelete(bookmaker)}
+                            title="Remover casa"
+                            type="button"
+                          >
+                            <X aria-hidden="true" className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {setBalance ? (
+                          <div className="mt-3 flex items-center gap-2">
+                            <label
+                              className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]"
+                              htmlFor={balanceInputId}
+                            >
+                              Saldo
+                            </label>
+                            <div className="flex min-w-0 flex-1 items-center justify-end gap-1 rounded-[16px] border border-white/10 bg-[rgba(255,255,255,0.055)] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-[rgba(216,31,89,0.55)] focus-within:bg-[rgba(216,31,89,0.08)]">
+                              <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">
+                                R$
+                              </span>
+                              <input
+                                className="w-auto min-w-0 max-w-[7rem] flex-1 border-0 bg-transparent py-1 text-right text-base font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:cursor-not-allowed"
+                                defaultValue={
+                                  formatBalanceInput(bookmaker.saldo)
+                                }
+                                disabled={isPending}
+                                id={balanceInputId}
+                                inputMode="numeric"
+                                key={`${getCardKey(bookmaker)}-${bookmaker.saldo}`}
+                                maxLength={7}
+                                onBlur={(event) =>
+                                  commitBalance(bookmaker, event.target.value)
+                                }
+                                onChange={(event) => {
+                                  event.currentTarget.value = sanitizeBalanceInput(
+                                    event.currentTarget.value,
+                                  );
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    commitBalance(bookmaker, event.currentTarget.value);
+                                  }
+                                }}
+                                pattern="[0-9]*"
+                                placeholder="0"
+                                type="text"
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                    </div>
                   </div>
-                );
-              })}
+                ),
+              )}
             </div>
           )}
         </section>
