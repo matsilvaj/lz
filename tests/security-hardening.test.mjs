@@ -523,3 +523,24 @@ test("freebet collection primary uses the freebet house for bookmaker balances",
     /scope:\s*"freebet_conversion"[\s\S]+includePrimaryHouse:\s*false/u,
   );
 });
+
+test("partners migration is additive, tenant scoped and runtime-only", async () => {
+  const migration = await readFile(
+    projectFile("core", "server", "database", "migrations", "025_partners.sql"),
+    "utf8",
+  );
+
+  // Só acrescenta: nada existente é removido ou alterado.
+  assert.doesNotMatch(migration, /\bDROP\s+(TABLE|COLUMN|INDEX|CONSTRAINT)\b/iu);
+  assert.doesNotMatch(migration, /\bALTER\s+COLUMN\b/iu);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS parceiro_id BIGINT;/u);
+
+  // O parceiro da entrada e da banca precisa ser do mesmo usuário.
+  assert.match(migration, /FOREIGN KEY \(parceiro_id, user_id\) REFERENCES parceiros\(id, user_id\)/u);
+  assert.match(migration, /REFERENCES bases_usuario\(user_id, id\)/u);
+
+  for (const table of ["parceiros", "parceiros_bancas", "procedimentos_parceiros_aplicacoes"]) {
+    assert.match(migration, new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`, "u"));
+    assert.match(migration, new RegExp(`REVOKE ALL ON TABLE ${table} FROM anon, authenticated;`, "u"));
+  }
+});
