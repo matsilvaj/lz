@@ -141,6 +141,12 @@ export function normalizeSelectedProcedureResultKey(value) {
   return normalizeProcedureResultKey(value, "");
 }
 
+// Parceiro da entrada: id positivo ou null (casa do próprio usuário).
+export function normalizeEntryPartnerId(value) {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 export function normalizeProcedureDetailEntries(entries) {
   return (Array.isArray(entries) ? entries : [])
     .slice(0, 80)
@@ -162,6 +168,7 @@ export function normalizeProcedureDetailEntries(entries) {
       ),
       freebet: parseBoolean(entry?.freebet ?? entry?.freebet_somente_lucro),
       operationDate: parseText(entry?.operationDate ?? entry?.data_operacao).trim(),
+      partnerId: normalizeEntryPartnerId(entry?.partnerId ?? entry?.parceiro_id),
     }))
     .filter((entry) => entry.resultKey !== "defeat");
 }
@@ -256,6 +263,7 @@ export function buildProcedureBookmakerBalanceCte() {
       WHERE e.user_id = $1
         AND e.base_id = $2
         AND btrim(e.casa) <> ''
+        AND e.parceiro_id IS NULL
     ),
     procedure_balances AS (
       SELECT
@@ -304,8 +312,11 @@ export function buildProcedureBookmakerSettlements(details) {
       continue;
     }
 
-    const current = settlementsByHouse.get(house.toLowerCase()) ?? {
+    // Bet365 do usuário e Bet365 de um parceiro são bancas diferentes.
+    const settlementKey = `${house.toLowerCase()}::${entry.partnerId ?? ""}`;
+    const current = settlementsByHouse.get(settlementKey) ?? {
       house,
+      partnerId: entry.partnerId,
       stake: 0,
       payout: 0,
     };
@@ -318,7 +329,7 @@ export function buildProcedureBookmakerSettlements(details) {
       );
     }
 
-    settlementsByHouse.set(house.toLowerCase(), current);
+    settlementsByHouse.set(settlementKey, current);
   }
 
   return [...settlementsByHouse.values()].filter(
@@ -346,6 +357,7 @@ export function toDetailInput(entry) {
     ),
     freebet: parseBoolean(entry?.freebet_somente_lucro ?? entry?.freebet),
     operationDate: parseText(entry?.data_operacao ?? entry?.operationDate).trim(),
+    partnerId: normalizeEntryPartnerId(entry?.parceiro_id ?? entry?.partnerId),
   };
 }
 

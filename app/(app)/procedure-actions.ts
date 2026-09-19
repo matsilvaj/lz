@@ -110,6 +110,8 @@ type ProcedureEntryInput = {
   cashbackLossOnly: boolean;
   freebet: boolean;
   operationDate: string;
+  // Casa de um parceiro do usuário; null é casa do próprio usuário.
+  partnerId: number | null;
 };
 
 type ProcedureResultInput = {
@@ -212,6 +214,7 @@ function normalizeSelectedProcedureResultKey(value: unknown) {
 function parseProcedureDetails(
   value: FormDataEntryValue | null,
   availableBookmakers: string[],
+  partnerIds: ReadonlySet<number> = new Set(),
 ): ProcedureDetailsInput {
   if (typeof value !== "string" || !value.trim()) {
     return { entries: [], results: [] };
@@ -269,6 +272,10 @@ function parseProcedureDetails(
           operationDate: formatOperationDateInput(
             parseText(rawOperationDate),
           ) ?? "",
+          // Só parceiros do próprio usuário; qualquer outro valor vira casa do usuário.
+          partnerId: partnerIds.has(parsePositiveInteger(String(entry.partnerId ?? "")))
+            ? parsePositiveInteger(String(entry.partnerId))
+            : null,
         };
       })
       .filter((entry) => entry.resultKey !== "defeat");
@@ -594,10 +601,14 @@ export async function saveProcedureAction(formData: FormData) {
   const procedureType = parseProcedureType(formData.get("procedureType"));
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
-  const availableBookmakers = (await getBookmakersCatalog()) as string[];
+  const [availableBookmakers, partnerIds] = await Promise.all([
+    getBookmakersCatalog() as Promise<string[]>,
+    repository.listPartnerIds(user.id) as Promise<number[]>,
+  ]);
   const procedureDetails = parseProcedureDetails(
     formData.get("procedureDetails"),
     availableBookmakers,
+    new Set(partnerIds),
   );
   const originIds = parseOriginIds(formData);
   const { houses, freebetHouse } = await normalizeBookmakerSelection(
@@ -701,10 +712,14 @@ export async function updateProcedureAction(formData: FormData) {
   );
   const parsedHouses = parseHouses(parseText(formData.get("houses")));
   const parsedFreebetHouse = parseText(formData.get("freebetHouse"));
-  const availableBookmakers = (await getBookmakersCatalog()) as string[];
+  const [availableBookmakers, partnerIds] = await Promise.all([
+    getBookmakersCatalog() as Promise<string[]>,
+    repository.listPartnerIds(user.id) as Promise<number[]>,
+  ]);
   const procedureDetails = parseProcedureDetails(
     formData.get("procedureDetails"),
     availableBookmakers,
+    new Set(partnerIds),
   );
   const originIds = parseOriginIds(formData);
   const { houses, freebetHouse } = await normalizeBookmakerSelection(

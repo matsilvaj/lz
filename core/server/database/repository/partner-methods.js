@@ -3,7 +3,8 @@
 
 import "server-only";
 
-import { parseNumber, parseText } from "../../../domain/shared/normalizers.js";
+import { PROCEDURE_STATUS_PENDING } from "../../../domain/shared/constants.js";
+import { parseBoolean, parseNumber, parseText } from "../../../domain/shared/normalizers.js";
 import { normalizePartnerName } from "../../../domain/shared/partner-name.js";
 
 import { normalizeUserId } from "./helpers.js";
@@ -151,18 +152,76 @@ export const partnerMethods = {
       return [];
     }
 
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    // Saldo exibido: o maior entre o informado e o que os procedimentos pendentes exigem.
     const { rows } = await executor.query(
       `
-        SELECT ca.nome, pb.saldo, p.id AS parceiro_id, p.nome AS parceiro_nome
-        FROM parceiros_bancas pb
+        WITH result_summary AS (
+          SELECT
+            procedimento_id,
+            escopo,
+            BOOL_OR(resultado_chave = 'defeat') AS defeat_selected,
+            COUNT(*) FILTER (WHERE resultado_chave <> 'defeat') AS selected_count
+          FROM procedimentos_resultados
+          WHERE user_id = $1
+            AND base_id = $2
+          GROUP BY procedimento_id, escopo
+        ),
+        pending AS (
+          SELECT
+            e.parceiro_id,
+            ca.id AS bookmaker_id,
+            SUM(
+              CASE
+                WHEN COALESCE(rs.defeat_selected, false)
+                  OR COALESCE(rs.selected_count, 0) > 0
+                  OR COALESCE(e.freebet_somente_lucro, false)
+                THEN 0
+                ELSE e.valor
+              END
+            ) AS pending_required
+          FROM procedimentos_entradas e
+          INNER JOIN casas_de_apostas ca
+            ON lower(ca.nome) = lower(btrim(e.casa))
+          LEFT JOIN result_summary rs
+            ON rs.procedimento_id = e.procedimento_id
+           AND rs.escopo = e.escopo
+          WHERE e.user_id = $1
+            AND e.base_id = $2
+            AND e.parceiro_id IS NOT NULL
+            AND btrim(e.casa) <> ''
+          GROUP BY e.parceiro_id, ca.id
+        ),
+        banks AS (
+          SELECT parceiro_id, bookmaker_id FROM parceiros_bancas WHERE user_id = $1 AND base_id = $2
+          UNION
+          SELECT parceiro_id, bookmaker_id FROM pending WHERE pending_required >= 0.005
+        )
+        SELECT
+          ca.nome,
+          GREATEST(COALESCE(pb.saldo, 0), COALESCE(pe.pending_required, 0), 0) AS saldo,
+          p.id AS parceiro_id,
+          p.nome AS parceiro_nome
+        FROM banks b
         INNER JOIN parceiros p
-          ON p.id = pb.parceiro_id
-         AND p.user_id = pb.user_id
+          ON p.id = b.parceiro_id
+         AND p.user_id = $1
          AND p.removido_em IS NULL
         INNER JOIN casas_de_apostas ca
-          ON ca.id = pb.bookmaker_id
-        WHERE pb.user_id = $1
-          AND pb.base_id = $2
+          ON ca.id = b.bookmaker_id
+        LEFT JOIN parceiros_bancas pb
+          ON pb.user_id = $1
+         AND pb.base_id = $2
+         AND pb.parceiro_id = b.parceiro_id
+         AND pb.bookmaker_id = b.bookmaker_id
+        LEFT JOIN pending pe
+          ON pe.parceiro_id = b.parceiro_id
+         AND pe.bookmaker_id = b.bookmaker_id
         ORDER BY lower(ca.nome) ASC, lower(p.nome) ASC
       `,
       [normalizedUserId, normalizedWorkspaceId],
@@ -187,7 +246,14 @@ export const partnerMethods = {
       return false;
     }
 
-    const { rowCount } = await executor.query(
+    await this.reconcileProcedureBookmakerApplications(
+      normalizedUserId,
+      normalizedWorkspaceId,
+      executor,
+    );
+
+    const normalizedBalance = normalizeBalance(balance);
+    const { rows: savedRows } = await executor.query(
       `
         INSERT INTO parceiros_bancas (user_id, base_id, parceiro_id, bookmaker_id, saldo)
         SELECT $1, $2, p.id, ca.id, $5
@@ -200,11 +266,55 @@ export const partnerMethods = {
         ON CONFLICT (base_id, parceiro_id, bookmaker_id)
         DO UPDATE SET saldo = EXCLUDED.saldo
         WHERE parceiros_bancas.user_id = EXCLUDED.user_id
+        RETURNING bookmaker_id
       `,
-      [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName, normalizeBalance(balance)],
+      [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName, normalizedBalance],
     );
 
-    return rowCount > 0;
+    if (!savedRows[0]) {
+      return false;
+    }
+
+    await executor.query(
+      `
+        INSERT INTO procedimentos_parceiros_aplicacoes (
+          procedimento_id, user_id, base_id, parceiro_id, bookmaker_id,
+          saldo_delta, saldo_anterior, saldo_resultante
+        )
+        SELECT DISTINCT e.procedimento_id, e.user_id, e.base_id, e.parceiro_id, ca.id, 0, $5::double precision, $5::double precision
+        FROM procedimentos_entradas e
+        INNER JOIN casas_de_apostas ca
+          ON lower(ca.nome) = lower(btrim(e.casa))
+        WHERE e.user_id = $1
+          AND e.base_id = $2
+          AND e.parceiro_id = $3
+          AND ca.id = $4
+          AND EXISTS (
+            SELECT 1
+            FROM procedimentos_resultados r
+            WHERE r.procedimento_id = e.procedimento_id
+              AND r.user_id = e.user_id
+              AND r.base_id = e.base_id
+              AND r.escopo = e.escopo
+          )
+        ON CONFLICT (procedimento_id, parceiro_id, bookmaker_id)
+        DO UPDATE SET
+          saldo_delta = 0,
+          saldo_anterior = EXCLUDED.saldo_anterior,
+          saldo_resultante = EXCLUDED.saldo_resultante,
+          atualizado_em = now()
+        WHERE procedimentos_parceiros_aplicacoes.user_id = EXCLUDED.user_id
+      `,
+      [
+        normalizedUserId,
+        normalizedWorkspaceId,
+        normalizedPartnerId,
+        parseNumber(savedRows[0].bookmaker_id),
+        normalizedBalance,
+      ],
+    );
+
+    return true;
   },
 
   async deletePartnerBookmaker(userId, workspaceId, partnerId, name, executor = this.db) {
@@ -214,7 +324,41 @@ export const partnerMethods = {
     const normalizedName = parseText(name).trim();
 
     if (!normalizedUserId || normalizedWorkspaceId <= 0 || !normalizedPartnerId || !normalizedName) {
-      return false;
+      return { deleted: false, blockedByPending: false };
+    }
+
+    const { rows: pendingRows } = await executor.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM procedimentos_entradas e
+          INNER JOIN procedimentos_historico p
+            ON p.id = e.procedimento_id
+           AND p.user_id = e.user_id
+           AND p.base_id = e.base_id
+          WHERE e.user_id = $1
+            AND e.base_id = $2
+            AND e.parceiro_id = $3
+            AND lower(btrim(e.casa)) = lower($4)
+            AND (
+              p.status_procedimento = $5
+              OR NOT EXISTS (
+                SELECT 1
+                FROM procedimentos_resultados r
+                WHERE r.procedimento_id = e.procedimento_id
+                  AND r.user_id = e.user_id
+                  AND r.base_id = e.base_id
+                  AND r.escopo = e.escopo
+              )
+            )
+          LIMIT 1
+        ) AS has_pending
+      `,
+      [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName, PROCEDURE_STATUS_PENDING],
+    );
+
+    if (parseBoolean(pendingRows[0]?.has_pending)) {
+      return { deleted: false, blockedByPending: true };
     }
 
     const { rowCount } = await executor.query(
@@ -230,6 +374,147 @@ export const partnerMethods = {
       [normalizedUserId, normalizedWorkspaceId, normalizedPartnerId, normalizedName],
     );
 
-    return rowCount > 0;
+    return { deleted: rowCount > 0, blockedByPending: false };
+  },
+
+  // Ids de parceiros do usuário (inclusive removidos, para editar procedimentos antigos).
+  async listPartnerIds(userId, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      return [];
+    }
+
+    const { rows } = await executor.query(
+      "SELECT id FROM parceiros WHERE user_id = $1",
+      [normalizedUserId],
+    );
+
+    return rows.map((row) => Number(row.id));
+  },
+
+  // Acerto de um procedimento na casa do parceiro (mesma regra das casas do usuário).
+  async applyPartnerSettlement(procedureId, settlement, bookmakerId, userId, workspaceId, executor = this.db) {
+    const partnerId = normalizePartnerId(settlement?.partnerId);
+
+    if (!partnerId) {
+      return;
+    }
+
+    const existing = await executor.query(
+      `
+        SELECT 1
+        FROM procedimentos_parceiros_aplicacoes
+        WHERE procedimento_id = $1
+          AND user_id = $2
+          AND base_id = $3
+          AND parceiro_id = $4
+          AND bookmaker_id = $5
+        FOR UPDATE
+      `,
+      [procedureId, userId, workspaceId, partnerId, bookmakerId],
+    );
+
+    if (existing.rows.length > 0) {
+      return;
+    }
+
+    const balanceResult = await executor.query(
+      `
+        SELECT saldo
+        FROM parceiros_bancas
+        WHERE user_id = $1
+          AND base_id = $2
+          AND parceiro_id = $3
+          AND bookmaker_id = $4
+        FOR UPDATE
+      `,
+      [userId, workspaceId, partnerId, bookmakerId],
+    );
+    const previousBalance = parseNumber(balanceResult.rows[0]?.saldo);
+    const nextBalance = Math.max(
+      Math.max(previousBalance, settlement.stake) - settlement.stake + settlement.payout,
+      0,
+    );
+    const delta = nextBalance - previousBalance;
+
+    if (Math.abs(delta) >= 0.005) {
+      await executor.query(
+        `
+          INSERT INTO parceiros_bancas (user_id, base_id, parceiro_id, bookmaker_id, saldo)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (base_id, parceiro_id, bookmaker_id)
+          DO UPDATE SET saldo = EXCLUDED.saldo
+          WHERE parceiros_bancas.user_id = EXCLUDED.user_id
+        `,
+        [userId, workspaceId, partnerId, bookmakerId, nextBalance],
+      );
+    }
+
+    await executor.query(
+      `
+        INSERT INTO procedimentos_parceiros_aplicacoes (
+          procedimento_id, user_id, base_id, parceiro_id, bookmaker_id,
+          saldo_delta, saldo_anterior, saldo_resultante
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (procedimento_id, parceiro_id, bookmaker_id)
+        DO UPDATE SET
+          saldo_delta = EXCLUDED.saldo_delta,
+          saldo_anterior = EXCLUDED.saldo_anterior,
+          saldo_resultante = EXCLUDED.saldo_resultante,
+          atualizado_em = now()
+      `,
+      [procedureId, userId, workspaceId, partnerId, bookmakerId, delta, previousBalance, nextBalance],
+    );
+  },
+
+  // Desfaz o que o procedimento aplicou nas casas de parceiros (ao editar ou excluir).
+  async reversePartnerApplications(procedureId, userId, workspaceId, executor = this.db) {
+    const { rows } = await executor.query(
+      `
+        SELECT parceiro_id, bookmaker_id, SUM(saldo_delta) AS saldo_delta
+        FROM procedimentos_parceiros_aplicacoes
+        WHERE procedimento_id = $1
+          AND user_id = $2
+          AND base_id = $3
+        GROUP BY parceiro_id, bookmaker_id
+      `,
+      [procedureId, userId, workspaceId],
+    );
+
+    if (rows.length > 0) {
+      await executor.query(
+        `
+          UPDATE parceiros_bancas AS pb
+          SET saldo = GREATEST(pb.saldo - applied.saldo_delta, 0)
+          FROM (
+            SELECT *
+            FROM unnest($3::bigint[], $4::bigint[], $5::double precision[])
+              AS item(parceiro_id, bookmaker_id, saldo_delta)
+          ) AS applied
+          WHERE pb.user_id = $1
+            AND pb.base_id = $2
+            AND pb.parceiro_id = applied.parceiro_id
+            AND pb.bookmaker_id = applied.bookmaker_id
+        `,
+        [
+          userId,
+          workspaceId,
+          rows.map((row) => Number(row.parceiro_id)),
+          rows.map((row) => Number(row.bookmaker_id)),
+          rows.map((row) => parseNumber(row.saldo_delta)),
+        ],
+      );
+    }
+
+    await executor.query(
+      `
+        DELETE FROM procedimentos_parceiros_aplicacoes
+        WHERE procedimento_id = $1
+          AND user_id = $2
+          AND base_id = $3
+      `,
+      [procedureId, userId, workspaceId],
+    );
   },
 };

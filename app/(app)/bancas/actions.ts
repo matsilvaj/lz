@@ -135,20 +135,18 @@ export async function deleteBookmakerAction(name: string, partnerId: number | nu
   }
 
   if (normalizedPartnerId) {
-    const deleted = Boolean(
-      await repository.deletePartnerBookmaker(
-        user.id,
-        activeWorkspace.id,
-        normalizedPartnerId,
-        normalizedName,
-      ),
-    );
+    const result = (await repository.deletePartnerBookmaker(
+      user.id,
+      activeWorkspace.id,
+      normalizedPartnerId,
+      normalizedName,
+    )) as { deleted: boolean; blockedByPending: boolean };
 
-    if (deleted) {
+    if (result.deleted) {
       revalidateBookmakerScreens();
     }
 
-    return { deleted, blockedByPending: false };
+    return result;
   }
 
   const result = await repository.deleteBookmaker(

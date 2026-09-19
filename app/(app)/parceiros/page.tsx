@@ -18,7 +18,7 @@ export default async function PartnersPage() {
         <div className="mb-4">
           <h1 className="text-lg font-semibold text-white">Parceiros</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Cadastre as pessoas donas das casas que você opera. Casa sem parceiro é sua.
+            Cadastre as pessoas donas das casas que você opera.
           </p>
         </div>
         <form action={createPartnerAction} className="flex flex-col gap-3 md:flex-row">

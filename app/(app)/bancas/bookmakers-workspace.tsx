@@ -169,7 +169,7 @@ export function BookmakersWorkspace({
 
     if (!normalizedName || selectedBookmakers.has(normalizedName.toLowerCase())) {
       showToast({
-        title: "Selecione uma casa valida da lista.",
+        title: "Selecione uma casa válida da lista.",
         tone: "error",
       });
       return;
@@ -203,7 +203,7 @@ export function BookmakersWorkspace({
 
         if (!result?.deleted) {
           showToast({
-            title: "Nao foi possivel remover a casa.",
+            title: "Não foi possivel remover a casa.",
             tone: "error",
           });
           router.refresh();

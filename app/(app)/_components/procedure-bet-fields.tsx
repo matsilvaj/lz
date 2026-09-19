@@ -251,7 +251,7 @@ export function SportsBetFields({
 
           <label
             className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-36 2xl:justify-center"
-            title="A casa so paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
+            title="A casa só paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
           >
             <input
               checked={cashbackLossOnlyChecked}

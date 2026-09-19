@@ -353,6 +353,7 @@ export const bookmakerMethods = {
             WHERE e.user_id = $1
               AND e.base_id = $2
               AND btrim(e.casa) <> ''
+              AND e.parceiro_id IS NULL
               AND EXISTS (
                 SELECT 1
                 FROM procedimentos_resultados r
@@ -435,6 +436,7 @@ export const bookmakerMethods = {
               AND e.base_id = $2
               AND lower(ca.nome) = lower($3)
               AND btrim(e.casa) <> ''
+              AND e.parceiro_id IS NULL
               AND (
                 p.status_procedimento = $4
                 OR NOT EXISTS (

@@ -20,6 +20,7 @@ import {
   clamp,
   isUndefinedTableError,
   normalizeDatabaseData,
+  normalizeEntryPartnerId,
   normalizeIsoDate,
   normalizePositiveInteger,
   normalizeProcedureDetailEntries,
@@ -178,7 +179,8 @@ export const procedureMethods = {
             cashback_percentual,
             cashback_apenas_perda,
             freebet_somente_lucro,
-            data_operacao
+            data_operacao,
+            parceiro_id
           )
           SELECT
             $1,
@@ -198,7 +200,8 @@ export const procedureMethods = {
             entry.cashback_percentual,
             entry.cashback_apenas_perda,
             entry.freebet_somente_lucro,
-            entry.data_operacao
+            entry.data_operacao,
+            entry.parceiro_id
           FROM unnest(
             $4::text[],
             $5::text[],
@@ -214,7 +217,8 @@ export const procedureMethods = {
             $15::double precision[],
             $16::boolean[],
             $17::boolean[],
-            $18::text[]
+            $18::text[],
+            $19::bigint[]
           ) AS entry(
             escopo,
             tipo_entrada,
@@ -230,7 +234,8 @@ export const procedureMethods = {
             cashback_percentual,
             cashback_apenas_perda,
             freebet_somente_lucro,
-            data_operacao
+            data_operacao,
+            parceiro_id
           )
         `,
         [
@@ -252,6 +257,7 @@ export const procedureMethods = {
           entries.map((entry) => entry.cashbackLossOnly),
           entries.map((entry) => entry.freebet),
           entries.map((entry) => entry.operationDate),
+          entries.map((entry) => entry.partnerId),
         ],
       );
     }
@@ -354,6 +360,13 @@ export const procedureMethods = {
         [normalizedProcedureId, normalizedUserId, normalizedWorkspaceId],
       );
 
+      await this.reversePartnerApplications(
+        normalizedProcedureId,
+        normalizedUserId,
+        normalizedWorkspaceId,
+        executor,
+      );
+
       return true;
     } catch (error) {
       if (isUndefinedTableError(error)) {
@@ -409,6 +422,18 @@ export const procedureMethods = {
         const bookmakerId = bookmakerIdsByHouse.get(settlement.house.toLowerCase());
 
         if (!bookmakerId) {
+          continue;
+        }
+
+        if (settlement.partnerId) {
+          await this.applyPartnerSettlement(
+            normalizedProcedureId,
+            settlement,
+            bookmakerId,
+            normalizedUserId,
+            normalizedWorkspaceId,
+            executor,
+          );
           continue;
         }
 
@@ -556,13 +581,30 @@ export const procedureMethods = {
                       AND r.base_id = e.base_id
                       AND r.escopo = e.escopo
                   )
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM procedimentos_bancas_aplicacoes a
-                    WHERE a.procedimento_id = e.procedimento_id
-                      AND a.user_id = e.user_id
-                      AND a.base_id = e.base_id
-                      AND a.bookmaker_id = ca.id
+                  AND (
+                    (
+                      e.parceiro_id IS NULL
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM procedimentos_bancas_aplicacoes a
+                        WHERE a.procedimento_id = e.procedimento_id
+                          AND a.user_id = e.user_id
+                          AND a.base_id = e.base_id
+                          AND a.bookmaker_id = ca.id
+                      )
+                    )
+                    OR (
+                      e.parceiro_id IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM procedimentos_parceiros_aplicacoes pa
+                        WHERE pa.procedimento_id = e.procedimento_id
+                          AND pa.user_id = e.user_id
+                          AND pa.base_id = e.base_id
+                          AND pa.parceiro_id = e.parceiro_id
+                          AND pa.bookmaker_id = ca.id
+                      )
+                    )
                   )
               )
             ORDER BY p.id ASC
@@ -591,6 +633,7 @@ export const procedureMethods = {
                 cashback: entry.cashback_percentual,
                 cashbackLossOnly: entry.cashback_apenas_perda,
                 freebet: entry.freebet_somente_lucro,
+                partnerId: entry.parceiro_id,
               })),
               results: (procedure.resultados ?? []).map((result) => ({
                 scope: result.escopo,
@@ -650,7 +693,8 @@ export const procedureMethods = {
             cashback_percentual,
             cashback_apenas_perda,
             freebet_somente_lucro,
-            data_operacao
+            data_operacao,
+            parceiro_id
           FROM procedimentos_entradas
           WHERE procedimento_id = ANY($1::bigint[])
           ORDER BY procedimento_id ASC, escopo ASC, ordem ASC, id ASC
@@ -696,6 +740,8 @@ export const procedureMethods = {
         cashback_apenas_perda: parseBoolean(entry.cashback_apenas_perda),
         freebet_somente_lucro: parseBoolean(entry.freebet_somente_lucro),
         data_operacao: parseText(entry.data_operacao).trim(),
+        // Sem isso a reconciliação trataria a casa do parceiro como do usuário.
+        parceiro_id: normalizeEntryPartnerId(entry.parceiro_id),
       });
       entriesByProcedure.set(procedureId, current);
     }
