@@ -80,6 +80,7 @@ import {
   useSignalLiveOdds,
 } from "@/app/(app)/monitor/_components/use-signal-screen";
 import { PartnerInlineName } from "@/app/(app)/_components/partner-picker";
+import { FreebetQueueCard } from "@/app/(app)/_components/freebet-queue-card";
 
 type FreebetQueueItem = {
   casa: string;
@@ -1393,14 +1394,14 @@ export function FreebetConverterMonitorWorkspace({
                 </h1>
               </div>
 
-              <div className="inline-flex rounded-full border border-white/10 bg-black/15 p-1">
+              <div className="grid w-full grid-cols-2 rounded-full border border-white/10 bg-black/15 p-1 sm:inline-flex sm:w-auto">
                 {[
-                  { label: "Freebets cadastradas", value: "registered" },
-                  { label: "Consulta", value: "consultation" },
+                  { label: "Freebets cadastradas", shortLabel: "Cadastradas", value: "registered" },
+                  { label: "Consulta", shortLabel: "Consulta", value: "consultation" },
                 ].map((option) => (
                   <button
                     aria-pressed={selectionMode === option.value}
-                    className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+                    className={`min-w-0 whitespace-nowrap rounded-full px-2 py-2.5 text-sm font-semibold transition sm:px-4 ${
                       selectionMode === option.value
                         ? "lz-button-primary"
                         : "text-[var(--text-secondary)] hover:text-white"
@@ -1413,7 +1414,8 @@ export function FreebetConverterMonitorWorkspace({
                     }}
                     type="button"
                   >
-                    {option.label}
+                    <span className="sm:hidden">{option.shortLabel}</span>
+                    <span className="hidden sm:inline">{option.label}</span>
                   </button>
                 ))}
               </div>
@@ -1426,7 +1428,24 @@ export function FreebetConverterMonitorWorkspace({
                     Nenhuma freebet pronta para conversão.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                  <div className="grid gap-3 py-2 lg:hidden">
+                    {convertibleGroups.map((item, index) => (
+                      <FreebetQueueCard
+                        actionLabel="Converter"
+                        date={item.data}
+                        dateLabel="Coleta"
+                        house={item.casa}
+                        key={getConvertibleGroupKey(item, index)}
+                        onAction={() => setDetailsGroup(item)}
+                        partnerName={item.parceiro_nome}
+                        quantity={item.quantidade}
+                        result={item.lucro_total}
+                        value={item.valor_total}
+                      />
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto lg:block">
                     <table className="w-full min-w-[900px] table-fixed text-sm">
                       <colgroup>
                         <col className="w-[15%]" />
@@ -1498,6 +1517,7 @@ export function FreebetConverterMonitorWorkspace({
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </div>
             ) : (

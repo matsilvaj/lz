@@ -95,7 +95,7 @@ export function PartnerList({ partners }: { partners: PartnerItem[] }) {
                   </button>
 
                   {openMenuId === partner.id ? (
-                    <div className="absolute right-0 top-10 z-20 min-w-44 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
+                    <div className="lz-floating-panel absolute right-0 top-10 z-20 min-w-44 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
                       <button
                         className="flex w-full items-center gap-2 rounded-2xl px-3 py-3 text-left text-sm text-[var(--text-secondary)] transition hover:bg-white/8 hover:text-white"
                         onClick={() => {

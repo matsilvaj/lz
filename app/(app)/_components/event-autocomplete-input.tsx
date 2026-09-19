@@ -211,7 +211,7 @@ export function EventAutocompleteInput({
 
       {showList ? (
         <div
-          className="absolute left-0 right-0 top-full z-[80] mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+          className="lz-floating-panel absolute left-0 right-0 top-full z-[80] mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
           id={listId}
           role="listbox"
         >

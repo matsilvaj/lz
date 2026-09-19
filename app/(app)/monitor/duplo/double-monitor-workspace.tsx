@@ -714,10 +714,11 @@ export function DoubleMonitorWorkspace({
               type="search"
               value={query}
             />
-            <div className="grid gap-3 sm:grid-cols-[130px_190px_120px]">
+            {/* Celular: ordenação e Filtros (ícone) na mesma linha, Buscar embaixo. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 sm:grid-cols-[130px_190px_120px]">
               <button
                 aria-expanded={filtersOpen}
-                className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                className={`order-2 inline-flex h-12 w-12 items-center sm:order-none sm:w-full justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                   filtersOpen ||
                   activeDateFilter !== "all" ||
                   activeMode !== "all" ||
@@ -730,13 +731,13 @@ export function DoubleMonitorWorkspace({
                 type="button"
               >
                 <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-                Filtros
+                <span className="sr-only sm:not-sr-only">Filtros</span>
               </button>
               <SortMenu
               labels={sortLabels}
               options={sortOptions} onChange={setSortMode} value={sortMode} />
               <button
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] px-5 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.2)] transition hover:brightness-110"
+                className="order-3 col-span-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[rgba(211,27,91,0.7)] sm:order-none sm:col-span-1 bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] px-5 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(211,27,91,0.2)] transition hover:brightness-110"
                 type="submit"
               >
                 <Search aria-hidden="true" className="h-4 w-4" />

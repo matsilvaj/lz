@@ -107,7 +107,7 @@ export function PartnerHousesChip({
       {position && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed z-[90] rounded-2xl border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 text-left shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+              className="lz-floating-panel fixed z-[90] rounded-2xl border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 text-left shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
               ref={panelRef}
               role="dialog"
               style={{

@@ -131,7 +131,7 @@ export function BookmakerAutocompleteInput({
               }}
             >
               <div
-                className="rounded-[22px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+                className="lz-floating-panel rounded-[22px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl"
                 id={menuId}
                 ref={menuRef}
                 role="listbox"

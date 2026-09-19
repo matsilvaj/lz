@@ -181,8 +181,11 @@ export function ProcedureHousesDisplay({
 }
 
 export function ProcedureMultipleSlot({
+  compact = false,
   procedure,
 }: {
+  // compact: sem espaço reservado (cartões do celular); só mostra a tag quando existe.
+  compact?: boolean;
   procedure?: ResultDisplayProcedure | null;
 }) {
   const multiples = procedure ? [...getProcedureMultiples(procedure).values()] : [];
@@ -193,6 +196,10 @@ export function ProcedureMultipleSlot({
   const multiple = best
     ? { ...best, houses: [...new Set(multiples.flatMap((item) => item.houses))] }
     : undefined;
+
+  if (compact) {
+    return multiple ? <ProcedureMultipleTag multiple={multiple} /> : null;
+  }
 
   return (
     <span className={MULTIPLE_SLOT_CLASS}>

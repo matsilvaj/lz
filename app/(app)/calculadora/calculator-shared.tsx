@@ -83,7 +83,7 @@ export function OptionHint({
       {position && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="pointer-events-none fixed z-[95] flex w-[300px] gap-3 rounded-[20px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+              className="lz-floating-panel pointer-events-none fixed z-[95] flex w-[300px] gap-3 rounded-[20px] border border-white/10 bg-[rgba(23,9,16,0.98)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
               role="tooltip"
               style={{ left: position.left, top: position.top }}
             >

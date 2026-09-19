@@ -4,6 +4,8 @@ import {
   ArrowUpDown,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Flame,
   SlidersHorizontal,
   Star,
@@ -13,6 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   type ChangeEvent,
+  type ReactNode,
   memo,
   useCallback,
   useEffect,
@@ -557,6 +560,89 @@ const EventCard = memo(function EventCard({
     </article>
   );
 });
+
+// Datas centralizadas; quando não cabem, rolam de lado (dedo, roda ou setas).
+function DatePresetCarousel({ children }: { children: ReactNode }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ end: false, start: false });
+
+  useEffect(() => {
+    const track = trackRef.current;
+
+    if (!track) {
+      return;
+    }
+
+    function update() {
+      if (!track) {
+        return;
+      }
+
+      setEdges({
+        end: track.scrollLeft + track.clientWidth < track.scrollWidth - 2,
+        start: track.scrollLeft > 2,
+      });
+    }
+
+    update();
+    track.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(track);
+    if (track.firstElementChild) {
+      observer.observe(track.firstElementChild);
+    }
+
+    return () => {
+      track.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+
+  function scrollBy(direction: 1 | -1) {
+    const track = trackRef.current;
+
+    track?.scrollBy({ behavior: "smooth", left: direction * track.clientWidth * 0.7 });
+  }
+
+  const hasOverflow = edges.start || edges.end;
+  const arrowClass =
+    "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:text-white disabled:opacity-30";
+
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1.5 sm:flex-1 xl:w-[380px] xl:flex-none">
+      {hasOverflow ? (
+        <button
+          aria-label="Datas anteriores"
+          className={arrowClass}
+          disabled={!edges.start}
+          onClick={() => scrollBy(-1)}
+          type="button"
+        >
+          <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+        </button>
+      ) : null}
+      <div
+        className="lz-scrollbar-hidden min-w-0 flex-1 snap-x overflow-x-auto"
+        ref={trackRef}
+      >
+        <div className="mx-auto flex w-max items-center gap-2 [&>*]:shrink-0 [&>*]:snap-start">
+          {children}
+        </div>
+      </div>
+      {hasOverflow ? (
+        <button
+          aria-label="Próximas datas"
+          className={arrowClass}
+          disabled={!edges.end}
+          onClick={() => scrollBy(1)}
+          type="button"
+        >
+          <ChevronRight aria-hidden="true" className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function DatePresetButton({
   active,
@@ -1553,24 +1639,30 @@ export function OddsEventSearch({
               value={query}
             />
 
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {visibleDatePresets.map((preset) => (
-                <DatePresetButton
-                  active={activeDatePreset === preset}
-                  key={preset}
-                  hint={getDatePresetHint(preset)}
-                  label={getDatePresetLabel(preset)}
-                  onClick={() => handleDatePresetClick(preset)}
-                />
-              ))}
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 xl:w-auto">
+              <DatePresetCarousel>
+                {visibleDatePresets.map((preset) => (
+                  <DatePresetButton
+                    active={activeDatePreset === preset}
+                    key={preset}
+                    hint={getDatePresetHint(preset)}
+                    label={getDatePresetLabel(preset)}
+                    onClick={() => handleDatePresetClick(preset)}
+                  />
+                ))}
+              </DatePresetCarousel>
 
-              <EventListSortMenu
-                onChange={handleListSortChange}
-                value={activeListSort}
-              />
+              {/* Celular: ordenação e Filtros na mesma linha. */}
+              <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
+              <div className="min-w-0 flex-1 sm:flex-none">
+                <EventListSortMenu
+                  onChange={handleListSortChange}
+                  value={activeListSort}
+                />
+              </div>
 
               <button
-                className={`inline-flex h-13 items-center justify-center gap-2 rounded-full border px-5 text-sm font-semibold transition ${
+                className={`inline-flex h-13 min-w-13 shrink-0 items-center justify-center gap-2 rounded-full border px-4 text-sm sm:px-5 font-semibold transition ${
                   activeHiddenLeagues.size || onlyFavorites
                     ? "border-[rgba(211,27,91,0.72)] bg-[rgba(211,27,91,0.18)] text-white"
                     : "border-white/10 bg-white/[0.035] text-[var(--text-secondary)] hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
@@ -1579,13 +1671,14 @@ export function OddsEventSearch({
                 type="button"
               >
                 <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-                <span>Filtros</span>
+                <span className="sr-only sm:not-sr-only">Filtros</span>
                 {activeHiddenLeagues.size ? (
                   <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-white/10 px-2 py-0.5 text-xs">
                     {availableLeagues.length - activeHiddenLeagues.size}
                   </span>
                 ) : null}
               </button>
+              </div>
             </div>
           </div>
 

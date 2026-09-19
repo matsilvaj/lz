@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { appNavigationItems } from "../navigation";
 
@@ -11,9 +12,17 @@ function isActivePath(pathname: string, href: string) {
 
 export function AppNavigation() {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+
+  // A aba ativa fica sempre visível na faixa rolável do celular.
+  useEffect(() => {
+    navRef.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [pathname]);
 
   return (
-    <nav className="lz-scrollbar-hidden overflow-x-auto">
+    <nav className="lz-scrollbar-hidden overflow-x-auto" ref={navRef}>
       <div className="flex min-w-max flex-nowrap items-center gap-2 px-px xl:min-w-0 xl:justify-center">
         <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
           {appNavigationItems.map((item) => {
@@ -26,6 +35,7 @@ export function AppNavigation() {
                     ? "lz-button-primary"
                     : "text-[var(--text-secondary)] hover:bg-white/6 hover:text-white"
                 }`}
+                aria-current={active ? "page" : undefined}
                 href={item.href}
                 key={item.href}
               >

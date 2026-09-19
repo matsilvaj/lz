@@ -571,7 +571,7 @@ export function ProcedureRowActions({
         ? createPortal(
             <div
               data-procedure-row-action
-              className="fixed z-40 min-w-48 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+              className="lz-floating-panel fixed z-40 min-w-48 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
               ref={menuRef}
               style={{ left: menuPosition.left, top: menuPosition.top }}
             >

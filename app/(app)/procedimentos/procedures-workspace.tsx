@@ -614,8 +614,10 @@ export function ProceduresWorkspace({
             />
           </div>
 
+          {/* Celular: Filtros, Pendente e Concluído na mesma linha, com a mesma largura. */}
+          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
           <button
-            className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition sm:py-3 ${
+            className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2.5 text-sm font-medium transition sm:px-4 sm:py-3 ${
               filtersOpen || activeFiltersCount > 0 ? "lz-button-primary" : "lz-button-secondary"
             }`}
             onClick={() => setFiltersOpen((current) => !current)}
@@ -625,13 +627,13 @@ export function ProceduresWorkspace({
             <span>Filtros</span>
           </button>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="contents">
             {PROCEDURE_STATUSES.map((status) => {
               const active = selectedStatuses.includes(status);
 
               return (
                 <button
-                  className={`rounded-full px-4 py-2.5 text-sm font-medium transition sm:py-3 ${
+                  className={`rounded-full px-3 py-2.5 text-sm font-medium transition sm:px-4 sm:py-3 ${
                     active ? "lz-button-primary" : "lz-button-secondary"
                   }`}
                   key={`quick-status-${status}`}
@@ -644,6 +646,7 @@ export function ProceduresWorkspace({
                 </button>
               );
             })}
+          </div>
           </div>
 
           {hasAnyFilter ? (
@@ -828,7 +831,7 @@ export function ProceduresWorkspace({
               {housesOpen && typeof document !== "undefined"
                 ? createPortal(
                     <div
-                      className="fixed z-[70] rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+                      className="lz-floating-panel fixed z-[70] rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
                       ref={housesPopoverRef}
                       style={{
                         left: housesPopoverPosition.left,
@@ -952,7 +955,7 @@ export function ProceduresWorkspace({
           />
         ) : (
           <>
-            <div className="grid gap-4 md:hidden">
+            <div className="grid gap-4 lg:hidden">
               {procedureRows.map((procedure) => {
                 const resultValue = normalizeMoney(procedure.lucro_real);
 
@@ -1006,7 +1009,7 @@ export function ProceduresWorkspace({
               })}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden overflow-x-auto lg:block">
               <table className="min-w-full text-sm">
                 <thead className="text-[var(--text-dim)]">
                   <tr className="border-b border-white/10">

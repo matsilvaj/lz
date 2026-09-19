@@ -24,7 +24,7 @@ export default async function CalculatorPage({
     <div className="min-h-screen text-[var(--text-primary)]">
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[rgba(6,2,7,0.78)] backdrop-blur-2xl">
         <div className="mx-auto max-w-[1480px] px-4 py-3 md:px-6 xl:px-8">
-          <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[auto_1fr_auto] lg:items-center lg:gap-4">
+          <div className="grid grid-cols-[1fr_auto] items-center gap-3 lg:grid-cols-[auto_1fr_auto] lg:gap-4">
             <Link className="inline-flex items-center gap-3" href="/dashboard">
               <Image
                 alt="LZ Community"
@@ -40,15 +40,14 @@ export default async function CalculatorPage({
               </span>
             </Link>
 
-            <AppNavigation />
+            <div className="col-span-2 row-start-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+              <AppNavigation />
+            </div>
 
-            <div className="grid grid-cols-[1fr_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
-              <div className="col-start-2 justify-self-end lg:col-auto lg:justify-self-auto">
-                <ThemeToggle />
-              </div>
-              <div className="col-start-3 justify-self-start lg:col-auto lg:justify-self-auto">
-                <UserMenu />
-              </div>
+            {/* Celular e tablet: logo e botões na mesma linha, abas embaixo. */}
+            <div className="col-start-2 row-start-1 flex items-center gap-2 lg:col-start-3">
+              <ThemeToggle />
+              <UserMenu />
             </div>
           </div>
         </div>

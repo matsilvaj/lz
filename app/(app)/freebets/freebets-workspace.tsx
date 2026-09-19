@@ -23,6 +23,7 @@ import {
 import { formatDraftNumber } from "@/lib/format";
 import { toDateInputValue } from "@/lib/format";
 import { getProfitClass } from "@/app/(app)/_components/ui";
+import { FreebetQueueCard } from "../_components/freebet-queue-card";
 import { PartnerFilterSelect } from "../_components/partner-filter-select";
 import { PartnerInlineName, type PartnerOption } from "../_components/partner-picker";
 
@@ -244,7 +245,7 @@ function FreebetRowMenu({ onEdit }: { onEdit: () => void }) {
       {open && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed z-[180] min-w-40 rounded-[22px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 text-left shadow-[0_20px_50px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+              className="lz-floating-panel fixed z-[180] min-w-40 rounded-[22px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-2 text-left shadow-[0_20px_50px_rgba(0,0,0,0.35)] backdrop-blur-xl"
               onClick={(event) => event.stopPropagation()}
               ref={menuRef}
               role="menu"
@@ -849,8 +850,9 @@ export function FreebetsWorkspace({
         />
       ) : null}
 
-      <div className="lz-panel flex flex-wrap items-center justify-between gap-3 rounded-[28px] p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Celular: abas lado a lado, filtro e botão ocupando a largura toda (como em Procedimentos). */}
+      <div className="lz-panel flex flex-col gap-3 rounded-[28px] p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
           <button
             className={`rounded-full px-4 py-2.5 text-sm font-medium transition ${
               activeTab === "freebets" ? "lz-button-primary" : "lz-button-secondary"
@@ -870,11 +872,13 @@ export function FreebetsWorkspace({
             Histórico
           </button>
           {partners.length ? (
-            <PartnerFilterSelect
-              onChange={updateSelectedPartners}
-              partners={partners}
-              value={selectedPartners}
-            />
+            <div className="col-span-2 sm:col-span-1">
+              <PartnerFilterSelect
+                onChange={updateSelectedPartners}
+                partners={partners}
+                value={selectedPartners}
+              />
+            </div>
           ) : null}
         </div>
 
@@ -890,6 +894,7 @@ export function FreebetsWorkspace({
           returnTo="/freebets"
           submitLabel="Salvar freebet"
           title="Adicionar freebet"
+          triggerClassName="lz-button-primary w-full rounded-full px-4 py-3 text-sm font-semibold sm:w-auto"
           triggerLabel="Adicionar freebet"
           typeOptions={FREEBET_TYPE_OPTIONS}
         />
@@ -949,7 +954,24 @@ export function FreebetsWorkspace({
                   title="Nenhuma freebet pronta para conversão"
                 />
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                <div className="grid gap-3 py-2 lg:hidden">
+                  {visibleConvertibleGroups.map((item) => (
+                    <FreebetQueueCard
+                      actionLabel="Converter"
+                      date={item.data}
+                      dateLabel="Coleta"
+                      house={item.casa}
+                      key={`${item.casa}::${item.parceiro_id ?? ""}`}
+                      onAction={() => openDetails(item)}
+                      partnerName={item.parceiro_nome}
+                      quantity={item.quantidade}
+                      result={item.lucro_total}
+                      value={item.valor_total}
+                    />
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto lg:block">
                   <table className="w-full min-w-[900px] table-fixed text-sm">
                     <colgroup>
                       <col className="w-[15%]" />
@@ -1015,6 +1037,7 @@ export function FreebetsWorkspace({
                     </tbody>
                   </table>
                 </div>
+                </>
               )
             ) : isPendingConversionTab ? (
               pendingConversionGroups.length === 0 ? (
@@ -1024,7 +1047,30 @@ export function FreebetsWorkspace({
                   title={pendingEmptyTitle}
                 />
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                <div className="grid gap-3 py-2 lg:hidden">
+                  {pendingConversionGroups.map((group) => (
+                    <FreebetQueueCard
+                      actionLabel="Abrir"
+                      date={group.data}
+                      dateLabel="Conversão"
+                      event={group.jogo}
+                      house={group.casa}
+                      key={group.id}
+                      onAction={() =>
+                        openProcedureEditor(group.procedimento, "freebet_conversion", {
+                          visibleScope: "conversion",
+                          originIds: group.ids,
+                        })
+                      }
+                      partnerName={group.parceiro_nome}
+                      quantity={group.quantidade}
+                      result={group.lucro_total}
+                      value={group.valor_total}
+                    />
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto lg:block">
                   <table className="w-full min-w-[960px] table-fixed text-sm">
                     <colgroup>
                       <col className="w-[14%]" />
@@ -1109,6 +1155,7 @@ export function FreebetsWorkspace({
                     </tbody>
                   </table>
                 </div>
+                </>
               )
             ) : activePendingItems.length === 0 ? (
               <EmptyState
@@ -1117,7 +1164,34 @@ export function FreebetsWorkspace({
                 title={pendingEmptyTitle}
               />
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="grid gap-3 py-2 lg:hidden">
+                {activePendingItems.map((item) => {
+                  const editScope =
+                    item.acao === "resultado_conversao"
+                      ? "freebet_conversion"
+                      : "freebet_collection";
+
+                  return (
+                    <FreebetQueueCard
+                      actionLabel="Abrir"
+                      date={
+                        isPendingConversionTab
+                          ? item.data_conversao || item.data
+                          : item.data_coleta || item.data
+                      }
+                      dateLabel={isPendingConversionTab ? "Conversão" : "Coleta"}
+                      house={item.casa}
+                      key={item.id}
+                      onAction={() => openProcedureEditor(item.procedimento, editScope)}
+                      partnerName={item.parceiro_nome}
+                      result={isPendingConversionTab ? item.lucro_real : undefined}
+                      value={item.valor_fb}
+                    />
+                  );
+                })}
+              </div>
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[640px] table-fixed text-sm">
                   <colgroup>
                     <col className={isPendingConversionTab ? "w-[20%]" : "w-[25%]"} />
@@ -1194,6 +1268,7 @@ export function FreebetsWorkspace({
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -1207,75 +1282,71 @@ export function FreebetsWorkspace({
             />
           ) : (
             <>
-              <div className="grid gap-4 md:hidden">
+              <div className="grid gap-3 lg:hidden">
                 {visibleConvertedHistory.map((item, index) => {
                   const editableProcedure = getHistoryEditableProcedure(item);
                   const editScope = getHistoryEditScope(item);
 
                   return (
                     <article
-                      className="cursor-pointer rounded-[26px] border border-white/10 bg-white/5 p-4 transition hover:bg-white/8"
+                      className="min-w-0 cursor-pointer rounded-[24px] border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/8"
                       key={`${item.texto_data}-${item.casa}-${index}`}
                       onClick={() => openProcedureEditor(editableProcedure, editScope)}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="flex items-center text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                            <ProcedureMultipleSlot procedure={editableProcedure} />
-                            <span>{item.texto_data}</span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusTag tone="positive">Concluída</StatusTag>
+                            <ProcedureMultipleSlot compact procedure={editableProcedure} />
                           </div>
-                          <p className="mt-2 text-lg font-semibold text-white">
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            {item.texto_data.replace("->", "→")}
+                          </p>
+                          <p className="text-sm font-semibold text-white">
                             {item.casa}
                             <PartnerInlineName name={item.parceiro_nome} />
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <StatusTag tone="positive">Concluída</StatusTag>
-                          <FreebetRowMenu
-                            onEdit={() => openProcedureEditor(editableProcedure, editScope)}
-                          />
-                        </div>
+                        <FreebetRowMenu
+                          onEdit={() => openProcedureEditor(editableProcedure, editScope)}
+                        />
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
-                          <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                            Valor FB
-                          </p>
-                          <p className="mt-2 text-lg font-semibold text-white">
+                      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/10 pt-3">
+                        <div className="min-w-0">
+                          <p className="text-xs text-[var(--text-dim)]">Valor FB</p>
+                          <p className="mt-0.5 truncate text-sm font-semibold text-white">
                             {formatCurrency(item.valor_freebet)}
                           </p>
                         </div>
-                        <div className="rounded-[22px] border border-white/10 bg-white/4 p-3">
-                          <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-dim)]">
-                            Total
+                        <div className="min-w-0">
+                          <p className="text-xs text-[var(--text-dim)]">Coleta</p>
+                          <p className={`mt-0.5 truncate text-sm font-semibold ${getProfitClass(item.lucro_coleta)}`}>
+                            {formatCurrency(item.lucro_coleta)}
                           </p>
-                          <p className={`mt-2 text-lg font-semibold ${getProfitClass(item.lucro_total)}`}>
-                            {formatCurrency(item.lucro_total)}
+                        </div>
+                        <div className="min-w-0 text-right">
+                          <p className="text-xs text-[var(--text-dim)]">Conversão</p>
+                          <p className={`mt-0.5 truncate text-sm font-semibold ${getProfitClass(item.lucro_conversao ?? 0)}`}>
+                            {formatCurrency(item.lucro_conversao ?? 0)}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-4 space-y-2 text-sm text-[var(--text-secondary)]">
-                        <p>
-                          Resultado coleta:{" "}
-                          <span className={getProfitClass(item.lucro_coleta)}>
-                            {formatCurrency(item.lucro_coleta)}
-                          </span>
-                        </p>
-                        <p>
-                          Resultado conversão:{" "}
-                          <span className={getProfitClass(item.lucro_conversao ?? 0)}>
-                            {formatCurrency(item.lucro_conversao ?? 0)}
-                          </span>
-                        </p>
+                      <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/[0.04] px-3 py-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                          Total
+                        </span>
+                        <span className={`text-base font-semibold ${getProfitClass(item.lucro_total)}`}>
+                          {formatCurrency(item.lucro_total)}
+                        </span>
                       </div>
                     </article>
                   );
                 })}
               </div>
 
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="min-w-full text-sm">
                   <thead className="text-[var(--text-dim)]">
                     <tr className="border-b border-white/10">

@@ -1,7 +1,8 @@
-import Link from "next/link";
 import { type ReactNode } from "react";
 
-type MonitorTab = {
+import { MonitorTabs } from "./monitor-tabs";
+
+export type MonitorTab = {
   href: string;
   label: string;
   value: "odds" | "duplo" | "converter-freebet" | "semanal-bet365";
@@ -27,27 +28,7 @@ export function MonitorShell({
 }) {
   return (
     <div className="space-y-4">
-      <div className="lz-scrollbar-hidden overflow-x-auto">
-        <div className="inline-flex min-w-full rounded-full border border-white/10 bg-white/[0.025] p-1 sm:min-w-0">
-          {monitorTabs.map((tab) => {
-            const active = activeTab === tab.value;
-
-            return (
-              <Link
-                className={`inline-flex h-11 min-w-[150px] flex-1 items-center justify-center rounded-full px-4 text-sm font-semibold transition sm:flex-none ${
-                  active
-                    ? "bg-[linear-gradient(180deg,rgba(211,27,91,0.95),rgba(163,8,63,0.95))] text-white shadow-[0_10px_28px_rgba(211,27,91,0.22)]"
-                    : "text-[var(--text-secondary)] hover:bg-white/[0.055] hover:text-white"
-                }`}
-                href={tab.href}
-                key={tab.value}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
+      <MonitorTabs activeTab={activeTab} tabs={monitorTabs} />
 
       {children}
     </div>

@@ -136,7 +136,7 @@ export function PartnerFilterSelect({
 
       {position && typeof document !== "undefined" ? createPortal(
         <div
-          className="fixed z-[90] overflow-y-auto overscroll-contain rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
+          className="lz-floating-panel fixed z-[90] overflow-y-auto overscroll-contain rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
           ref={panelRef}
           role="listbox"
           style={{
