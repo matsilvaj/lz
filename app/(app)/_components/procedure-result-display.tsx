@@ -118,7 +118,8 @@ function getHouseClassName(won: boolean | null, isPartner: boolean) {
   }
 
   if (won) {
-    return isPartner ? "font-semibold text-violet-200" : "font-semibold text-white";
+    // Casa de parceiro que bateu: roxo forte, para não se confundir com as casas do usuário.
+    return isPartner ? "font-bold text-violet-400" : "font-semibold text-white";
   }
 
   return isPartner ? "text-violet-200/50" : "text-[var(--text-dim)]";
