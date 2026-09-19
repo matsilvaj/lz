@@ -27,6 +27,7 @@ import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { appendToastParams } from "@/lib/ui/toast";
 import { getProceduresRepository } from "@/lib/server";
 import { revalidateAppData } from "@/lib/server/revalidate";
+import { createBookmakerResolver } from "@/core/domain/shared/bookmaker-name.js";
 import { calculateAdjustedOdd } from "@/core/domain/shared/odds.js";
 import { normalizeProcedureType } from "@/core/domain/shared/procedure-type.js";
 
@@ -220,9 +221,7 @@ function parseProcedureDetails(
     return { entries: [], results: [] };
   }
 
-  const bookmakerMap = new Map(
-    availableBookmakers.map((bookmaker) => [bookmaker.toLowerCase(), bookmaker]),
-  );
+  const resolveBookmaker = createBookmakerResolver(availableBookmakers);
 
   try {
     const parsed = JSON.parse(value) as {
@@ -240,7 +239,7 @@ function parseProcedureDetails(
           180,
         );
         const house = rawHouse
-          ? (bookmakerMap.get(rawHouse.toLowerCase()) ?? "")
+          ? resolveBookmaker(rawHouse)
           : "";
         const rawOperationDate =
           typeof entry.operationDate === "string"
@@ -567,15 +566,11 @@ async function normalizeBookmakerSelection(
   availableBookmakers?: string[],
 ) {
   const catalog = availableBookmakers ?? ((await getBookmakersCatalog()) as string[]);
-  const bookmakerMap = new Map(
-    catalog.map((bookmaker) => [bookmaker.toLowerCase(), bookmaker]),
-  );
+  const resolveBookmaker = createBookmakerResolver(catalog);
 
   return {
-    houses: houses
-      .map((house) => bookmakerMap.get(house.toLowerCase()) ?? "")
-      .filter(Boolean),
-    freebetHouse: bookmakerMap.get(freebetHouse.toLowerCase()) ?? "",
+    houses: houses.map(resolveBookmaker).filter(Boolean),
+    freebetHouse: resolveBookmaker(freebetHouse),
   };
 }
 
