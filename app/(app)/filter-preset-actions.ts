@@ -10,8 +10,6 @@ const FILTER_PRESET_SCREENS = new Set([
   "monitor-duplo",
   "monitor-converter-freebet",
   "monitor-semanal-bet365",
-  "procedimentos",
-  "historico",
 ]);
 const MAX_PRESET_SIZE = 4_000;
 

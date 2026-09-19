@@ -16,10 +16,13 @@ export function useScreenFilters<T extends FilterState>({
   apply,
   screen,
   state,
+  withPreset = true,
 }: {
   apply: (filters: Partial<T>) => void;
   screen: string;
   state: T;
+  // false: só mantém os filtros na aba, sem filtro padrão na conta.
+  withPreset?: boolean;
 }) {
   const storageKey = `lz:filters:${screen}`;
   const readyRef = useRef(false);
@@ -45,7 +48,9 @@ export function useScreenFilters<T extends FilterState>({
       }
 
       try {
-        const preset = (await getFilterPresetAction(screen)) as Partial<T> | null;
+        const preset = withPreset
+          ? ((await getFilterPresetAction(screen)) as Partial<T> | null)
+          : null;
 
         if (cancelled) {
           return;

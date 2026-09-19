@@ -486,10 +486,11 @@ export function ProceduresWorkspace({
     },
     [pathname, router],
   );
-  const { clearPreset, hasPreset, savePreset, savingPreset } = useScreenFilters({
+  useScreenFilters({
     apply: applyScreenFilters,
     screen: "procedimentos",
     state: screenFilterState,
+    withPreset: false,
   });
 
   function updateRepeatedFilter(key: string, values: string[]) {
@@ -672,16 +673,6 @@ export function ProceduresWorkspace({
           <div className="min-w-0 space-y-3 lg:order-1 lg:col-span-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Tipos</p>
-              {selectedTypes.length > 0 ? (
-                <button
-                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => updateRepeatedFilter("type", [])}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span>Limpar</span>
-                </button>
-              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -727,16 +718,6 @@ export function ProceduresWorkspace({
           <div className="min-w-0 space-y-3 lg:order-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Status</p>
-              {selectedStatuses.length > 0 ? (
-                <button
-                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => updateRepeatedFilter("status", [])}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span>Limpar</span>
-                </button>
-              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -764,16 +745,6 @@ export function ProceduresWorkspace({
           <div className="min-w-0 space-y-3 lg:order-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Resultados múltiplos</p>
-              {selectedMultiples.length > 0 ? (
-                <button
-                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => updateRepeatedFilter("multiple", [])}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span>Limpar</span>
-                </button>
-              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -801,16 +772,6 @@ export function ProceduresWorkspace({
           <div className="min-w-0 space-y-3 lg:order-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Casas</p>
-              {selectedHouses.length > 0 ? (
-                <button
-                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => updateRepeatedFilter("house", [])}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span>Limpar</span>
-                </button>
-              ) : null}
             </div>
 
             <div className={housesOpen ? "z-30" : "z-10"}>
@@ -902,22 +863,6 @@ export function ProceduresWorkspace({
           <div className="min-w-0 space-y-3 lg:order-4 lg:col-span-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Período</p>
-              {dateFrom || dateTo ? (
-                <button
-                  className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
-                  onClick={() => {
-                    updateParams((params) => {
-                      params.delete("from");
-                      params.delete("to");
-                      params.delete("page");
-                    });
-                  }}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span>Limpar</span>
-                </button>
-              ) : null}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -937,27 +882,6 @@ export function ProceduresWorkspace({
                 />
               </label>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/10 pt-4 lg:order-4 lg:col-span-3">
-            {hasPreset ? (
-              <button
-                className="lz-button-secondary inline-flex h-10 items-center rounded-full px-4 text-sm font-semibold disabled:opacity-60"
-                disabled={savingPreset}
-                onClick={() => void clearPreset()}
-                type="button"
-              >
-                Remover padrão
-              </button>
-            ) : null}
-            <button
-              className="lz-button-secondary inline-flex h-10 items-center rounded-full px-4 text-sm font-semibold disabled:opacity-60"
-              disabled={savingPreset}
-              onClick={() => void savePreset()}
-              type="button"
-            >
-              {savingPreset ? "Salvando..." : "Salvar como padrão"}
-            </button>
           </div>
         </div>
       ) : null}
