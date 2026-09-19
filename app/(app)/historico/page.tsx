@@ -16,10 +16,12 @@ export default async function HistoryPage({
 }: HistoryPageProps) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const params = await searchParams;
+  const partnerParam = params.partner;
   const data = await getHistoryPageData(
     user.id,
     activeWorkspace.id,
     getSearchParamValue(params.month),
+    Array.isArray(partnerParam) ? partnerParam : partnerParam ? [partnerParam] : [],
   );
 
   return (
@@ -27,7 +29,9 @@ export default async function HistoryPage({
       bookmakers={data.bookmakers}
       months={data.months}
       operations={data.operations}
+      partners={data.partners}
       selectedMonth={data.selectedMonth}
+      selectedPartners={data.selectedPartners}
     />
   );
 }

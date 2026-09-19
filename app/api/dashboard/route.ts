@@ -41,11 +41,12 @@ function describeDashboardError(error: unknown) {
 export async function GET(request: NextRequest) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const period = normalizeDashboardPeriod(request.nextUrl.searchParams.get("period"));
+  const partners = normalizeText(request.nextUrl.searchParams.get("partners"), 400).split(",");
 
   let data;
 
   try {
-    data = await getDashboardData(user.id, activeWorkspace.id, period);
+    data = await getDashboardData(user.id, activeWorkspace.id, period, partners);
   } catch (error) {
     console.error("Dashboard data request failed.", {
       error: describeDashboardError(error),

@@ -19,6 +19,8 @@ import {
 } from "../procedimentos/procedure-row-actions";
 import { isFreebetProcedure } from "@/lib/procedures";
 import { getProfitClass } from "@/app/(app)/_components/ui";
+import { PartnerFilterSelect } from "@/app/(app)/_components/partner-filter-select";
+import type { PartnerOption } from "@/app/(app)/_components/partner-picker";
 
 type HistoryMonth = {
   value: string;
@@ -78,7 +80,9 @@ type HistoryWorkspaceProps = {
   bookmakers: string[];
   months: HistoryMonth[];
   operations: HistoryOperation[];
+  partners: PartnerOption[];
   selectedMonth: string;
+  selectedPartners: string[];
 };
 
 const PROCEDURE_TYPE_LABELS: Record<string, string> = {
@@ -124,7 +128,9 @@ export function HistoryWorkspace({
   bookmakers,
   months,
   operations,
+  partners,
   selectedMonth,
+  selectedPartners,
 }: HistoryWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -145,6 +151,22 @@ export function HistoryWorkspace({
       params.set("month", nextMonth);
     } else {
       params.delete("month");
+    }
+
+    const query = params.toString();
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    });
+  }
+
+  function updateSelectedPartners(nextPartners: string[]) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.delete("partner");
+    for (const partner of nextPartners) {
+      params.append("partner", partner);
     }
 
     const query = params.toString();
@@ -208,6 +230,17 @@ export function HistoryWorkspace({
               <span className="text-xs text-[var(--text-dim)]">Atualizando...</span>
             ) : null}
           </label>
+          {partners.length ? (
+            <div className="mt-4 space-y-2 text-sm">
+              <span className="font-medium text-white">Parceiro</span>
+              <PartnerFilterSelect
+                disabled={isPending}
+                onChange={updateSelectedPartners}
+                partners={partners}
+                value={selectedPartners}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -16,6 +16,8 @@ import {
   formatCurrency,
   formatNumber,
 } from "../_components/ui";
+import { PartnerFilterSelect } from "@/app/(app)/_components/partner-filter-select";
+import type { PartnerOption } from "@/app/(app)/_components/partner-picker";
 
 type ChartItem = {
   label: string;
@@ -63,9 +65,11 @@ type DashboardData = {
     pendingAmount: number;
     pendingCount: number;
   };
+  partners: PartnerOption[];
   period: DashboardPeriodOption;
   periodOptions: DashboardPeriodOption[];
   procedureFilters: string[];
+  selectedPartners: string[];
   selectedPeriodId: string;
   views: Record<string, DashboardView>;
   openFreebets: {
@@ -708,11 +712,23 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
+  function updateSelectedPartners(partners: string[]) {
+    void loadDashboard(data.selectedPeriodId, partners);
+  }
+
   async function updateSelectedPeriod(value: string) {
+    await loadDashboard(value, data.selectedPartners);
+  }
+
+  async function loadDashboard(value: string, partners: string[]) {
     const requestId = periodRequestRef.current + 1;
 
     periodRequestRef.current = requestId;
-    if (value === currentMonthPeriodId) {
+    if (
+      value === currentMonthPeriodId &&
+      partners.length === 0 &&
+      initialData.selectedPartners.length === 0
+    ) {
       startChartTransition(() => {
         setDashboardData(initialData);
         setPeriodLoading(false);
@@ -724,7 +740,9 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
 
     try {
       const response = await fetch(
-        `/api/dashboard?period=${encodeURIComponent(value)}`,
+        `/api/dashboard?period=${encodeURIComponent(value)}${
+          partners.length ? `&partners=${encodeURIComponent(partners.join(","))}` : ""
+        }`,
         {
           cache: "no-store",
         },
@@ -835,7 +853,13 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
           ))}
         </div>
 
-        <div className="grid w-full gap-3 lg:grid-cols-2 xl:ml-auto xl:max-w-[900px]">
+        <div
+          className={`grid w-full gap-3 xl:ml-auto ${
+            data.partners.length
+              ? "lg:grid-cols-3 xl:max-w-[1200px]"
+              : "lg:grid-cols-2 xl:max-w-[900px]"
+          }`}
+        >
           <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">
             <label
               className="shrink-0 text-sm font-medium text-[var(--text-secondary)]"
@@ -851,6 +875,24 @@ export function DashboardWorkspace({ data: initialData }: { data: DashboardData 
               value={data.selectedPeriodId}
             />
           </div>
+
+          {data.partners.length ? (
+            <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <label
+                className="shrink-0 text-sm font-medium text-[var(--text-secondary)]"
+                htmlFor="dashboard-partner-filter"
+              >
+                Parceiro
+              </label>
+              <PartnerFilterSelect
+                disabled={periodLoading}
+                id="dashboard-partner-filter"
+                onChange={updateSelectedPartners}
+                partners={data.partners}
+                value={data.selectedPartners}
+              />
+            </div>
+          ) : null}
 
           {activeTab !== "freebets" ? (
             <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:items-center">

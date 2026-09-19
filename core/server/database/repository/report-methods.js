@@ -14,7 +14,9 @@ import {
 } from "../../../domain/shared/normalizers.js";
 
 import {
+  buildPartnerFilterCondition,
   buildRealProfitSql,
+  normalizePartnerFilter,
   normalizeUserId,
 } from "./helpers.js";
 
@@ -36,7 +38,7 @@ export const reportMethods = {
     return rowsWithDetails.map((row) => enrichProcedure(row));
   },
 
-  async listHistoryMonths(userId, workspaceId, executor = this.db) {
+  async listHistoryMonths(userId, workspaceId, partners = [], executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
 
@@ -45,6 +47,12 @@ export const reportMethods = {
     }
 
     const realProfitSql = buildRealProfitSql();
+    const monthParams = [normalizedUserId, normalizedWorkspaceId];
+    const monthPartnerCondition = buildPartnerFilterCondition(
+      "procedimentos_historico",
+      normalizePartnerFilter(partners),
+      (value) => { monthParams.push(value); return `$${monthParams.length}`; },
+    );
     const { rows } = await executor.query(
       `
         WITH scoped AS (
@@ -59,6 +67,7 @@ export const reportMethods = {
           FROM procedimentos_historico
           WHERE user_id = $1
             AND base_id = $2
+            ${monthPartnerCondition ? `AND ${monthPartnerCondition}` : ""}
         )
         SELECT
           reference_month,
@@ -67,7 +76,7 @@ export const reportMethods = {
         FROM scoped
         GROUP BY reference_month
       `,
-      [normalizedUserId, normalizedWorkspaceId],
+      monthParams,
     );
 
     return rows.map((row) => ({
@@ -77,7 +86,13 @@ export const reportMethods = {
     }));
   },
 
-  async listHistoryOperationsByMonth(referenceMonth, userId, workspaceId, executor = this.db) {
+  async listHistoryOperationsByMonth(
+    referenceMonth,
+    userId,
+    workspaceId,
+    partners = [],
+    executor = this.db,
+  ) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
     const normalizedReferenceMonth = parseText(referenceMonth).trim();
@@ -90,12 +105,19 @@ export const reportMethods = {
       return this.listProcedures(normalizedUserId, normalizedWorkspaceId, executor);
     }
 
+    const operationParams = [normalizedUserId, normalizedWorkspaceId, normalizedReferenceMonth];
+    const operationPartnerCondition = buildPartnerFilterCondition(
+      "procedimentos_historico",
+      normalizePartnerFilter(partners),
+      (value) => { operationParams.push(value); return `$${operationParams.length}`; },
+    );
     const { rows } = await executor.query(
       `
         SELECT *
         FROM procedimentos_historico
         WHERE user_id = $1
           AND base_id = $2
+          ${operationPartnerCondition ? `AND ${operationPartnerCondition}` : ""}
           AND (
             mes_referencia = $3
             OR (
@@ -106,7 +128,7 @@ export const reportMethods = {
           )
         ORDER BY id DESC
       `,
-      [normalizedUserId, normalizedWorkspaceId, normalizedReferenceMonth],
+      operationParams,
     );
 
     const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
@@ -189,7 +211,14 @@ export const reportMethods = {
     };
   },
 
-  async getDashboardPeriodProcedureStats(period, todayLabel, userId, workspaceId, executor = this.db) {
+  async getDashboardPeriodProcedureStats(
+    period,
+    todayLabel,
+    userId,
+    workspaceId,
+    partners = [],
+    executor = this.db,
+  ) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
     const periodType = parseText(period?.type);
@@ -267,7 +296,10 @@ export const reportMethods = {
       );
     }
 
-    const buildPeriodRowsCte = (filters) => `
+    const partnerFilter = normalizePartnerFilter(partners);
+    const metricsPartnerCondition = buildPartnerFilterCondition("p", partnerFilter, (value) => { metricsParams.push(value); return `$${metricsParams.length}`; });
+    const seriesPartnerCondition = buildPartnerFilterCondition("p", partnerFilter, (value) => { seriesParams.push(value); return `$${seriesParams.length}`; });
+    const buildPeriodRowsCte = (filters, partnerCondition) => `
       WITH base_rows AS (
         SELECT
           p.data_operacao,
@@ -282,6 +314,7 @@ export const reportMethods = {
         FROM procedimentos_historico p
         WHERE p.user_id = $1
           AND p.base_id = $2
+          ${partnerCondition ? `AND ${partnerCondition}` : ""}
       ),
       period_rows AS (
         SELECT
@@ -296,7 +329,7 @@ export const reportMethods = {
     const [metricsResult, seriesResult] = await Promise.all([
       executor.query(
         `
-          ${buildPeriodRowsCte(metricsFilters)}
+          ${buildPeriodRowsCte(metricsFilters, metricsPartnerCondition)}
           SELECT
             CASE
               WHEN GROUPING(tipo_procedimento) = 1 THEN 'Todos'
@@ -314,7 +347,7 @@ export const reportMethods = {
       ),
       executor.query(
         `
-          ${buildPeriodRowsCte(seriesFilters)}
+          ${buildPeriodRowsCte(seriesFilters, seriesPartnerCondition)}
           SELECT
             CASE
               WHEN GROUPING(tipo_procedimento) = 1 THEN 'Todos'
@@ -378,7 +411,7 @@ export const reportMethods = {
     return rows;
   },
 
-  async getConvertedFreebetProfitByPeriod(period, userId, workspaceId, executor = this.db) {
+  async getConvertedFreebetProfitByPeriod(period, userId, workspaceId, partners = [], executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
     const periodType = parseText(period?.type);
@@ -433,6 +466,9 @@ export const reportMethods = {
       filters.push(`substring(reference_month FROM 4 FOR 4) = $${params.length}`);
     }
 
+    const convertedPartnerFilter = normalizePartnerFilter(partners);
+    const collectionPartnerCondition = buildPartnerFilterCondition("c", convertedPartnerFilter, (value) => { params.push(value); return `$${params.length}`; });
+    const conversionPartnerCondition = buildPartnerFilterCondition("v", convertedPartnerFilter, (value) => { params.push(value); return `$${params.length}`; });
     const { rows } = await executor.query(
       `
         WITH base_converted_rows AS (
@@ -455,6 +491,7 @@ export const reportMethods = {
             AND c.status_freebet IN ('Usada', 'Finalizada')
             AND c.user_id = $1
             AND c.base_id = $2
+            ${collectionPartnerCondition ? `AND (${collectionPartnerCondition} OR ${conversionPartnerCondition})` : ""}
         ),
         converted_rows AS (
           SELECT
@@ -480,7 +517,7 @@ export const reportMethods = {
     return rows;
   },
 
-  async getPendingProceduresSummary(userId, workspaceId, executor = this.db) {
+  async getPendingProceduresSummary(userId, workspaceId, partners = [], executor = this.db) {
     const normalizedUserId = normalizeUserId(userId);
     const normalizedWorkspaceId = parseNumber(workspaceId);
 
@@ -491,6 +528,12 @@ export const reportMethods = {
       };
     }
 
+    const pendingParams = [normalizedUserId, normalizedWorkspaceId, PROCEDURE_STATUS_PENDING];
+    const pendingPartnerCondition = buildPartnerFilterCondition(
+      "p",
+      normalizePartnerFilter(partners),
+      (value) => { pendingParams.push(value); return `$${pendingParams.length}`; },
+    );
     const { rows } = await executor.query(
       `
         SELECT
@@ -517,8 +560,9 @@ export const reportMethods = {
         WHERE p.user_id = $1
           AND p.base_id = $2
           AND p.status_procedimento = $3
+          ${pendingPartnerCondition ? `AND ${pendingPartnerCondition}` : ""}
       `,
-      [normalizedUserId, normalizedWorkspaceId, PROCEDURE_STATUS_PENDING],
+      pendingParams,
     );
 
     const row = rows[0] ?? {};
