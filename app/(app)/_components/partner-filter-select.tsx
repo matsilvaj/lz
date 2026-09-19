@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { PartnerOption } from "./partner-picker";
 
@@ -19,8 +20,10 @@ export function PartnerFilterSelect({
   partners: PartnerOption[];
   value: string[];
 }) {
-  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const open = position !== null;
   const options = [
     { label: "Eu", value: "me" },
     ...partners.map((partner) => ({ label: partner.name, value: String(partner.id) })),
@@ -38,26 +41,56 @@ export function PartnerFilterSelect({
       return;
     }
 
+    function close() {
+      setPosition(null);
+    }
+
     function handlePointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        close();
       }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setOpen(false);
+        close();
       }
     }
 
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
     };
   }, [open]);
+
+  // A lista abre sobre a página: painéis com camada própria não a escondem.
+  function toggleOpen() {
+    if (open) {
+      setPosition(null);
+      return;
+    }
+
+    const rect = rootRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    const margin = 12;
+    const width = Math.min(Math.max(rect.width, 256), window.innerWidth - margin * 2);
+    const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
+
+    setPosition({ left, top: rect.bottom + 8, width });
+  }
 
   function toggle(optionValue: string) {
     onChange(
@@ -79,7 +112,7 @@ export function PartnerFilterSelect({
         }`}
         disabled={disabled}
         id={id}
-        onClick={() => setOpen((current) => !current)}
+        onClick={toggleOpen}
         type="button"
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -92,10 +125,12 @@ export function PartnerFilterSelect({
         />
       </button>
 
-      {open ? (
+      {position && typeof document !== "undefined" ? createPortal(
         <div
-          className="absolute right-0 top-full z-40 mt-2 w-full min-w-56 rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:w-64"
+          className="fixed z-[90] rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
+          ref={panelRef}
           role="listbox"
+          style={{ left: position.left, top: position.top, width: position.width }}
         >
           <button
             aria-selected={selected.length === 0}
@@ -139,7 +174,8 @@ export function PartnerFilterSelect({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

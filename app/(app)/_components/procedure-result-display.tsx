@@ -111,18 +111,13 @@ export function ProcedureMultipleTag({ multiple }: { multiple?: ProcedureMultipl
   );
 }
 
-// Casa que bateu em destaque, as outras apagadas; casa de parceiro em roxo claro.
-function getHouseClassName(won: boolean | null, isPartner: boolean) {
+// Casa que bateu em destaque (branco), as outras apagadas. O parceiro fica no selo 👤.
+function getHouseClassName(won: boolean | null) {
   if (won === null) {
-    return isPartner ? "text-violet-200" : undefined;
+    return undefined;
   }
 
-  if (won) {
-    // Casa de parceiro que bateu: roxo forte, para não se confundir com as casas do usuário.
-    return isPartner ? "font-bold text-violet-400" : "font-semibold text-white";
-  }
-
-  return isPartner ? "text-violet-200/50" : "text-[var(--text-dim)]";
+  return won ? "font-semibold text-white" : "text-[var(--text-dim)]";
 }
 
 export function ProcedureHousesDisplay({
@@ -145,7 +140,6 @@ export function ProcedureHousesDisplay({
     getResultHouses(procedure).map((house) => house.toLowerCase()),
   );
   // Parceiros de cada casa (a mesma casa pode ser sua e de um parceiro).
-  const partnerHouses = new Set<string>();
   const housesByPartner = new Map<string, string[]>();
 
   for (const entry of procedure.entradas ?? []) {
@@ -156,7 +150,6 @@ export function ProcedureHousesDisplay({
       continue;
     }
 
-    partnerHouses.add(house.toLowerCase());
     const list = housesByPartner.get(partner) ?? [];
 
     if (!list.includes(house)) {
@@ -174,7 +167,6 @@ export function ProcedureHousesDisplay({
           <span
             className={getHouseClassName(
               winners.size === 0 ? null : winners.has(house.toLowerCase()),
-              partnerHouses.has(house.toLowerCase()),
             )}
           >
             {house}
