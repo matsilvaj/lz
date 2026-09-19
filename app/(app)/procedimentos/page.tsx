@@ -38,6 +38,8 @@ export default async function ProceduresPage({
     houses: getSearchParamValues(params.house),
     statuses: getAllowedSearchParamValues(params.status, PROCEDURE_STATUSES),
     multiples: getAllowedSearchParamValues(params.multiple, ["2", "3", "4"]),
+    // "me" = procedimentos em que o usuário participa; números = ids de parceiros.
+    partners: getSearchParamValues(params.partner).filter((value) => /^(me|\d{1,12})$/u.test(value)),
     dateFrom: getSearchParamValue(params.from),
     dateTo: getSearchParamValue(params.to),
     page: Number(getSearchParamValue(params.page)),
@@ -54,10 +56,12 @@ export default async function ProceduresPage({
         houses: filters.houses,
         statuses: filters.statuses,
         multiples: filters.multiples,
+        partners: filters.partners,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       }}
       pagination={data.pagination}
+      partners={data.partners}
       procedures={data.procedures}
     />
   );

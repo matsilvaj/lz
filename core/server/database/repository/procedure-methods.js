@@ -16,12 +16,14 @@ import {
 } from "../../../domain/shared/normalizers.js";
 
 import {
+  buildPartnerFilterCondition,
   buildProcedureBookmakerSettlements,
   clamp,
   isUndefinedTableError,
   normalizeDatabaseData,
   normalizeEntryPartnerId,
   normalizeIsoDate,
+  normalizePartnerFilter,
   normalizePositiveInteger,
   normalizeProcedureDetailEntries,
   normalizeProcedureDetailResults,
@@ -905,6 +907,16 @@ export const procedureMethods = {
           HAVING LEAST(COUNT(*), 4) = ANY(${addParam(multiples)}::int[])
         )
       `);
+    }
+
+    const partnerCondition = buildPartnerFilterCondition(
+      "procedimentos_historico",
+      normalizePartnerFilter(filters.partners),
+      addParam,
+    );
+
+    if (partnerCondition) {
+      conditions.push(partnerCondition);
     }
 
     if (dateFrom) {

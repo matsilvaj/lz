@@ -52,6 +52,54 @@ export function normalizeTextArray(value) {
     .filter(Boolean)));
 }
 
+// Filtro "Parceiro": "me" (procedimentos em que o usuário participa) e/ou ids de parceiros.
+// Vazio = todos os procedimentos.
+export function normalizePartnerFilter(values) {
+  const tokens = normalizeTextArray(values);
+  const partnerIds = [
+    ...new Set(
+      tokens
+        .map((token) => Number(token))
+        .filter((id) => Number.isSafeInteger(id) && id > 0),
+    ),
+  ].slice(0, 50);
+
+  return { includeMe: tokens.includes("me"), partnerIds };
+}
+
+// Condição SQL do filtro "Parceiro" sobre um procedimento (procedureRef = alias ou tabela).
+// Procedimentos antigos, sem entradas detalhadas, contam como do usuário.
+export function buildPartnerFilterCondition(procedureRef, filter, addParam) {
+  const parts = [];
+
+  if (filter.includeMe) {
+    parts.push(`(
+      NOT EXISTS (
+        SELECT 1 FROM procedimentos_entradas pf
+        WHERE pf.procedimento_id = ${procedureRef}.id
+      )
+      OR EXISTS (
+        SELECT 1 FROM procedimentos_entradas pf
+        WHERE pf.procedimento_id = ${procedureRef}.id
+          AND pf.user_id = ${procedureRef}.user_id
+          AND pf.parceiro_id IS NULL
+          AND btrim(pf.casa) <> ''
+      )
+    )`);
+  }
+
+  if (filter.partnerIds.length > 0) {
+    parts.push(`EXISTS (
+      SELECT 1 FROM procedimentos_entradas pf
+      WHERE pf.procedimento_id = ${procedureRef}.id
+        AND pf.user_id = ${procedureRef}.user_id
+        AND pf.parceiro_id = ANY(${addParam(filter.partnerIds)}::bigint[])
+    )`);
+  }
+
+  return parts.length ? `(${parts.join(" OR ")})` : null;
+}
+
 export function normalizeIsoDate(value) {
   const text = parseText(value).trim();
   return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? text : "";

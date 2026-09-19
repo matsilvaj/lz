@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  UserRound,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -104,9 +105,11 @@ type ProceduresWorkspaceProps = {
     houses: string[];
     statuses: string[];
     multiples: string[];
+    partners: string[];
     dateFrom: string;
     dateTo: string;
   };
+  partners: Array<{ id: number; name: string }>;
   pagination: {
     page: number;
     pageSize: number;
@@ -322,6 +325,7 @@ export function ProceduresWorkspace({
   bookmakers,
   filters,
   pagination,
+  partners,
   procedures,
 }: ProceduresWorkspaceProps) {
   const router = useRouter();
@@ -345,6 +349,7 @@ export function ProceduresWorkspace({
   const selectedHouses = filters.houses;
   const selectedStatuses = filters.statuses;
   const selectedMultiples = filters.multiples;
+  const selectedPartners = filters.partners;
   const dateFrom = filters.dateFrom;
   const dateTo = filters.dateTo;
   const sharedProcedureParam = searchParams.get(PROCEDURE_SHARE_PARAM) ?? "";
@@ -449,6 +454,7 @@ export function ProceduresWorkspace({
     selectedHouses.length +
     selectedStatuses.length +
     selectedMultiples.length +
+    selectedPartners.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
   const hasAnyFilter = hasSearchFilter || activeFiltersCount > 0;
@@ -536,7 +542,7 @@ export function ProceduresWorkspace({
     }
 
     updateParams((params) => {
-      for (const key of ["q", "type", "house", "status", "multiple", "from", "to", "page"]) {
+      for (const key of ["q", "type", "house", "status", "multiple", "partner", "from", "to", "page"]) {
         params.delete(key);
       }
     });
@@ -769,6 +775,38 @@ export function ProceduresWorkspace({
               })}
             </div>
           </div>
+
+          {partners.length ? (
+            <div className="min-w-0 space-y-3 lg:order-3">
+              <p className="text-sm font-medium text-white">Parceiros</p>
+              <div className="flex flex-wrap gap-2">
+                {[{ value: "me", label: "Eu" }, ...partners.map((partner) => ({
+                  value: String(partner.id),
+                  label: partner.name,
+                }))].map((option) => {
+                  const active = selectedPartners.includes(option.value);
+
+                  return (
+                    <button
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm transition ${
+                        active ? "lz-button-primary" : "lz-button-secondary"
+                      }`}
+                      key={option.value}
+                      onClick={() =>
+                        toggleFilterValue("partner", option.value, selectedPartners)
+                      }
+                      type="button"
+                    >
+                      {option.value === "me" ? null : (
+                        <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
+                      )}
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <div className="min-w-0 space-y-3 lg:order-2">
             <div className="flex items-center justify-between gap-3">
