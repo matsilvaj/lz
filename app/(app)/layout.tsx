@@ -7,8 +7,6 @@ import { requireWorkspaceContext } from "@/lib/auth/workspace-context";
 import { AppNavigation } from "./_components/app-navigation";
 import { ConverterStateGuard } from "./_components/converter-state-guard";
 import { ThemeToggle } from "./_components/theme-toggle";
-import { WorkspaceSwitcher } from "./_components/workspace-switcher";
-import { WorkspaceLoadingBoundary } from "./_components/workspace-loading-boundary";
 import { UserMenu } from "./_components/user-menu";
 
 export default async function ProtectedAppLayout({
@@ -16,7 +14,8 @@ export default async function ProtectedAppLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const { activeWorkspace, workspaces } = await requireWorkspaceContext();
+  // Garante o usuário logado e o workspace dele antes de montar a área do app.
+  await requireWorkspaceContext();
 
   return (
     <div className="min-h-screen text-[var(--text-primary)]">
@@ -40,14 +39,11 @@ export default async function ProtectedAppLayout({
 
             <AppNavigation />
 
-            <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
-              <div className="col-start-2 justify-self-center lg:col-auto lg:justify-self-auto">
-                <WorkspaceSwitcher activeWorkspace={activeWorkspace} workspaces={workspaces} />
-              </div>
-              <div className="col-start-3 justify-self-start lg:col-auto lg:justify-self-auto">
+            <div className="grid grid-cols-[1fr_auto_auto_1fr] items-center gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
+              <div className="col-start-2 justify-self-end lg:col-auto lg:justify-self-auto">
                 <ThemeToggle />
               </div>
-              <div className="col-start-4 justify-self-start lg:col-auto lg:justify-self-auto">
+              <div className="col-start-3 justify-self-start lg:col-auto lg:justify-self-auto">
                 <UserMenu />
               </div>
             </div>
@@ -58,9 +54,7 @@ export default async function ProtectedAppLayout({
       <ConverterStateGuard />
 
       <main className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 xl:px-8 xl:py-6">
-        <WorkspaceLoadingBoundary key={activeWorkspace.id}>
-          <div className="lz-page-enter">{children}</div>
-        </WorkspaceLoadingBoundary>
+        <div className="lz-page-enter">{children}</div>
       </main>
     </div>
   );

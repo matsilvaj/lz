@@ -1,13 +1,11 @@
 import "server-only";
 
-import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { getProceduresRepository } from "@/lib/server";
 
 import { requireUser } from "./session";
 
-export const ACTIVE_WORKSPACE_COOKIE = "lz-active-workspace";
 export const DEFAULT_WORKSPACE_NAME = "Meu Workspace";
 
 type UserWorkspace = {
@@ -15,17 +13,6 @@ type UserWorkspace = {
   nome: string;
   created_at?: string;
 };
-
-export async function setActiveWorkspaceCookie(workspaceId: number) {
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_WORKSPACE_COOKIE, String(workspaceId), {
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 365,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
-}
 
 export const requireWorkspaceContext = cache(async function requireWorkspaceContext() {
   const user = await requireUser();
@@ -41,12 +28,9 @@ export const requireWorkspaceContext = cache(async function requireWorkspaceCont
     throw new Error("Não foi possível preparar a workspace ativa do usuário.");
   }
 
-  const cookieStore = await cookies();
-  const cookieValue = cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value ?? "";
-  const activeWorkspaceId = Number.parseInt(cookieValue, 10);
-  const activeWorkspace =
-    workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
-    workspaces[0];
+  // Sem troca de workspace: o usuário usa sempre o primeiro. Os demais continuam no
+  // banco até a conversão definitiva em parceiros.
+  const activeWorkspace = workspaces[0];
 
   return {
     activeWorkspace,

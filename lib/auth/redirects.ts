@@ -16,7 +16,6 @@ const ALLOWED_APP_PATH_PREFIXES = [
   "/perfil",
   "/procedimentos",
   "/redefinir-senha",
-  "/workspaces",
 ];
 
 function isAllowedAppPath(pathname: string) {
