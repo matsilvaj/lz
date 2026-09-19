@@ -20,7 +20,12 @@ export function PartnerFilterSelect({
   partners: PartnerOption[];
   value: string[];
 }) {
-  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [position, setPosition] = useState<{
+    left: number;
+    maxHeight: number;
+    top: number;
+    width: number;
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const open = position !== null;
@@ -89,7 +94,11 @@ export function PartnerFilterSelect({
     const width = Math.min(Math.max(rect.width, 256), window.innerWidth - margin * 2);
     const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
 
-    setPosition({ left, top: rect.bottom + 8, width });
+    const top = rect.bottom + 8;
+    // Cerca de 7 itens e depois rolagem; nunca passa do fim da tela.
+    const maxHeight = Math.max(160, Math.min(320, window.innerHeight - top - margin));
+
+    setPosition({ left, maxHeight, top, width });
   }
 
   function toggle(optionValue: string) {
@@ -127,10 +136,15 @@ export function PartnerFilterSelect({
 
       {position && typeof document !== "undefined" ? createPortal(
         <div
-          className="fixed z-[90] rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
+          className="fixed z-[90] overflow-y-auto overscroll-contain rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
           ref={panelRef}
           role="listbox"
-          style={{ left: position.left, top: position.top, width: position.width }}
+          style={{
+            left: position.left,
+            maxHeight: position.maxHeight,
+            top: position.top,
+            width: position.width,
+          }}
         >
           <button
             aria-selected={selected.length === 0}

@@ -81,15 +81,17 @@ export function PartnerPicker({
           className="absolute right-0 top-full z-40 mt-2 w-56 rounded-[20px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
           role="listbox"
         >
-          <PartnerPickerOption active={value === null} label="Sem parceiro" onClick={() => choose(null)} />
-          {partners.map((partner) => (
-            <PartnerPickerOption
-              active={partner.id === value}
-              key={partner.id}
-              label={partner.name}
-              onClick={() => choose(partner.id)}
-            />
-          ))}
+          <div className="max-h-64 overflow-y-auto overscroll-contain">
+            <PartnerPickerOption active={value === null} label="Sem parceiro" onClick={() => choose(null)} />
+            {partners.map((partner) => (
+              <PartnerPickerOption
+                active={partner.id === value}
+                key={partner.id}
+                label={partner.name}
+                onClick={() => choose(partner.id)}
+              />
+            ))}
+          </div>
           <Link
             className="mt-1 block rounded-xl border-t border-white/8 px-3 py-2 text-xs font-semibold text-[var(--text-dim)] transition hover:text-white"
             href="/parceiros"
