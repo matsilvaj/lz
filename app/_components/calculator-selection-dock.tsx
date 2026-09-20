@@ -663,7 +663,7 @@ export function CalculatorSelectionDock({
     >
       {renderPanel ? (
         <div
-          className={`w-[min(18rem,calc(100vw-7rem))] origin-bottom-right rounded-[24px] border border-white/10 bg-[rgba(18,5,13,0.94)] p-3 shadow-[0_22px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl transition duration-200 ease-out ${
+          className={`w-[min(20.5rem,calc(100vw-6rem))] origin-bottom-right rounded-[24px] border border-white/10 bg-[rgba(18,5,13,0.94)] p-3 shadow-[0_22px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl transition duration-200 ease-out ${
             expanded
               ? "translate-y-0 scale-100 opacity-100"
               : "pointer-events-none translate-y-3 scale-[0.97] opacity-0"
@@ -722,43 +722,44 @@ export function CalculatorSelectionDock({
             />
           </label>
 
-          <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+          {/* No máximo 3 odds: tudo cabe sem rolagem. */}
+          <div className="mt-2 space-y-1.5">
             {orderedVisibleSelections.slice(0, 3).map((selection) => (
               <div
                 className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2"
                 key={selection.id}
               >
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-xs font-semibold text-white">
                       {selection.house}
                     </span>
-                    <span className="shrink-0 text-xs font-semibold text-[rgb(191,219,254)]">
+                    <span className="shrink-0 text-xs font-semibold tabular-nums text-[rgb(191,219,254)]">
                       {formatCalculatorOdd(getNetOdd(selection.odd, selection.commission ?? 0))}
                     </span>
                     <ExchangeCommissionTag
                       commission={selection.commission ?? 0}
                       rawOdd={selection.odd}
                     />
-                    {calculation ? (
-                      <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-white">
-                        {formatMoney(calculation.stakeByLine[selection.id] ?? 0)}
-                      </span>
-                    ) : null}
                   </div>
-                  <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-[11px] font-medium text-[var(--text-muted)]">
                       {selection.meta
                         ? `${selection.selectionLabel} - ${selection.meta}`
                         : selection.selectionLabel}
                     </span>
                     {selection.pa ? (
-                      <span className="shrink-0 rounded-full border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      <span className="shrink-0 rounded-full border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.12)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-emerald-300">
                         PA
                       </span>
                     ) : null}
                   </div>
                 </div>
+                {calculation ? (
+                  <span className="shrink-0 text-right text-xs font-semibold tabular-nums text-white">
+                    {formatMoney(calculation.stakeByLine[selection.id] ?? 0)}
+                  </span>
+                ) : null}
                 <button
                   aria-label={`Remover ${selection.house} ${selection.selectionLabel}`}
                   className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-[var(--text-secondary)] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
