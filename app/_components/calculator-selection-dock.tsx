@@ -107,8 +107,28 @@ function formatCalculatorStake(value: number | undefined, fallback: string) {
   return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : fallback;
 }
 
+// A lista segue sempre 1, X, 2; o que não for 1x2 vai para o fim, na ordem de escolha.
+const MARKET_ORDER = new Map([
+  ["1", 0],
+  ["X", 1],
+  ["2", 2],
+]);
+
+function getMarketOrder(selection: CalculatorSelectionLine) {
+  const label = selection.selectionLabel.trim().toLocaleUpperCase("pt-BR");
+  return MARKET_ORDER.get(label) ?? MARKET_ORDER.size;
+}
+
 function getOrderedCalculatorSelections(selections: CalculatorSelectionLine[]) {
-  const lines = selections.slice(0, 3);
+  const lines = selections
+    .slice(0, 3)
+    .map((selection, index) => ({ index, selection }))
+    .sort(
+      (left, right) =>
+        getMarketOrder(left.selection) - getMarketOrder(right.selection) ||
+        left.index - right.index,
+    )
+    .map((item) => item.selection);
   const freebetLine = lines.find((selection) => selection.freebet);
 
   if (!freebetLine) {

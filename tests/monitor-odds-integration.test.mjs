@@ -377,8 +377,13 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(calculatorSelectionDock, /params\.set\("freebetCondition"/);
   assert.match(calculatorSelectionDock, /params\.append\("originIds"/);
   assert.match(calculatorSelectionDock, /getOrderedCalculatorSelections/);
-  assert.match(calculatorSelectionDock, /getDockProfitPercent/);
-  assert.match(calculatorSelectionDock, /Lucro %/);
+  assert.match(calculatorSelectionDock, /getDockCalculation/);
+  // Pop-up mostra evento, stake editável, stake por casa, retorno e lucro, na ordem 1 X 2.
+  assert.match(calculatorSelectionDock, /MARKET_ORDER/);
+  assert.match(calculatorSelectionDock, /DOCK_STAKE_STORAGE_KEY/);
+  assert.match(calculatorSelectionDock, /stakeByLine/);
+  assert.match(calculatorSelectionDock, />Retorno</);
+  assert.match(calculatorSelectionDock, /formatMoney\(calculation\.profit\)/);
   assert.match(calculatorSelectionDock, /conversionSelectionReady/);
   assert.match(calculatorSelectionDock, /getConversionSelectionHint/);
   assert.match(
@@ -392,7 +397,10 @@ test("monitor odds and duplo can send selected odds to calculator", () => {
   assert.match(calculatorSelectionDock, /slice\(-3\)/);
   assert.match(calculatorSelectionDock, /dockVisible/);
   assert.match(calculatorSelectionDock, /freebet: Boolean\(selection\.freebet\)/);
-  assert.match(calculatorSelectionDock, /formatCalculatorStake\(selection\.stake/);
+  assert.match(
+    calculatorSelectionDock,
+    /formatCalculatorStake\(\s*\n\s*selection\.stake \?\? stakeByLine/,
+  );
   assert.match(oddsUi, /CalculatorSelectionDock/);
   assert.match(oddsUi, /parseConversionContextParams/);
   assert.match(oddsUi, /isConversionFreebetHouse/);
