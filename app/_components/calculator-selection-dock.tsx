@@ -121,7 +121,10 @@ function getOrderedCalculatorSelections(selections: CalculatorSelectionLine[]) {
   ];
 }
 
-function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCalculatorPayload {
+function buildCalculatorPayload(
+  selections: CalculatorSelectionLine[],
+  stakeByLine?: Record<string, number>,
+): SharedCalculatorPayload {
   const lines = getOrderedCalculatorSelections(selections);
   const lineCount = Math.max(2, Math.min(lines.length, 3));
 
@@ -139,7 +142,10 @@ function buildCalculatorPayload(selections: CalculatorSelectionLine[]): SharedCa
       odd: formatCalculatorOdd(selection.odd),
       responsabilidade: "0",
       responsabilidadeEdited: false,
-      stake: formatCalculatorStake(selection.stake, index === 0 ? "100" : "0"),
+      stake: formatCalculatorStake(
+        selection.stake ?? stakeByLine?.[selection.id],
+        index === 0 ? "100" : "0",
+      ),
       stakeEdited: false,
       tipo: "B",
     })),
@@ -153,6 +159,16 @@ function formatProfitPercent(value: number) {
   return `${safeValue.toFixed(2)}%`;
 }
 
+function getProfitBadgeClassName(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return "border border-white/12 bg-white/[0.06] text-white";
+  }
+
+  return value > 0
+    ? "border border-[rgba(45,212,191,0.32)] bg-[rgba(45,212,191,0.14)] text-emerald-300"
+    : "border border-[rgba(255,107,133,0.32)] bg-[rgba(255,107,133,0.12)] text-rose-300";
+}
+
 function getProfitClassName(value: number) {
   if (Math.abs(value) < 0.005) {
     return "text-white";
@@ -161,15 +177,28 @@ function getProfitClassName(value: number) {
   return value > 0 ? "text-emerald-300" : "text-rose-300";
 }
 
-function getDockProfitPercent(
+type DockCalculation = {
+  profit: number;
+  profitPercent: number;
+  returnValue: number;
+  stakeByLine: Record<string, number>;
+  totalStake: number;
+};
+
+// Calcula com um stake de referência e depois ajusta tudo na proporção do stake
+// total informado: os stakes de dutching crescem juntos, então a proporção vale.
+function getDockCalculation(
   selections: CalculatorSelectionLine[],
   conversionContext: CalculatorConversionContext | null | undefined,
-) {
+  totalStake: number,
+): DockCalculation | null {
   const lines = getOrderedCalculatorSelections(selections);
 
   if (lines.length < 2) {
     return null;
   }
+
+  const freebetValue = conversionContext?.freebetValue ?? 0;
 
   try {
     const calculation = calculateSurebet(
@@ -178,29 +207,60 @@ function getDockProfitPercent(
         freebet: Boolean(selection.freebet),
         odd: selection.odd,
         stake:
-          selection.stake ??
-          (index === 0 ? conversionContext?.freebetValue ?? 100 : 0),
+          selection.stake ?? (index === 0 ? freebetValue || DEFAULT_DOCK_STAKE : 0),
         tipo: "B",
       })),
       0,
-    ) as { lucro_liquido?: number; lucro_percentual?: number };
+    ) as {
+      linhas?: Array<{ stake?: number }>;
+      lucro_liquido?: number;
+      retorno_referencia?: number;
+    };
+    const baseStakes = (calculation.linhas ?? []).map((line) => Number(line.stake ?? 0));
+    const baseTotal = baseStakes.reduce((total, value) => total + value, 0);
+
+    if (!Number.isFinite(baseTotal) || baseTotal <= 0) {
+      return null;
+    }
+
+    // Na conversão o valor da freebet manda: a escala vem dela, não do campo.
+    const scale = conversionContext
+      ? 1
+      : Number.isFinite(totalStake) && totalStake > 0
+        ? totalStake / baseTotal
+        : 0;
+
+    if (scale <= 0) {
+      return null;
+    }
+
+    const stakeByLine: Record<string, number> = {};
+    lines.forEach((selection, index) => {
+      stakeByLine[selection.id] = (baseStakes[index] ?? 0) * scale;
+    });
+
+    const profit = Number(calculation.lucro_liquido ?? 0) * scale;
+    const returnValue = Number(calculation.retorno_referencia ?? 0) * scale;
     const freebetStake = lines.reduce(
-      (total, selection, index) =>
-        selection.freebet
-          ? total +
-            Number(
-              selection.stake ??
-                (index === 0 ? conversionContext?.freebetValue ?? 100 : 0),
-            )
-          : total,
+      (total, selection) =>
+        selection.freebet ? total + (stakeByLine[selection.id] ?? 0) : total,
       0,
     );
-    const profitPercent =
-      freebetStake > 0
-        ? (Number(calculation.lucro_liquido ?? 0) / freebetStake) * 100
-        : Number(calculation.lucro_percentual ?? 0);
+    const investment = baseTotal * scale;
+    const profitBase = freebetStake > 0 ? freebetStake : investment;
+    const profitPercent = profitBase > 0 ? (profit / profitBase) * 100 : 0;
 
-    return Number.isFinite(profitPercent) ? profitPercent : null;
+    if (!Number.isFinite(profitPercent)) {
+      return null;
+    }
+
+    return {
+      profit,
+      profitPercent,
+      returnValue,
+      stakeByLine,
+      totalStake: investment,
+    };
   } catch {
     return null;
   }
@@ -327,6 +387,45 @@ function writeDockMinimized(minimized: boolean) {
   }
 }
 
+// Último stake usado no pop-up.
+const DOCK_STAKE_STORAGE_KEY = "lz:calculator-dock:stake";
+const DEFAULT_DOCK_STAKE = 100;
+
+function readDockStake() {
+  try {
+    const stored = window.localStorage.getItem(DOCK_STAKE_STORAGE_KEY) ?? "";
+    return /^\d{1,9}([.,]\d{1,2})?$/.test(stored) ? stored : String(DEFAULT_DOCK_STAKE);
+  } catch {
+    return String(DEFAULT_DOCK_STAKE);
+  }
+}
+
+function writeDockStake(value: string) {
+  try {
+    window.localStorage.setItem(DOCK_STAKE_STORAGE_KEY, value);
+  } catch {
+    // Sem storage o stake vale só nesta página.
+  }
+}
+
+function sanitizeStakeInput(value: string) {
+  return value.replace(/[^\d.,]/g, "").replace(/,/g, ".").slice(0, 12);
+}
+
+function parseStakeInput(value: string) {
+  const parsed = Number.parseFloat(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatMoney(value: number) {
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
 function normalizeHouseKey(value: string) {
   return value
     .normalize("NFD")
@@ -354,6 +453,7 @@ export function CalculatorSelectionDock({
   const [renderDock, setRenderDock] = useState(false);
   const [renderPanel, setRenderPanel] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [stakeInput, setStakeInput] = useState(String(DEFAULT_DOCK_STAKE));
   const minimizedRef = useRef(false);
   const [displaySelections, setDisplaySelections] = useState<
     CalculatorSelectionLine[]
@@ -369,10 +469,19 @@ export function CalculatorSelectionDock({
   const hasFreebetSelection = orderedVisibleSelections.some(
     (selection) => selection.freebet,
   );
-  const profitPercent = useMemo(
-    () => getDockProfitPercent(orderedVisibleSelections, conversionContext),
-    [conversionContext, orderedVisibleSelections],
+  const calculation = useMemo(
+    () =>
+      getDockCalculation(
+        orderedVisibleSelections,
+        conversionContext,
+        parseStakeInput(stakeInput),
+      ),
+    [conversionContext, orderedVisibleSelections, stakeInput],
   );
+  const profitPercent = calculation?.profitPercent ?? null;
+  const eventName = orderedVisibleSelections.find((selection) =>
+    selection.eventName?.trim(),
+  )?.eventName?.trim();
   const conversionSelectionReady =
     !conversionContext ||
     (orderedVisibleSelections.length === 3 && hasFreebetSelection);
@@ -426,6 +535,10 @@ export function CalculatorSelectionDock({
 
       const keepMinimized = readDockMinimized();
 
+      setStakeInput((current) =>
+        current === String(DEFAULT_DOCK_STAKE) ? readDockStake() : current,
+      );
+
       minimizedRef.current = keepMinimized;
       setMinimized(keepMinimized);
       setDisplaySelections(selections);
@@ -459,7 +572,10 @@ export function CalculatorSelectionDock({
       return;
     }
 
-    const payload = buildCalculatorPayload(orderedVisibleSelections);
+    const payload = buildCalculatorPayload(
+      orderedVisibleSelections,
+      calculation?.stakeByLine,
+    );
     const params = new URLSearchParams();
     appendConversionContextParams(params, conversionContext);
     params.set("calc", encodeCalculatorPayload(payload));
@@ -577,7 +693,36 @@ export function CalculatorSelectionDock({
             </span>
           </div>
 
-          <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+          {eventName ? (
+            <p className="mt-2 truncate text-sm font-semibold text-white" title={eventName}>
+              {eventName}
+            </p>
+          ) : null}
+
+          <label className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2">
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+              {conversionContext ? "Freebet" : "Stake"}
+            </span>
+            <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">R$</span>
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent text-right text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:text-[var(--text-secondary)]"
+              disabled={Boolean(conversionContext)}
+              inputMode="decimal"
+              onChange={(event) => {
+                const next = sanitizeStakeInput(event.target.value);
+                setStakeInput(next);
+                writeDockStake(next);
+              }}
+              placeholder="0"
+              value={
+                conversionContext
+                  ? String(conversionContext.freebetValue ?? 0)
+                  : stakeInput
+              }
+            />
+          </label>
+
+          <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
             {orderedVisibleSelections.slice(0, 3).map((selection) => (
               <div
                 className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2"
@@ -595,6 +740,11 @@ export function CalculatorSelectionDock({
                       commission={selection.commission ?? 0}
                       rawOdd={selection.odd}
                     />
+                    {calculation ? (
+                      <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-white">
+                        {formatMoney(calculation.stakeByLine[selection.id] ?? 0)}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-2">
                     <span className="truncate text-[11px] font-medium text-[var(--text-muted)]">
@@ -621,20 +771,37 @@ export function CalculatorSelectionDock({
             ))}
           </div>
 
-          {profitPercent !== null || conversionContext ? (
-            <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2">
-              {profitPercent !== null ? (
-                <div className="flex items-center justify-between gap-3 text-xs font-semibold">
-                  <span className="text-[var(--text-muted)]">
-                    {hasFreebetSelection ? "Conversão %" : "Lucro %"}
-                  </span>
-                  <span className={`tabular-nums ${getProfitClassName(profitPercent)}`}>
-                    {formatProfitPercent(profitPercent)}
-                  </span>
-                </div>
+          {calculation || conversionContext ? (
+            <div className="mt-3 space-y-1.5 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2 text-xs font-semibold">
+              {calculation ? (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[var(--text-muted)]">Retorno</span>
+                    <span className="tabular-nums text-white">
+                      {formatMoney(calculation.returnValue)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[var(--text-muted)]">
+                      {hasFreebetSelection ? "Conversão" : "Lucro"}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className={`tabular-nums ${getProfitClassName(calculation.profit)}`}>
+                        {formatMoney(calculation.profit)}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 tabular-nums ${getProfitBadgeClassName(
+                          calculation.profitPercent,
+                        )}`}
+                      >
+                        {formatProfitPercent(calculation.profitPercent)}
+                      </span>
+                    </span>
+                  </div>
+                </>
               ) : null}
               {conversionSelectionHint ? (
-                <p className="mt-1 text-[11px] font-medium leading-5 text-[var(--text-dim)]">
+                <p className="text-[11px] font-medium leading-5 text-[var(--text-dim)]">
                   {conversionSelectionHint}
                 </p>
               ) : null}
