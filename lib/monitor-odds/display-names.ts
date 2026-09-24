@@ -6,6 +6,7 @@ const competitionNameTranslations: Record<string, string> = {
   "asian-cup": "Copa da Ásia",
   "asian-cup-qualification": "Eliminatórias da Copa da Ásia",
   "concacaf-gold-cup": "Copa Ouro da CONCACAF",
+  "concacaf-nations-league": "Liga das Nações da CONCACAF",
   "copa-america": "Copa América",
   "euro-championship": "Eurocopa",
   "euro-championship-qualification": "Eliminatórias da Eurocopa",
