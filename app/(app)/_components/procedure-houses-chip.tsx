@@ -1,18 +1,25 @@
 "use client";
 
-import { UserRound } from "lucide-react";
+import { Layers, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const PANEL_WIDTH = 256;
 const VIEWPORT_MARGIN = 12;
 
-// Selo "👤 N" ao lado das casas: ao tocar ou clicar, mostra as casas agrupadas por parceiro.
-// O cartão abre sobre a página (fora da tabela com rolagem) e se ajusta à borda da tela.
-export function PartnerHousesChip({
-  housesByPartner,
+export type ProcedureHouse = {
+  name: string;
+  partner?: string;
+  won: boolean;
+};
+
+// Selo ao lado das casas: ao tocar ou clicar, mostra todas as casas do procedimento,
+// com o parceiro dono de cada uma. O cartão abre sobre a página (fora da tabela com
+// rolagem) e se ajusta à borda da tela.
+export function ProcedureHousesChip({
+  houses,
 }: {
-  housesByPartner: Array<{ partner: string; houses: string[] }>;
+  houses: ProcedureHouse[];
 }) {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -55,11 +62,11 @@ export function PartnerHousesChip({
     };
   }, [open]);
 
-  if (!housesByPartner.length) {
+  if (!houses.length) {
     return null;
   }
 
-  const count = housesByPartner.length;
+  const count = houses.length;
 
   function toggle() {
     if (open) {
@@ -86,7 +93,7 @@ export function PartnerHousesChip({
     <>
       <button
         aria-expanded={open}
-        aria-label={`${count} ${count === 1 ? "parceiro" : "parceiros"} neste procedimento`}
+        aria-label={`Ver as ${count} casas do procedimento`}
         className={`ml-1.5 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 align-middle text-[11px] font-semibold leading-none transition ${
           open
             ? "border-[rgba(167,139,250,0.55)] bg-[rgba(167,139,250,0.2)] text-violet-100"
@@ -97,10 +104,10 @@ export function PartnerHousesChip({
           toggle();
         }}
         ref={buttonRef}
-        title="Ver de quem são as casas"
+        title="Ver todas as casas"
         type="button"
       >
-        <UserRound aria-hidden="true" className="h-3 w-3" />
+        <Layers aria-hidden="true" className="h-3 w-3" />
         {count}
       </button>
 
@@ -117,18 +124,26 @@ export function PartnerHousesChip({
               }}
             >
               <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
-                Casas de parceiros
+                Casas do procedimento
               </p>
-              {housesByPartner.map(({ partner, houses }) => (
+              {houses.map((house, index) => (
                 <div
-                  className="grid grid-cols-[minmax(0,40%)_minmax(0,1fr)] items-baseline gap-x-3 rounded-lg px-2 py-1.5 text-xs"
-                  key={partner}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 rounded-lg px-2 py-1.5 text-xs"
+                  key={`${house.name}-${house.partner ?? ""}-${index}`}
                 >
-                  <span className="flex min-w-0 items-center gap-1 font-semibold text-violet-200">
-                    <UserRound aria-hidden="true" className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{partner}</span>
+                  <span
+                    className={`truncate font-semibold ${
+                      house.won ? "text-white" : "text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {house.name}
                   </span>
-                  <span className="text-[var(--text-secondary)]">{houses.join(", ")}</span>
+                  {house.partner ? (
+                    <span className="flex min-w-0 items-center gap-1 text-violet-200">
+                      <UserRound aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{house.partner}</span>
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>,

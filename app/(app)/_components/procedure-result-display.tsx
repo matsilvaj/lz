@@ -1,6 +1,9 @@
 import { isFreebetProcedure } from "@/lib/procedures";
 
-import { PartnerHousesChip } from "./partner-houses-chip";
+import {
+  ProcedureHousesChip,
+  type ProcedureHouse,
+} from "./procedure-houses-chip";
 
 type ResultDisplayEntry = {
   escopo: string;
@@ -139,43 +142,45 @@ export function ProcedureHousesDisplay({
   const winners = new Set(
     getResultHouses(procedure).map((house) => house.toLowerCase()),
   );
-  // Parceiros de cada casa (a mesma casa pode ser sua e de um parceiro).
-  const housesByPartner = new Map<string, string[]>();
+  // Dono de cada casa (a mesma casa pode ser sua e de um parceiro).
+  const partnersByHouse = new Map<string, string>();
 
   for (const entry of procedure.entradas ?? []) {
     const partner = entry.parceiro_nome?.trim();
-    const house = entry.casa.trim();
+    const house = entry.casa.trim().toLowerCase();
 
-    if (!partner || !house) {
+    if (!partner || !house || partnersByHouse.has(house)) {
       continue;
     }
 
-    const list = housesByPartner.get(partner) ?? [];
-
-    if (!list.includes(house)) {
-      list.push(house);
-    }
-
-    housesByPartner.set(partner, list);
+    partnersByHouse.set(house, partner);
   }
+
+  const allHouses: ProcedureHouse[] = houses.map((house) => ({
+    name: house,
+    partner: partnersByHouse.get(house.toLowerCase()),
+    won: winners.has(house.toLowerCase()),
+  }));
+  // Com resultado, a lista mostra só as casas que ganharam; o resto fica no selo.
+  const visibleHouses = winners.size > 0
+    ? allHouses.filter((house) => house.won)
+    : allHouses;
+  const hasHiddenHouses = visibleHouses.length < allHouses.length;
+  const hasPartners = partnersByHouse.size > 0;
 
   return (
     <>
-      {houses.map((house, index) => (
-        <span key={`${house}-${index}`}>
+      {visibleHouses.map((house, index) => (
+        <span key={`${house.name}-${index}`}>
           {index > 0 ? <span className="text-[var(--text-dim)]">, </span> : null}
-          <span
-            className={getHouseClassName(
-              winners.size === 0 ? null : winners.has(house.toLowerCase()),
-            )}
-          >
-            {house}
+          <span className={getHouseClassName(winners.size === 0 ? null : house.won)}>
+            {house.name}
           </span>
         </span>
       ))}
-      <PartnerHousesChip
-        housesByPartner={[...housesByPartner].map(([partner, list]) => ({ partner, houses: list }))}
-      />
+      {hasHiddenHouses || hasPartners ? (
+        <ProcedureHousesChip houses={allHouses} />
+      ) : null}
     </>
   );
 }
