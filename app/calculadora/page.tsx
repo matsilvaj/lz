@@ -40,7 +40,7 @@ export default async function CalculatorPage({
               </span>
             </Link>
 
-            <div className="col-span-2 row-start-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+            <div className="col-span-2 row-start-2 hidden min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:block">
               <AppNavigation />
             </div>
 

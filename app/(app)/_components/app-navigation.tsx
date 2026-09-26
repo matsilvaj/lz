@@ -22,7 +22,7 @@ export function AppNavigation() {
   }, [pathname]);
 
   return (
-    <nav className="lz-scrollbar-hidden overflow-x-auto" ref={navRef}>
+    <nav className="lz-scrollbar-hidden hidden overflow-x-auto lg:block" ref={navRef}>
       <div className="flex min-w-max flex-nowrap items-center gap-2 px-px xl:min-w-0 xl:justify-center">
         <div className="flex flex-nowrap items-center gap-1.5 rounded-full border border-white/8 bg-[rgba(255,255,255,0.02)] p-1">
           {appNavigationItems.map((item) => {

@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { logout } from "@/app/auth/actions";
 
+import { appNavigationItems } from "../navigation";
+
+function isActivePath(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function UserMenu() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +66,31 @@ export function UserMenu() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-3 min-w-44 rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+        <div className="lz-floating-panel absolute right-0 top-full z-[120] mt-3 max-h-[calc(100dvh-6rem)] w-56 overflow-y-auto rounded-[24px] border border-white/10 bg-[rgba(17,8,14,0.96)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+          {/* No celular a navegação fica aqui dentro; no computador ela já está no topo. */}
+          <div className="lg:hidden">
+            {appNavigationItems.map((item) => {
+              const active = isActivePath(pathname, item.href);
+
+              return (
+                <Link
+                  aria-current={active ? "page" : undefined}
+                  className={`block rounded-2xl px-3 py-2.5 text-sm transition ${
+                    active
+                      ? "lz-button-primary"
+                      : "text-[var(--text-secondary)] hover:bg-white/6 hover:text-white"
+                  }`}
+                  href={item.href}
+                  key={item.href}
+                  onClick={() => setOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+            <div className="my-2 h-px bg-white/10" />
+          </div>
+
           <Link
             className="block rounded-2xl px-3 py-3 text-sm text-[var(--text-secondary)] transition hover:bg-white/6 hover:text-white"
             href="/perfil"
