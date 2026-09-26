@@ -14,13 +14,11 @@ import {
   Search,
   SlidersHorizontal,
   Star,
-  UserRound,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   type MouseEvent as ReactMouseEvent,
-  useDeferredValue,
   useEffect,
   useMemo,
   useOptimistic,
@@ -34,6 +32,8 @@ import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { DatePickerField } from "../_components/date-picker-field";
+import { MultiSelectFilter } from "../_components/multi-select-filter";
+import { PartnerFilterSelect } from "../_components/partner-filter-select";
 import { ProcedureFavoriteToggle } from "../_components/procedure-favorite-toggle";
 import {
   FilterChip,
@@ -340,10 +340,7 @@ export function ProceduresWorkspace({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [houseSearch, setHouseSearch] = useState("");
   const searchDebounceRef = useRef<number | null>(null);
-  const deferredHouseSearch = useDeferredValue(houseSearch);
-  const normalizedHouseSearch = deferredHouseSearch.trim().toLowerCase();
   const selectedTypes = filters.types;
   const selectedHouses = filters.houses;
   const selectedStatuses = filters.statuses;
@@ -356,9 +353,6 @@ export function ProceduresWorkspace({
   const sharedProcedureValues = sharedProcedureParam
     ? decodeProcedureSharePayload(sharedProcedureParam)
     : null;
-  const visibleBookmakers = bookmakers.filter((bookmaker) =>
-    bookmaker.toLowerCase().includes(normalizedHouseSearch),
-  );
   const procedureRows = procedures;
   const [sharedModalOpen, setSharedModalOpen] = useState(
     Boolean(sharedProcedureValues),
@@ -742,28 +736,12 @@ export function ProceduresWorkspace({
 
           {partners.length ? (
             <FilterSection title="Parceiros">
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { value: "me", label: "Eu" },
-                  ...partners.map((partner) => ({
-                    value: String(partner.id),
-                    label: partner.name,
-                  })),
-                ].map((option) => (
-                  <FilterChip
-                    active={selectedPartners.includes(option.value)}
-                    key={option.value}
-                    onClick={() =>
-                      toggleFilterValue("partner", option.value, selectedPartners)
-                    }
-                  >
-                    {option.value === "me" ? null : (
-                      <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
-                    )}
-                    {option.label}
-                  </FilterChip>
-                ))}
-              </div>
+              <PartnerFilterSelect
+                inline
+                onChange={(values) => updateRepeatedFilter("partner", values)}
+                partners={partners}
+                value={selectedPartners}
+              />
             </FilterSection>
           ) : null}
 
@@ -779,43 +757,22 @@ export function ProceduresWorkspace({
                 </button>
               ) : null
             }
-            title={
-              selectedHouses.length
-                ? `Casas (${selectedHouses.length})`
-                : "Casas"
-            }
+            title={selectedHouses.length ? `Casas (${selectedHouses.length})` : "Casas"}
           >
-            <div className="relative">
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
-              />
-              <input
-                className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
-                onChange={(event) => setHouseSearch(event.target.value)}
-                placeholder="Buscar casa..."
-                type="search"
-                value={houseSearch}
-              />
-            </div>
-
-            <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
-              {visibleBookmakers.length > 0 ? (
-                visibleBookmakers.map((bookmaker) => (
-                  <FilterChip
-                    active={selectedHouses.includes(bookmaker)}
-                    key={bookmaker}
-                    onClick={() => toggleFilterValue("house", bookmaker, selectedHouses)}
-                  >
-                    {bookmaker}
-                  </FilterChip>
-                ))
-              ) : (
-                <p className="px-1 py-2 text-sm text-[var(--text-muted)]">
-                  Nenhuma casa encontrada.
-                </p>
-              )}
-            </div>
+            <MultiSelectFilter
+              allLabel="Todas as casas"
+              inline
+              icon={
+                <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" />
+              }
+              onChange={(values) => updateRepeatedFilter("house", values)}
+              options={bookmakers.map((bookmaker) => ({
+                label: bookmaker,
+                value: bookmaker,
+              }))}
+              searchPlaceholder="Buscar casa..."
+              value={selectedHouses}
+            />
           </FilterSection>
         </FiltersDialog>
       ) : null}

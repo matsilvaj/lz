@@ -1,12 +1,13 @@
 "use client";
 
-import { Plus, Search, UserRound, X } from "lucide-react";
+import { Plus, RotateCcw, Search, UserRound, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { ButtonSpinner } from "@/app/_components/form-submit-button";
 import { useToast } from "@/app/_components/toast-provider";
 
+import { PartnerFilterSelect } from "../_components/partner-filter-select";
 import { PartnerPicker, type PartnerOption } from "../_components/partner-picker";
 import { EmptyState } from "../_components/ui";
 import {
@@ -102,6 +103,10 @@ export function BookmakersWorkspace({
     [cards, partnerId],
   );
 
+  const [listSearch, setListSearch] = useState("");
+  const [listPartners, setListPartners] = useState<string[]>([]);
+  const [onlyWithBalance, setOnlyWithBalance] = useState(false);
+
   const suggestions = useMemo(() => {
     const normalizedSearch = name.trim().toLowerCase();
 
@@ -110,14 +115,40 @@ export function BookmakersWorkspace({
       .slice(0, 8);
   }, [availableBookmakers, name]);
 
+  // Filtro da lista: nome da casa, dono e casas com saldo.
+  const visibleCards = useMemo(() => {
+    const normalizedSearch = listSearch.trim().toLowerCase();
+
+    return cards.filter((card) => {
+      if (normalizedSearch && !card.nome.toLowerCase().includes(normalizedSearch)) {
+        return false;
+      }
+
+      if (onlyWithBalance && !(card.saldo > 0)) {
+        return false;
+      }
+
+      return (
+        listPartners.length === 0 ||
+        listPartners.includes(card.partnerId === null ? "me" : String(card.partnerId))
+      );
+    });
+  }, [cards, listPartners, listSearch, onlyWithBalance]);
+  const hasListFilter =
+    listSearch.trim() !== "" || listPartners.length > 0 || onlyWithBalance;
+
   // Casas agrupadas por dono: as do usuário primeiro, depois cada parceiro.
   const cardGroups = useMemo(() => {
     const groups: Array<{ key: string; partnerName: string | null; cards: BookmakerCard[] }> = [
-      { key: "me", partnerName: null, cards: cards.filter((card) => card.partnerId === null) },
+      {
+        key: "me",
+        partnerName: null,
+        cards: visibleCards.filter((card) => card.partnerId === null),
+      },
     ];
 
     for (const partner of partners) {
-      const partnerCards = cards.filter((card) => card.partnerId === partner.id);
+      const partnerCards = visibleCards.filter((card) => card.partnerId === partner.id);
 
       if (partnerCards.length) {
         groups.push({ key: `partner-${partner.id}`, partnerName: partner.name, cards: partnerCards });
@@ -125,7 +156,61 @@ export function BookmakersWorkspace({
     }
 
     return groups;
-  }, [cards, partners]);
+  }, [partners, visibleCards]);
+
+  const listFilterBar = (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="relative min-w-0 flex-1">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
+        />
+        <input
+          className="lz-input w-full rounded-full py-2.5 pl-10 pr-4 text-sm"
+          onChange={(event) => setListSearch(event.target.value)}
+          placeholder="Filtrar casa..."
+          type="search"
+          value={listSearch}
+        />
+      </div>
+
+      {partners.length ? (
+        <PartnerFilterSelect
+          onChange={setListPartners}
+          partners={partners}
+          value={listPartners}
+        />
+      ) : null}
+
+      <button
+        aria-pressed={onlyWithBalance}
+        className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm transition ${
+          onlyWithBalance
+            ? "border-[rgba(216,31,89,0.5)] bg-[rgba(216,31,89,0.14)] text-white"
+            : "border-white/10 bg-white/[0.04] text-[var(--text-secondary)] hover:border-white/20 hover:text-white"
+        }`}
+        onClick={() => setOnlyWithBalance((current) => !current)}
+        type="button"
+      >
+        Com saldo
+      </button>
+
+      {hasListFilter ? (
+        <button
+          className="inline-flex shrink-0 items-center gap-1.5 text-sm text-[var(--text-dim)] transition hover:text-white"
+          onClick={() => {
+            setListSearch("");
+            setListPartners([]);
+            setOnlyWithBalance(false);
+          }}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+          Limpar
+        </button>
+      ) : null}
+    </div>
+  );
 
   function warnAlreadyAdded(bookmakerName: string) {
     showToast({
@@ -426,8 +511,18 @@ export function BookmakersWorkspace({
               eyebrow="Setup inicial"
               title="Nenhuma casa selecionada"
             />
+          ) : visibleCards.length === 0 ? (
+            <>
+              {listFilterBar}
+              <EmptyState
+                description="Ajuste a busca ou limpe os filtros para ver as casas."
+                eyebrow="Sem resultados"
+                title="Nenhuma casa encontrada"
+              />
+            </>
           ) : (
             <div className="space-y-5">
+              {listFilterBar}
               {cardGroups.map((group) =>
                 group.cards.length === 0 && group.partnerName === null ? null : (
                   <div className="space-y-3" key={group.key}>
