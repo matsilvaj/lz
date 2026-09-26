@@ -862,6 +862,33 @@ export async function updateProcedureStatusAction(
   revalidateAppData();
 }
 
+export async function toggleProcedureFavoriteAction(
+  procedureId: number | string,
+  favorite: boolean,
+) {
+  const { user } = await requireWorkspaceContext();
+  const repository = getProceduresRepository();
+  const parsedProcedureId = parsePositiveInteger(procedureId);
+  const canWrite = await consumeRateLimit({
+    identity: user.id,
+    key: "procedures:favorite",
+    limit: 120,
+    windowMs: 60_000,
+  });
+
+  if (!canWrite) {
+    throw new Error("Rate limit exceeded.");
+  }
+
+  if (parsedProcedureId <= 0) {
+    throw new Error("Invalid procedure.");
+  }
+
+  await repository.setProcedureFavorite(user.id, parsedProcedureId, favorite);
+
+  revalidateAppData();
+}
+
 export async function deleteProcedureAction(procedureId: number | string) {
   const { activeWorkspace, user } = await requireWorkspaceContext();
   const repository = getProceduresRepository();

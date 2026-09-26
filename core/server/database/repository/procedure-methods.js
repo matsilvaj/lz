@@ -663,6 +663,66 @@ export const procedureMethods = {
     }
   },
 
+  // Favoritos do usuário; o procedimento continua valendo por base.
+  async setProcedureFavorite(userId, procedureId, favorite, executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedProcedureId = parseNumber(procedureId);
+
+    if (!normalizedUserId || normalizedProcedureId <= 0) {
+      return false;
+    }
+
+    if (parseBoolean(favorite)) {
+      const { rowCount } = await executor.query(
+        `
+          INSERT INTO procedimentos_favoritos (user_id, procedimento_id)
+          SELECT $1, ph.id
+          FROM procedimentos_historico ph
+          WHERE ph.id = $2
+            AND ph.user_id = $1
+          ON CONFLICT DO NOTHING
+        `,
+        [normalizedUserId, normalizedProcedureId],
+      );
+
+      return rowCount > 0;
+    }
+
+    await executor.query(
+      "DELETE FROM procedimentos_favoritos WHERE user_id = $1 AND procedimento_id = $2",
+      [normalizedUserId, normalizedProcedureId],
+    );
+
+    return true;
+  },
+
+  async listFavoriteProcedureIds(userId, procedureIds = [], executor = this.db) {
+    const normalizedUserId = normalizeUserId(userId);
+    const ids = [
+      ...new Set(
+        (Array.isArray(procedureIds) ? procedureIds : [])
+          .map((id) => parseNumber(id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (!normalizedUserId || ids.length === 0) {
+      return [];
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT procedimento_id
+        FROM procedimentos_favoritos
+        WHERE user_id = $1
+          AND procedimento_id = ANY($2::bigint[])
+      `,
+      [normalizedUserId, ids],
+    );
+
+    return rows.map((row) => parseNumber(row.procedimento_id));
+  },
+
   async attachProcedureDetails(rows, executor = this.db) {
     const sourceRows = Array.isArray(rows) ? rows : [];
     const procedureIds = sourceRows
@@ -919,6 +979,15 @@ export const procedureMethods = {
       conditions.push(partnerCondition);
     }
 
+    if (parseBoolean(filters.onlyFavorites)) {
+      conditions.push(`EXISTS (
+          SELECT 1
+          FROM procedimentos_favoritos pf
+          WHERE pf.procedimento_id = procedimentos_historico.id
+            AND pf.user_id = $1
+        )`);
+    }
+
     if (dateFrom) {
       conditions.push(buildDateCondition(">=", addParam(dateFrom)));
     }
@@ -944,10 +1013,17 @@ export const procedureMethods = {
     const offsetPlaceholder = `$${rowParams.length}`;
     const { rows } = await executor.query(
       `
-        SELECT *
+        SELECT
+          procedimentos_historico.*,
+          EXISTS (
+          SELECT 1
+          FROM procedimentos_favoritos pf
+          WHERE pf.procedimento_id = procedimentos_historico.id
+            AND pf.user_id = $1
+        ) AS favorito
         FROM procedimentos_historico
         WHERE ${whereClause}
-        ORDER BY id DESC
+        ORDER BY favorito DESC, id DESC
         LIMIT ${limitPlaceholder}
         OFFSET ${offsetPlaceholder}
       `,

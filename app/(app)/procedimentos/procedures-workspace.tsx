@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Star,
   UserRound,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -33,6 +34,7 @@ import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { DatePickerField } from "../_components/date-picker-field";
+import { ProcedureFavoriteToggle } from "../_components/procedure-favorite-toggle";
 import {
   FilterChip,
   FilterSection,
@@ -76,6 +78,7 @@ type ProcedureRow = {
   valor_da_freebet: number;
   condicao_freebet: string;
   status_procedimento: string;
+  favorito?: boolean;
   entradas?: Array<{
     escopo: string;
     tipo_entrada: string;
@@ -109,6 +112,7 @@ type ProceduresWorkspaceProps = {
     statuses: string[];
     multiples: string[];
     partners: string[];
+    onlyFavorites: boolean;
     dateFrom: string;
     dateTo: string;
   };
@@ -345,6 +349,7 @@ export function ProceduresWorkspace({
   const selectedStatuses = filters.statuses;
   const selectedMultiples = filters.multiples;
   const selectedPartners = filters.partners;
+  const onlyFavorites = filters.onlyFavorites;
   const dateFrom = filters.dateFrom;
   const dateTo = filters.dateTo;
   const sharedProcedureParam = searchParams.get(PROCEDURE_SHARE_PARAM) ?? "";
@@ -396,6 +401,7 @@ export function ProceduresWorkspace({
     selectedStatuses.length +
     selectedMultiples.length +
     selectedPartners.length +
+    (onlyFavorites ? 1 : 0) +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
   const hasAnyFilter = hasSearchFilter || activeFiltersCount > 0;
@@ -457,6 +463,13 @@ export function ProceduresWorkspace({
     );
   }
 
+  function toggleOnlyFavorites() {
+    updateParams((params) => {
+      setSingleParam(params, "favorites", onlyFavorites ? "" : "1");
+      params.delete("page");
+    });
+  }
+
   function updateDateFilter(key: "from" | "to", value: string) {
     updateParams((params) => {
       setSingleParam(params, key, value);
@@ -483,7 +496,7 @@ export function ProceduresWorkspace({
     }
 
     updateParams((params) => {
-      for (const key of ["q", "type", "house", "status", "multiple", "partner", "from", "to", "page"]) {
+      for (const key of ["q", "type", "house", "status", "multiple", "partner", "favorites", "from", "to", "page"]) {
         params.delete(key);
       }
     });
@@ -626,6 +639,19 @@ export function ProceduresWorkspace({
           onReset={clearFilters}
           title="Procedimentos"
         >
+          <FilterSection title="Favoritos">
+            <div className="flex flex-wrap gap-2">
+              <FilterChip active={onlyFavorites} onClick={toggleOnlyFavorites}>
+                <Star
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 text-amber-300"
+                  fill={onlyFavorites ? "currentColor" : "none"}
+                />
+                Só favoritos
+              </FilterChip>
+            </div>
+          </FilterSection>
+
           <FilterSection title="Período">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-2 text-sm">
@@ -852,7 +878,10 @@ export function ProceduresWorkspace({
                       </div>
                     </div>
 
-                    <ProcedureRowActions bookmakers={bookmakers} procedure={procedure} />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ProcedureFavoriteToggle procedure={procedure} />
+                      <ProcedureRowActions bookmakers={bookmakers} procedure={procedure} />
+                    </div>
                   </div>
 
                   <div className="mt-3 space-y-1.5 text-sm">
@@ -931,7 +960,8 @@ export function ProceduresWorkspace({
                         {formatCurrency(resultValue)}
                       </td>
                       <td className="px-3 py-4">
-                        <div className="flex justify-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <ProcedureFavoriteToggle procedure={procedure} />
                           <ProcedureRowActions
                             bookmakers={bookmakers}
                             procedure={procedure}

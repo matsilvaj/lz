@@ -113,7 +113,14 @@ export const reportMethods = {
     );
     const { rows } = await executor.query(
       `
-        SELECT *
+        SELECT
+          procedimentos_historico.*,
+          EXISTS (
+            SELECT 1
+            FROM procedimentos_favoritos pf
+            WHERE pf.procedimento_id = procedimentos_historico.id
+              AND pf.user_id = $1
+          ) AS favorito
         FROM procedimentos_historico
         WHERE user_id = $1
           AND base_id = $2

@@ -12,6 +12,7 @@ import {
   ProcedureDateDisplay,
   ProcedureHousesDisplay,
 } from "../_components/procedure-result-display";
+import { ProcedureFavoriteToggle } from "../_components/procedure-favorite-toggle";
 import { EmptyState, StatusTag, formatCurrency } from "../_components/ui";
 import {
   buildProcedureDefaultValues,
@@ -72,6 +73,7 @@ type HistoryOperation = {
   condicao_freebet: string;
   bateu_duplo: boolean;
   status_procedimento: string;
+  favorito?: boolean;
   entradas?: HistoryEntry[];
   resultados?: HistoryResult[];
 };
@@ -292,9 +294,11 @@ export function HistoryWorkspace({
                       </div>
 
                       <div
+                        className="flex items-center gap-1.5"
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
+                        <ProcedureFavoriteToggle procedure={operation} />
                         <ProcedureRowActions
                           bookmakers={bookmakers}
                           onViewDetails={() => openOperationDetails(operation)}
@@ -395,10 +399,11 @@ export function HistoryWorkspace({
                         </td>
                         <td className="px-3 py-4">
                           <div
-                            className="flex justify-center"
+                            className="flex items-center justify-center gap-1.5"
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}
                           >
+                            <ProcedureFavoriteToggle procedure={operation} />
                             <ProcedureRowActions
                               bookmakers={bookmakers}
                               onViewDetails={() => openOperationDetails(operation)}

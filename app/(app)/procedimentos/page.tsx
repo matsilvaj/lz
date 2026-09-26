@@ -40,6 +40,7 @@ export default async function ProceduresPage({
     multiples: getAllowedSearchParamValues(params.multiple, ["2", "3", "4"]),
     // "me" = procedimentos em que o usuário participa; números = ids de parceiros.
     partners: getSearchParamValues(params.partner).filter((value) => /^(me|\d{1,12})$/u.test(value)),
+    onlyFavorites: getSearchParamValue(params.favorites) === "1",
     dateFrom: getSearchParamValue(params.from),
     dateTo: getSearchParamValue(params.to),
     page: Number(getSearchParamValue(params.page)),
@@ -57,6 +58,7 @@ export default async function ProceduresPage({
         statuses: filters.statuses,
         multiples: filters.multiples,
         partners: filters.partners,
+        onlyFavorites: filters.onlyFavorites,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       }}
