@@ -215,7 +215,8 @@ export function SportsBetFields({
       ) : null}
 
       {configOpen ? (
-        <div className="grid min-w-0 items-stretch gap-3 sm:col-span-2 sm:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+        <div className="min-w-0 space-y-3 sm:col-span-2">
+          <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-3">
           <label className={configFieldClass}>
             <span className="text-[var(--text-muted)]">Aumento (%)</span>
             <input
@@ -248,9 +249,11 @@ export function SportsBetFields({
               value={cashbackValue}
             />
           </label>
+          </div>
 
+          <div className="flex flex-col gap-2 px-1">
           <label
-            className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-36 2xl:justify-center"
+            className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]"
             title="A casa só paga o cashback quando esta aposta perde: se ela ganhar, o resultado e o mesmo que seria sem cashback e o credito conta apenas nos cenarios das outras casas."
           >
             <input
@@ -261,10 +264,10 @@ export function SportsBetFields({
               }
               type="checkbox"
             />
-            <span>Cashback so na derrota</span>
+            <span>Cashback só na derrota</span>
           </label>
 
-          <label className="inline-flex min-h-[56px] items-center gap-2 px-1 text-sm text-[var(--text-muted)] 2xl:min-h-[84px] 2xl:min-w-28 2xl:justify-center">
+          <label className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]">
             <input
               checked={freebetChecked}
               className="lz-checkbox"
@@ -273,6 +276,7 @@ export function SportsBetFields({
             />
             <span>Freebet</span>
           </label>
+          </div>
         </div>
       ) : null}
     </>

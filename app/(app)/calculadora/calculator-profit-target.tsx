@@ -22,6 +22,10 @@ function getProfitTargetLabel(line: CalculatorLine) {
       : formatCurrency(toNumber(line.targetValue));
   }
 
+  if (line.targetMode === "valor") {
+    return "Definir";
+  }
+
   return "Normal";
 }
 
@@ -48,9 +52,8 @@ export function ProfitTargetPanel({
     !line.stakeEdited ||
     line.children.some((child) => !child.stakeEdited);
   const options: Array<{ mode: ProfitTargetMode; label: string }> = [
-    { mode: "normal", label: "Lucro normal" },
     { mode: "zerar", label: "Zerar lucro" },
-    { mode: "valor", label: "Deixar lucro" },
+    { mode: "valor", label: "Definir Lucro" },
   ];
 
   return (
@@ -87,9 +90,6 @@ export function ProfitTargetPanel({
 
       {open ? (
         <div className="mt-3 space-y-1.5">
-          <p className="text-xs text-[var(--text-dim)]">
-            Quanto de lucro esta casa deve ficar?
-          </p>
           {options.map((option) => {
             const selected = line.targetMode === option.mode;
 
@@ -105,10 +105,13 @@ export function ProfitTargetPanel({
                 <label className="flex cursor-pointer items-center gap-2.5">
                   <input
                     checked={selected}
-                    className="accent-[#ff77a3]"
-                    name={`profit-target-${index}`}
-                    onChange={() => onChange({ targetMode: option.mode })}
-                    type="radio"
+                    className="lz-checkbox"
+                    name={`profit-target-${index}-${option.mode}`}
+                    // Marcar troca o alvo; desmarcar volta para o lucro normal.
+                    onChange={() =>
+                      onChange({ targetMode: selected ? "normal" : option.mode })
+                    }
+                    type="checkbox"
                   />
                   <span className="text-[var(--text-secondary)]">{option.label}</span>
                 </label>
