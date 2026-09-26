@@ -719,31 +719,8 @@ export function CalculatorSelectionDock({
             </p>
           ) : null}
 
-          <label className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2">
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
-              {conversionContext ? "Freebet" : "Stake"}
-            </span>
-            <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">R$</span>
-            <input
-              className="min-w-0 flex-1 border-0 bg-transparent text-right text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:text-[var(--text-secondary)]"
-              disabled={Boolean(conversionContext)}
-              inputMode="decimal"
-              onChange={(event) => {
-                const next = sanitizeStakeInput(event.target.value);
-                setStakeInput(next);
-                writeDockStake(next);
-              }}
-              placeholder="0"
-              value={
-                conversionContext
-                  ? String(conversionContext.freebetValue ?? 0)
-                  : stakeInput
-              }
-            />
-          </label>
-
           {/* No máximo 3 odds: tudo cabe sem rolagem. */}
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-3 space-y-1.5">
             {orderedVisibleSelections.slice(0, 3).map((selection) => (
               <div
                 className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.035] px-3 py-2"
@@ -792,8 +769,31 @@ export function CalculatorSelectionDock({
             ))}
           </div>
 
+          <label className="mt-2 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2">
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+              {conversionContext ? "Freebet" : "Stake"}
+            </span>
+            <span className="shrink-0 text-xs font-semibold text-[var(--text-secondary)]">R$</span>
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent text-right text-sm font-semibold text-white outline-none placeholder:text-[var(--text-dim)] disabled:text-[var(--text-secondary)]"
+              disabled={Boolean(conversionContext)}
+              inputMode="decimal"
+              onChange={(event) => {
+                const next = sanitizeStakeInput(event.target.value);
+                setStakeInput(next);
+                writeDockStake(next);
+              }}
+              placeholder="0"
+              value={
+                conversionContext
+                  ? String(conversionContext.freebetValue ?? 0)
+                  : stakeInput
+              }
+            />
+          </label>
+
           {calculation || conversionContext ? (
-            <div className="mt-3 space-y-1.5 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2 text-xs font-semibold">
+            <div className="mt-2 space-y-1.5 rounded-2xl border border-white/8 bg-white/[0.028] px-3 py-2 text-xs font-semibold">
               {calculation ? (
                 <>
                   <div className="flex items-center justify-between gap-3">
