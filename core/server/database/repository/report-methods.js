@@ -17,6 +17,7 @@ import {
   buildPartnerFilterCondition,
   buildRealProfitSql,
   normalizePartnerFilter,
+  normalizeTextArray,
   normalizeUserId,
 } from "./helpers.js";
 
@@ -84,6 +85,162 @@ export const reportMethods = {
       profit: parseNumber(row.profit),
       count: parseNumber(row.count),
     }));
+  },
+
+  // Operações do histórico por período (dias, mês, ano ou tudo), com filtros de
+  // parceiro, tipo e casa. O período segue o mesmo formato usado no dashboard.
+  async listHistoryOperations(
+    period,
+    userId,
+    workspaceId,
+    {
+      houses = [],
+      multiples = [],
+      onlyFavorites = false,
+      partners = [],
+      statuses = [],
+      types = [],
+    } = {},
+    executor = this.db,
+  ) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedWorkspaceId = parseNumber(workspaceId);
+
+    if (!normalizedUserId || normalizedWorkspaceId <= 0) {
+      return [];
+    }
+
+    const params = [normalizedUserId, normalizedWorkspaceId];
+    const addParam = (value) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const conditions = ["user_id = $1", "base_id = $2"];
+    const periodType = parseText(period?.type);
+    const periodValue = parseText(period?.value);
+    const dateKeySql = `
+      CASE
+        WHEN data_operacao ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+          THEN substring(data_operacao FROM 7 FOR 4) || substring(data_operacao FROM 4 FOR 2) || substring(data_operacao FROM 1 FOR 2)
+        ELSE ''
+      END
+    `;
+
+    if (["day", "days", "range"].includes(periodType)) {
+      const startKey = parseText(period?.startKey);
+      const endKey = parseText(period?.endKey);
+
+      if (!startKey || !endKey) {
+        return [];
+      }
+
+      conditions.push(
+        `${dateKeySql} BETWEEN ${addParam(startKey)} AND ${addParam(endKey)}`,
+      );
+    } else if (periodType === "month" && periodValue) {
+      conditions.push(`
+        (
+          mes_referencia = ${addParam(periodValue)}
+          OR (
+            (mes_referencia IS NULL OR mes_referencia = '')
+            AND data_operacao ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+            AND substring(data_operacao FROM 4 FOR 7) = $${params.length}
+          )
+        )
+      `);
+    } else if (periodType === "year" && periodValue) {
+      conditions.push(
+        `substring(mes_referencia FROM 4 FOR 4) = ${addParam(periodValue)}`,
+      );
+    }
+
+    const normalizedTypes = normalizeTextArray(types);
+
+    if (normalizedTypes.length > 0) {
+      conditions.push(`tipo_procedimento = ANY(${addParam(normalizedTypes)}::text[])`);
+    }
+
+    const normalizedHouses = normalizeTextArray(houses);
+
+    if (normalizedHouses.length > 0) {
+      conditions.push(
+        `casas_envolvidas ILIKE ANY(${addParam(
+          normalizedHouses.map((house) => `%${house}%`),
+        )}::text[])`,
+      );
+    }
+
+    const normalizedStatuses = normalizeTextArray(statuses);
+
+    if (normalizedStatuses.length > 0) {
+      conditions.push(
+        `status_procedimento = ANY(${addParam(normalizedStatuses)}::text[])`,
+      );
+    }
+
+    const normalizedMultiples = [
+      ...new Set(
+        normalizeTextArray(multiples)
+          .map((value) => Number(value))
+          .filter((value) => value >= 2 && value <= 4),
+      ),
+    ];
+
+    if (normalizedMultiples.length > 0) {
+      conditions.push(`
+        EXISTS (
+          SELECT 1
+          FROM procedimentos_resultados pr
+          WHERE pr.procedimento_id = procedimentos_historico.id
+            AND pr.user_id = $1
+            AND pr.base_id = $2
+            AND pr.resultado_chave <> 'defeat'
+          GROUP BY pr.escopo
+          HAVING LEAST(COUNT(*), 4) = ANY(${addParam(normalizedMultiples)}::int[])
+        )
+      `);
+    }
+
+    if (onlyFavorites) {
+      conditions.push(`
+        EXISTS (
+          SELECT 1
+          FROM procedimentos_favoritos pf
+          WHERE pf.procedimento_id = procedimentos_historico.id
+            AND pf.user_id = $1
+        )
+      `);
+    }
+
+    const partnerCondition = buildPartnerFilterCondition(
+      "procedimentos_historico",
+      normalizePartnerFilter(partners),
+      addParam,
+    );
+
+    if (partnerCondition) {
+      conditions.push(partnerCondition);
+    }
+
+    const { rows } = await executor.query(
+      `
+        SELECT
+          procedimentos_historico.*,
+          EXISTS (
+            SELECT 1
+            FROM procedimentos_favoritos pf
+            WHERE pf.procedimento_id = procedimentos_historico.id
+              AND pf.user_id = $1
+          ) AS favorito
+        FROM procedimentos_historico
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY favorito DESC, id DESC
+      `,
+      params,
+    );
+
+    const rowsWithDetails = await this.attachProcedureDetails(rows, executor);
+    return rowsWithDetails.map((row) => enrichProcedure(row));
   },
 
   async listHistoryOperationsByMonth(

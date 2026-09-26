@@ -5,7 +5,6 @@ import {
   PROCEDURE_STATUS_DONE,
   PROCEDURE_STATUS_PENDING,
   PROCEDURE_STATUSES,
-  PROCEDURE_TYPES,
 } from "@/core";
 import {
   CheckCircle2,
@@ -32,6 +31,10 @@ import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { DatePickerField } from "../_components/date-picker-field";
+import {
+  getProcedureTypeLabel,
+  PROCEDURE_TYPE_FILTER_OPTIONS,
+} from "../_components/procedure-type-filters";
 import { MultiSelectFilter } from "../_components/multi-select-filter";
 import { PartnerFilterSelect } from "../_components/partner-filter-select";
 import { ProcedureFavoriteToggle } from "../_components/procedure-favorite-toggle";
@@ -126,51 +129,9 @@ type ProceduresWorkspaceProps = {
   procedures: ProcedureRow[];
 };
 
-const PROCEDURE_TYPE_LABELS: Record<string, string> = {
-  "Tentativa de Duplo": "Tentativa de DG",
-  "Coletar Freebet": "Freebet",
-  "Converter Freebet": "Freebet",
-};
-const FREEBET_FILTER_TYPES = ["Coletar Freebet", "Converter Freebet"];
-const PROCEDURE_TYPE_FILTER_OPTIONS = PROCEDURE_TYPES.reduce<
-  Array<{ key: string; label: string; values: string[] }>
->((options, type) => {
-  if (FREEBET_FILTER_TYPES.includes(type)) {
-    if (!options.some((option) => option.key === "freebet")) {
-      options.push({
-        key: "freebet",
-        label: "Freebet",
-        values: FREEBET_FILTER_TYPES,
-      });
-    }
-
-    return options;
-  }
-
-  if (type === "Cassino") {
-    options.push({
-      key: "casino",
-      label: "Cassino",
-      values: [...CASINO_PROCEDURE_TYPES],
-    });
-    return options;
-  }
-
-  options.push({
-    key: type,
-    label: PROCEDURE_TYPE_LABELS[type] ?? type,
-    values: [type],
-  });
-
-  return options;
-}, []);
 
 function getProcedureStatusLabel(status: string | null | undefined) {
   return status?.trim() || PROCEDURE_STATUS_DONE;
-}
-
-function getProcedureTypeLabel(type: string) {
-  return PROCEDURE_TYPE_LABELS[type] ?? type;
 }
 
 function hasProcedureScopeResult(procedure: ProcedureRow, scope: string) {
