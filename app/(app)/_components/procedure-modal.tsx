@@ -10,6 +10,7 @@ import {
   CornerDownRight,
   Plus,
   Scissors,
+  Target,
 } from "lucide-react";
 import {
   useEffect,
@@ -40,6 +41,7 @@ import {
   type ProcedureShareResultDetail,
   type ProcedureShareValues,
 } from "./procedure-share-types";
+import { formatDraftNumber } from "@/lib/format";
 import { saveProcedureAction, updateProcedureAction } from "../procedure-actions";
 
 import {
@@ -56,7 +58,14 @@ import {
 } from "./procedure-house-picker";
 import {
   calculateSportsProfit,
+  solveProfitTargetStakes,
 } from "./procedure-sports-profit";
+import {
+  PROFIT_TARGET_DEFAULT,
+  ProfitTargetOptions,
+  toProfitTargetInput,
+  type ProfitTargetValue,
+} from "./profit-target-control";
 import {
   normalizeProcedureType,
   PROCEDURE_TYPE_MAX_LENGTH,
@@ -620,6 +629,11 @@ export function ProcedureModal({
   const [entryProfitValue, setEntryProfitValue] = useState(
     defaultValues?.entryValue === undefined ? "" : String(defaultValues.entryValue),
   );
+  // Lucro alvo por casa: chave "secao:resultado" (a casa principal e cada proteção).
+  const [profitTargets, setProfitTargets] = useState<
+    Record<string, ProfitTargetValue>
+  >({});
+  const [profitTargetOpen, setProfitTargetOpen] = useState<Record<string, boolean>>({});
   const [primaryStake, setPrimaryStake] = useState(
     defaultValues?.primaryStake ??
       (isFreebetProcedureType(initialProcedureType) ? initialFreebetValueInput : ""),
@@ -859,6 +873,67 @@ export function ProcedureModal({
       getActiveChildren(collectionChildren, collectionProtectionKeys, true),
     ),
   ];
+  // Casas com lucro alvo: o stake vem do cálculo, como na calculadora.
+  function getSectionProfitTargets(
+    section: ChildSection,
+    entries: typeof sportEntries,
+    keys: number[],
+  ) {
+    const parentIds = ["principal", ...keys.map(getProtectionResultId)];
+
+    return entries.map((entry, index) =>
+      index < parentIds.length
+        ? toProfitTargetInput(
+            profitTargets[`${section}:${parentIds[index] ?? ""}`],
+          )
+        : { modo: "normal", valor: 0 },
+    );
+  }
+
+  function applyTargetStakes(
+    entries: typeof sportEntries,
+    stakes: Map<number, number>,
+  ) {
+    return entries.map((entry, index) => {
+      const stake = stakes.get(index);
+
+      return stake === undefined
+        ? entry
+        : { ...entry, stakeInput: formatDraftNumber(stake) };
+    });
+  }
+
+  const sportTargetStakes = solveProfitTargetStakes(
+    sportEntries,
+    getSectionProfitTargets("main", sportEntries, protectionKeys),
+  );
+  const collectionTargetStakes = solveProfitTargetStakes(
+    collectionEntries,
+    getSectionProfitTargets("collection", collectionEntries, collectionProtectionKeys),
+  );
+  const sportEntriesWithTargets = applyTargetStakes(sportEntries, sportTargetStakes);
+  const collectionEntriesWithTargets = applyTargetStakes(
+    collectionEntries,
+    collectionTargetStakes,
+  );
+
+  function getTargetStake(section: ChildSection, index: number) {
+    const stakes = section === "main" ? sportTargetStakes : collectionTargetStakes;
+    const stake = stakes.get(index);
+
+    return stake === undefined ? null : formatDraftNumber(stake);
+  }
+
+  // O que é enviado precisa levar o stake calculado pelo lucro alvo.
+  function getProtectionDraftForSubmit(section: ChildSection, key: number, index: number) {
+    const draft = createProtectionDraft(
+      (section === "main" ? protectionDrafts : collectionProtectionDrafts)[key],
+    );
+    const stake = getTargetStake(section, index + 1);
+
+    return stake === null ? draft : { ...draft, stake };
+  }
+
   const hasSportsCalculationInput =
     hasChildInput(sportChildren) ||
     primaryStake.trim() !== "" ||
@@ -904,12 +979,12 @@ export function ProcedureModal({
     ) ||
     collectionResultSelections.length > 0;
   const calculatedSportsProfit = calculateSportsProfit(
-    sportEntries,
+    sportEntriesWithTargets,
     sportResultSelections,
   );
   const calculatedCollectionProfit = freebetCollectionBlocked
     ? 0
-    : calculateSportsProfit(collectionEntries, collectionResultSelections);
+    : calculateSportsProfit(collectionEntriesWithTargets, collectionResultSelections);
   const sportsResultAmount = normalizeCurrencyAmount(
     hasSportsCalculationInput
       ? calculatedSportsProfit
@@ -1370,7 +1445,7 @@ export function ProcedureModal({
           includePrimaryHouse: true,
           houses: selectedHouses,
           primary: {
-            stake: primaryStake,
+            stake: getTargetStake("main", 0) ?? primaryStake,
             odd: primaryOdd,
             side: primarySide,
             layOdd: primaryLayOdd,
@@ -1381,9 +1456,9 @@ export function ProcedureModal({
             freebet: primaryFreebet,
             partnerId: primaryPartnerId,
           },
-          protections: (isNormalBet ? [] : protectionKeys).map((key) => ({
+          protections: (isNormalBet ? [] : protectionKeys).map((key, index) => ({
             key,
-            draft: createProtectionDraft(protectionDrafts[key]),
+            draft: getProtectionDraftForSubmit("main", key, index),
           })),
           children: sportChildren,
           operationDate: operationDateForSubmit,
@@ -1403,7 +1478,7 @@ export function ProcedureModal({
           includePrimaryHouse: false,
           houses: selectedHouses,
           primary: {
-            stake: primaryStake,
+            stake: getTargetStake("main", 0) ?? primaryStake,
             odd: primaryOdd,
             side: primarySide,
             layOdd: primaryLayOdd,
@@ -1414,9 +1489,9 @@ export function ProcedureModal({
             freebet: primaryFreebet,
             partnerId: primaryPartnerId,
           },
-          protections: protectionKeys.map((key) => ({
+          protections: protectionKeys.map((key, index) => ({
             key,
-            draft: createProtectionDraft(protectionDrafts[key]),
+            draft: getProtectionDraftForSubmit("main", key, index),
           })),
           children: sportChildren,
           operationDate: conversionDateForSubmit,
@@ -1435,7 +1510,7 @@ export function ProcedureModal({
           includePrimaryHouse: true,
           houses: [selectedFreebetHouse, ...collectionHouses.slice(1)],
           primary: {
-            stake: collectionPrimaryStake,
+            stake: getTargetStake("collection", 0) ?? collectionPrimaryStake,
             odd: collectionPrimaryOdd,
             side: collectionPrimarySide,
             layOdd: collectionPrimaryLayOdd,
@@ -1446,9 +1521,9 @@ export function ProcedureModal({
             freebet: collectionPrimaryFreebet,
             partnerId: collectionPrimaryPartnerId,
           },
-          protections: collectionProtectionKeys.map((key) => ({
+          protections: collectionProtectionKeys.map((key, index) => ({
             key,
-            draft: createProtectionDraft(collectionProtectionDrafts[key]),
+            draft: getProtectionDraftForSubmit("collection", key, index),
           })),
           children: collectionChildren,
           operationDate: collectionDateForSubmit,
@@ -1627,8 +1702,10 @@ export function ProcedureModal({
   function renderChildEntries(section: ChildSection, parent: string) {
     const children = getChildRecord(section)[parent] ?? [];
     const canAdd = !isReadOnly && children.length < MAX_CHILD_ENTRIES;
+    const targetKey = getProfitTargetKey(section, parent);
+    const target = getProfitTarget(section, parent);
 
-    if (children.length === 0 && !canAdd) {
+    if (children.length === 0 && !canAdd && isReadOnly) {
       return null;
     }
 
@@ -1732,16 +1809,50 @@ export function ProcedureModal({
           );
         })}
 
-        {canAdd ? (
-          <button
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-white/20 hover:text-white"
-            onClick={() => addChildEntry(section, parent)}
-            type="button"
-          >
-            <Scissors aria-hidden="true" className="h-3.5 w-3.5" />
-            <span>Dividir</span>
-            <Plus aria-hidden="true" className="h-3 w-3" />
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canAdd ? (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/4 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-white/20 hover:text-white"
+              onClick={() => addChildEntry(section, parent)}
+              type="button"
+            >
+              <Scissors aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Dividir</span>
+              <Plus aria-hidden="true" className="h-3 w-3" />
+            </button>
+          ) : null}
+
+          {!isReadOnly ? (
+            <button
+              aria-expanded={Boolean(profitTargetOpen[targetKey])}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                target.mode === "normal"
+                  ? "border-white/10 bg-white/4 text-[var(--text-secondary)] hover:border-white/20 hover:text-white"
+                  : "border-[rgba(255,119,163,0.4)] bg-[rgba(216,31,89,0.12)] text-white"
+              }`}
+              onClick={() =>
+                setProfitTargetOpen((current) => ({
+                  ...current,
+                  [targetKey]: !current[targetKey],
+                }))
+              }
+              type="button"
+            >
+              <Target aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Lucro alvo</span>
+              {target.mode === "normal" ? null : (
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-soft)]" />
+              )}
+            </button>
+          ) : null}
+        </div>
+
+        {!isReadOnly && profitTargetOpen[targetKey] ? (
+          <ProfitTargetOptions
+            name={`procedure-profit-target-${section}-${parent}`}
+            onChange={(patch) => updateProfitTarget(section, parent, patch)}
+            target={target}
+          />
         ) : null}
       </div>
     );
@@ -2034,6 +2145,27 @@ export function ProcedureModal({
       delete next[`collection-protection-${key}`];
       return next;
     });
+  }
+
+  function getProfitTargetKey(section: ChildSection, resultId: string) {
+    return `${section}:${resultId}`;
+  }
+
+  function getProfitTarget(section: ChildSection, resultId: string) {
+    return profitTargets[getProfitTargetKey(section, resultId)] ?? PROFIT_TARGET_DEFAULT;
+  }
+
+  function updateProfitTarget(
+    section: ChildSection,
+    resultId: string,
+    patch: Partial<ProfitTargetValue>,
+  ) {
+    const key = getProfitTargetKey(section, resultId);
+
+    setProfitTargets((current) => ({
+      ...current,
+      [key]: { ...(current[key] ?? PROFIT_TARGET_DEFAULT), ...patch },
+    }));
   }
 
   function setProtectionDraftValue<K extends keyof ProtectionDraft>(
@@ -2665,7 +2797,9 @@ export function ProcedureModal({
                             <SportsBetFields
                               stakeName="collectionPrimaryStake"
                               oddName="collectionPrimaryOdd"
-                              stakeValue={collectionPrimaryStake}
+                              stakeValue={
+                                getTargetStake("collection", 0) ?? collectionPrimaryStake
+                              }
                               oddValue={collectionPrimaryOdd}
                               side={collectionPrimarySide}
                               layOddValue={collectionPrimaryLayOdd}
@@ -2753,7 +2887,10 @@ export function ProcedureModal({
                                 <SportsBetFields
                                   stakeName="collectionProtectionStake"
                                   oddName="collectionProtectionOdd"
-                                  stakeValue={collectionProtectionDrafts[key]?.stake ?? ""}
+                                  stakeValue={
+                                    getTargetStake("collection", index + 1) ??
+                                    (collectionProtectionDrafts[key]?.stake ?? "")
+                                  }
                                   oddValue={collectionProtectionDrafts[key]?.odd ?? ""}
                                   side={collectionProtectionDrafts[key]?.side ??
                                   DEFAULT_BET_SIDE}
@@ -2997,7 +3134,7 @@ export function ProcedureModal({
                         <SportsBetFields
                           stakeName="primaryStake"
                           oddName="primaryOdd"
-                          stakeValue={primaryStake}
+                          stakeValue={getTargetStake("main", 0) ?? primaryStake}
                           oddValue={primaryOdd}
                           side={primarySide}
                           layOddValue={primaryLayOdd}
@@ -3082,7 +3219,10 @@ export function ProcedureModal({
                                 <SportsBetFields
                                   stakeName="protectionStake"
                                   oddName="protectionOdd"
-                                  stakeValue={protectionDrafts[key]?.stake ?? ""}
+                                  stakeValue={
+                                    getTargetStake("main", index + 1) ??
+                                    (protectionDrafts[key]?.stake ?? "")
+                                  }
                                   oddValue={protectionDrafts[key]?.odd ?? ""}
                                   side={protectionDrafts[key]?.side ??
                                   DEFAULT_BET_SIDE}

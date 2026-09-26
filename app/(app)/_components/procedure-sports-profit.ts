@@ -31,6 +31,88 @@ function calculateLayReturn(
   );
 }
 
+type ProfitTargetEntry = {
+  resultId: SportResultSelection;
+  stakeInput: string;
+  oddInput: string;
+  side: BetSide;
+  layOddInput?: string;
+  commissionInput?: string;
+  increaseInput?: string;
+  cashbackInput?: string;
+  cashbackLossOnly?: boolean;
+  freebet?: boolean;
+};
+
+// Stakes das casas com lucro alvo, a partir do stake já digitado nas outras.
+// Mesma conta da calculadora; devolve o valor por casa, sem arredondar para cima.
+export function solveProfitTargetStakes(
+  entries: ProfitTargetEntry[],
+  targets: Array<{ modo: string; valor: number }>,
+) {
+  const lines = entries.map((entry, index) => {
+    const side = entry.side === "lay" ? "lay" : "back";
+    const layOddInput = entry.layOddInput ?? "";
+    const odd =
+      side === "lay"
+        ? parseDecimalInput(layOddInput.trim() ? layOddInput : entry.oddInput)
+        : parseDecimalInput(entry.oddInput);
+    const hasTarget = (targets[index]?.modo ?? "normal") !== "normal";
+    const riskValue = hasTarget ? 0 : parseDecimalInput(entry.stakeInput);
+    const stake =
+      side === "lay" && odd > 1 ? riskValue / (odd - 1) : riskValue;
+
+    return {
+      odd,
+      stake,
+      tipo: side === "lay" ? "L" : "B",
+      responsabilidade: side === "lay" ? riskValue : 0,
+      aumento_percentual: parseDecimalInput(entry.increaseInput ?? ""),
+      comissao_percentual: parseDecimalInput(entry.commissionInput ?? ""),
+      cashback_percentual: parseDecimalInput(entry.cashbackInput ?? ""),
+      cashback_apenas_perda: Boolean(entry.cashbackLossOnly),
+      freebet: Boolean(entry.freebet),
+      lucro_alvo: targets[index] ?? { modo: "normal", valor: 0 },
+    };
+  });
+  const baseIndex = lines.findIndex(
+    (line, index) =>
+      line.stake > 0 && (targets[index]?.modo ?? "normal") === "normal",
+  );
+
+  if (baseIndex < 0 || !lines.some((_, index) => (targets[index]?.modo ?? "normal") !== "normal")) {
+    return new Map<number, number>();
+  }
+
+  try {
+    const calculation = calculateSurebet(lines, baseIndex) as {
+      linhas?: Array<{ stake?: number; responsabilidade?: number }>;
+    };
+
+    return new Map(
+      entries.flatMap((entry, index) => {
+        if ((targets[index]?.modo ?? "normal") === "normal") {
+          return [];
+        }
+
+        const resultLine = calculation.linhas?.[index];
+        // No lay o campo guarda a responsabilidade, como o usuário digita.
+        const value = Number(
+          entry.side === "lay"
+            ? resultLine?.responsabilidade ?? 0
+            : resultLine?.stake ?? 0,
+        );
+
+        return Number.isFinite(value) && value > 0
+          ? ([[index, Math.round(value * 100) / 100]] as Array<[number, number]>)
+          : [];
+      }),
+    );
+  } catch {
+    return new Map<number, number>();
+  }
+}
+
 export function calculateSportsProfit(
   entries: Array<{
     resultId: SportResultSelection;

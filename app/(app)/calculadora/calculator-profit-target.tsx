@@ -4,10 +4,11 @@ import { Target } from "lucide-react";
 
 import { formatCurrency } from "../_components/ui";
 
+import { ProfitTargetOptions } from "../_components/profit-target-control";
+
 import {
   type CalculatorLine,
   OptionHint,
-  type ProfitTargetMode,
   toNumber,
 } from "./calculator-shared";
 
@@ -51,11 +52,6 @@ export function ProfitTargetPanel({
     isBaseLine ||
     !line.stakeEdited ||
     line.children.some((child) => !child.stakeEdited);
-  const options: Array<{ mode: ProfitTargetMode; label: string }> = [
-    { mode: "zerar", label: "Zerar lucro" },
-    { mode: "valor", label: "Definir Lucro" },
-  ];
-
   return (
     <div
       className={`rounded-[24px] border p-3 transition ${
@@ -89,66 +85,22 @@ export function ProfitTargetPanel({
       </button>
 
       {open ? (
-        <div className="mt-3 space-y-1.5">
-          {options.map((option) => {
-            const selected = line.targetMode === option.mode;
-
-            return (
-              <div
-                className={`rounded-2xl border px-3 py-2.5 text-sm transition ${
-                  selected
-                    ? "border-[rgba(255,119,163,0.4)] bg-[rgba(216,31,89,0.1)]"
-                    : "border-white/10 bg-white/4 hover:border-white/20"
-                }`}
-                key={option.mode}
-              >
-                <label className="flex cursor-pointer items-center gap-2.5">
-                  <input
-                    checked={selected}
-                    className="lz-checkbox"
-                    name={`profit-target-${index}-${option.mode}`}
-                    // Marcar troca o alvo; desmarcar volta para o lucro normal.
-                    onChange={() =>
-                      onChange({ targetMode: selected ? "normal" : option.mode })
-                    }
-                    type="checkbox"
-                  />
-                  <span className="text-[var(--text-secondary)]">{option.label}</span>
-                </label>
-
-                {selected && option.mode === "valor" ? (
-                  <div className="mt-2.5 flex gap-2">
-                    <input
-                      className="lz-input min-w-0 flex-1 rounded-xl px-3 py-2 text-sm text-white"
-                      onChange={(event) =>
-                        onChange({ targetValue: event.target.value })
-                      }
-                      placeholder={line.targetUnit === "%" ? "50" : "0,00"}
-                      step="0.01"
-                      type="number"
-                      value={line.targetValue}
-                    />
-                    <div className="flex shrink-0 rounded-xl border border-white/10 bg-white/4 p-0.5">
-                      {(["R$", "%"] as const).map((unit) => (
-                        <button
-                          className={`rounded-lg px-2.5 text-xs font-semibold transition ${
-                            line.targetUnit === unit
-                              ? "lz-button-primary"
-                              : "text-[var(--text-dim)] hover:text-white"
-                          }`}
-                          key={unit}
-                          onClick={() => onChange({ targetUnit: unit })}
-                          type="button"
-                        >
-                          {unit}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+        <div className="mt-3">
+          <ProfitTargetOptions
+            name={`profit-target-${index}`}
+            onChange={(patch) =>
+              onChange({
+                ...(patch.mode ? { targetMode: patch.mode } : {}),
+                ...(patch.unit ? { targetUnit: patch.unit } : {}),
+                ...(patch.value !== undefined ? { targetValue: patch.value } : {}),
+              })
+            }
+            target={{
+              mode: line.targetMode,
+              unit: line.targetUnit,
+              value: line.targetValue,
+            }}
+          />
         </div>
       ) : null}
 
