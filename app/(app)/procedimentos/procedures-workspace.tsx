@@ -27,13 +27,17 @@ import {
   useState,
   useTransition,
 } from "react";
-import { createPortal } from "react-dom";
 
 import { useScreenFilters } from "@/app/(app)/_components/use-screen-filters";
 import { useToast } from "@/app/_components/toast-provider";
 
 import { ConfirmationDialog } from "../_components/confirmation-dialog";
 import { DatePickerField } from "../_components/date-picker-field";
+import {
+  FilterChip,
+  FilterSection,
+  FiltersDialog,
+} from "../_components/filters-dialog";
 import { updateProcedureStatusAction } from "../procedure-actions";
 import { ProcedureModal } from "../_components/procedure-modal";
 import {
@@ -52,7 +56,6 @@ import {
   requestProcedureMenu,
 } from "./procedure-row-actions";
 import { isFreebetProcedure } from "@/lib/procedures";
-import { clamp } from "@/lib/format";
 import { getProfitClass } from "@/app/(app)/_components/ui";
 
 type ProcedureRow = {
@@ -333,16 +336,8 @@ export function ProceduresWorkspace({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [housesOpen, setHousesOpen] = useState(false);
   const [houseSearch, setHouseSearch] = useState("");
   const searchDebounceRef = useRef<number | null>(null);
-  const housesTriggerRef = useRef<HTMLButtonElement>(null);
-  const housesPopoverRef = useRef<HTMLDivElement>(null);
-  const [housesPopoverPosition, setHousesPopoverPosition] = useState({
-    left: 16,
-    top: 16,
-    width: 320,
-  });
   const deferredHouseSearch = useDeferredValue(houseSearch);
   const normalizedHouseSearch = deferredHouseSearch.trim().toLowerCase();
   const selectedTypes = filters.types;
@@ -393,60 +388,6 @@ export function ProceduresWorkspace({
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!housesOpen) {
-      return;
-    }
-
-    function syncPosition() {
-      const rect = housesTriggerRef.current?.getBoundingClientRect();
-
-      if (!rect) {
-        return;
-      }
-
-      const nextWidth = clamp(Math.max(rect.width, 320), 320, 420);
-      setHousesPopoverPosition({
-        left: clamp(rect.left, 16, window.innerWidth - nextWidth - 16),
-        top: rect.bottom + 12,
-        width: nextWidth,
-      });
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as Node;
-
-      if (
-        housesTriggerRef.current?.contains(target) ||
-        housesPopoverRef.current?.contains(target)
-      ) {
-        return;
-      }
-
-      setHousesOpen(false);
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setHousesOpen(false);
-      }
-    }
-
-    const animationFrame = window.requestAnimationFrame(syncPosition);
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("scroll", syncPosition, true);
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("scroll", syncPosition, true);
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [housesOpen]);
 
   const hasSearchFilter = filters.searchText.trim().length > 0;
   const activeFiltersCount =
@@ -679,12 +620,33 @@ export function ProceduresWorkspace({
       </div>
 
       {filtersOpen ? (
-        <div className="lz-panel grid gap-4 overflow-visible rounded-[28px] p-4 lg:grid-cols-[minmax(260px,420px)_auto_1fr]">
-          <div className="min-w-0 space-y-3 lg:order-1 lg:col-span-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Tipos</p>
-            </div>
+        <FiltersDialog
+          applyLabel="Ver resultados"
+          onClose={() => setFiltersOpen(false)}
+          onReset={clearFilters}
+          title="Procedimentos"
+        >
+          <FilterSection title="Período">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-2 text-sm">
+                <span className="text-[var(--text-muted)]">De</span>
+                <DatePickerField
+                  onChange={(value) => updateDateFilter("from", value)}
+                  value={dateFrom}
+                />
+              </label>
 
+              <label className="space-y-2 text-sm">
+                <span className="text-[var(--text-muted)]">Até</span>
+                <DatePickerField
+                  onChange={(value) => updateDateFilter("to", value)}
+                  value={dateTo}
+                />
+              </label>
+            </div>
+          </FilterSection>
+
+          <FilterSection title="Tipos">
             <div className="flex flex-wrap gap-2">
               {PROCEDURE_TYPE_FILTER_OPTIONS.map((option) => {
                 const active =
@@ -693,10 +655,8 @@ export function ProceduresWorkspace({
                     : option.values.every((value) => selectedTypes.includes(value));
 
                 return (
-                  <button
-                    className={`rounded-full px-3 py-2 text-sm transition ${
-                      active ? "lz-button-primary" : "lz-button-secondary"
-                    }`}
+                  <FilterChip
+                    active={active}
                     key={option.key}
                     onClick={() => {
                       if (active) {
@@ -716,216 +676,122 @@ export function ProceduresWorkspace({
                         ),
                       ]);
                     }}
-                    type="button"
                   >
                     {option.label}
-                  </button>
+                  </FilterChip>
                 );
               })}
             </div>
-          </div>
+          </FilterSection>
 
-          <div className="min-w-0 space-y-3 lg:order-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Status</p>
-            </div>
-
+          <FilterSection title="Status">
             <div className="flex flex-wrap gap-2">
-              {PROCEDURE_STATUSES.map((status) => {
-                const active = selectedStatuses.includes(status);
-
-                return (
-                  <button
-                    className={`rounded-full px-3 py-2 text-sm transition ${
-                      active ? "lz-button-primary" : "lz-button-secondary"
-                    }`}
-                    key={status}
-                    onClick={() =>
-                      toggleFilterValue("status", status, selectedStatuses)
-                    }
-                    type="button"
-                  >
-                    {status}
-                  </button>
-                );
-              })}
+              {PROCEDURE_STATUSES.map((status) => (
+                <FilterChip
+                  active={selectedStatuses.includes(status)}
+                  key={status}
+                  onClick={() => toggleFilterValue("status", status, selectedStatuses)}
+                >
+                  {status}
+                </FilterChip>
+              ))}
             </div>
-          </div>
+          </FilterSection>
 
-          <div className="min-w-0 space-y-3 lg:order-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Resultados múltiplos</p>
-            </div>
-
+          <FilterSection title="Resultados múltiplos">
             <div className="flex flex-wrap gap-2">
-              {MULTIPLE_OPTIONS.map((option) => {
-                const active = selectedMultiples.includes(option.value);
-
-                return (
-                  <button
-                    className={`rounded-full px-3 py-2 text-sm transition ${
-                      active ? "lz-button-primary" : "lz-button-secondary"
-                    }`}
-                    key={option.value}
-                    onClick={() =>
-                      toggleFilterValue("multiple", option.value, selectedMultiples)
-                    }
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+              {MULTIPLE_OPTIONS.map((option) => (
+                <FilterChip
+                  active={selectedMultiples.includes(option.value)}
+                  key={option.value}
+                  onClick={() =>
+                    toggleFilterValue("multiple", option.value, selectedMultiples)
+                  }
+                >
+                  {option.label}
+                </FilterChip>
+              ))}
             </div>
-          </div>
+          </FilterSection>
 
           {partners.length ? (
-            <div className="min-w-0 space-y-3 lg:order-3">
-              <p className="text-sm font-medium text-white">Parceiros</p>
+            <FilterSection title="Parceiros">
               <div className="flex flex-wrap gap-2">
-                {[{ value: "me", label: "Eu" }, ...partners.map((partner) => ({
-                  value: String(partner.id),
-                  label: partner.name,
-                }))].map((option) => {
-                  const active = selectedPartners.includes(option.value);
-
-                  return (
-                    <button
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm transition ${
-                        active ? "lz-button-primary" : "lz-button-secondary"
-                      }`}
-                      key={option.value}
-                      onClick={() =>
-                        toggleFilterValue("partner", option.value, selectedPartners)
-                      }
-                      type="button"
-                    >
-                      {option.value === "me" ? null : (
-                        <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
-                      )}
-                      {option.label}
-                    </button>
-                  );
-                })}
+                {[
+                  { value: "me", label: "Eu" },
+                  ...partners.map((partner) => ({
+                    value: String(partner.id),
+                    label: partner.name,
+                  })),
+                ].map((option) => (
+                  <FilterChip
+                    active={selectedPartners.includes(option.value)}
+                    key={option.value}
+                    onClick={() =>
+                      toggleFilterValue("partner", option.value, selectedPartners)
+                    }
+                  >
+                    {option.value === "me" ? null : (
+                      <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
+                    )}
+                    {option.label}
+                  </FilterChip>
+                ))}
               </div>
-            </div>
+            </FilterSection>
           ) : null}
 
-          <div className="min-w-0 space-y-3 lg:order-2">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Casas</p>
+          <FilterSection
+            action={
+              selectedHouses.length ? (
+                <button
+                  className="text-xs font-semibold text-[var(--text-dim)] transition hover:text-white"
+                  onClick={() => updateRepeatedFilter("house", [])}
+                  type="button"
+                >
+                  Limpar casas
+                </button>
+              ) : null
+            }
+            title={
+              selectedHouses.length
+                ? `Casas (${selectedHouses.length})`
+                : "Casas"
+            }
+          >
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
+              />
+              <input
+                className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
+                onChange={(event) => setHouseSearch(event.target.value)}
+                placeholder="Buscar casa..."
+                type="search"
+                value={houseSearch}
+              />
             </div>
 
-            <div className={housesOpen ? "z-30" : "z-10"}>
-              <button
-                className="lz-button-secondary w-full rounded-2xl px-4 py-3 text-left text-sm"
-                onClick={() => setHousesOpen((current) => !current)}
-                ref={housesTriggerRef}
-                type="button"
-              >
-                {selectedHouses.length > 0
-                  ? `${selectedHouses.length} casa(s) selecionada(s)`
-                  : "Selecionar casas"}
-              </button>
-
-              {housesOpen && typeof document !== "undefined"
-                ? createPortal(
-                    <div
-                      className="lz-floating-panel fixed z-[70] rounded-[26px] border border-white/10 bg-[rgba(17,8,14,0.98)] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
-                      ref={housesPopoverRef}
-                      style={{
-                        left: housesPopoverPosition.left,
-                        top: housesPopoverPosition.top,
-                        width: housesPopoverPosition.width,
-                      }}
-                    >
-                  <div className="relative">
-                    <Search
-                      aria-hidden="true"
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]"
-                    />
-                    <input
-                      className="lz-input w-full rounded-2xl py-3 pl-10 pr-3 text-sm"
-                      onChange={(event) => setHouseSearch(event.target.value)}
-                      placeholder="Buscar casa..."
-                      type="search"
-                      value={houseSearch}
-                    />
-                  </div>
-
-                  <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
-                    {visibleBookmakers.length > 0 ? (
-                      visibleBookmakers.map((bookmaker) => {
-                        const active = selectedHouses.includes(bookmaker);
-
-                        return (
-                          <button
-                            className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
-                              active ? "lz-button-primary" : "lz-button-secondary"
-                            }`}
-                            key={bookmaker}
-                            onClick={() =>
-                              toggleFilterValue("house", bookmaker, selectedHouses)
-                            }
-                            type="button"
-                          >
-                            <span>{bookmaker}</span>
-                            {active ? <span>Selecionada</span> : null}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <p className="px-1 py-2 text-sm text-[var(--text-muted)]">
-                        Nenhuma casa encontrada.
-                      </p>
-                    )}
-                  </div>
-                    </div>,
-                    document.body,
-                  )
-                : null}
-
-              {selectedHouses.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedHouses.map((house) => (
-                    <button
-                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-white/20"
-                      key={house}
-                      onClick={() => toggleFilterValue("house", house, selectedHouses)}
-                      type="button"
-                    >
-                      {house}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
+              {visibleBookmakers.length > 0 ? (
+                visibleBookmakers.map((bookmaker) => (
+                  <FilterChip
+                    active={selectedHouses.includes(bookmaker)}
+                    key={bookmaker}
+                    onClick={() => toggleFilterValue("house", bookmaker, selectedHouses)}
+                  >
+                    {bookmaker}
+                  </FilterChip>
+                ))
+              ) : (
+                <p className="px-1 py-2 text-sm text-[var(--text-muted)]">
+                  Nenhuma casa encontrada.
+                </p>
+              )}
             </div>
-          </div>
-
-          <div className="min-w-0 space-y-3 lg:order-4 lg:col-span-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Período</p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span className="text-[var(--text-muted)]">De</span>
-                <DatePickerField
-                  onChange={(value) => updateDateFilter("from", value)}
-                  value={dateFrom}
-                />
-              </label>
-
-              <label className="space-y-2 text-sm">
-                <span className="text-[var(--text-muted)]">Até</span>
-                <DatePickerField
-                  onChange={(value) => updateDateFilter("to", value)}
-                  value={dateTo}
-                />
-              </label>
-            </div>
-          </div>
-        </div>
+          </FilterSection>
+        </FiltersDialog>
       ) : null}
 
       <div className="lz-panel rounded-[30px] p-4 md:p-6">

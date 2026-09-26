@@ -61,6 +61,10 @@ const signalFiltersDialog = readFileSync(
   new URL("../app/(app)/monitor/_components/signal-filters-dialog.tsx", import.meta.url),
   "utf8",
 );
+const filtersDialog = readFileSync(
+  new URL("../app/(app)/_components/filters-dialog.tsx", import.meta.url),
+  "utf8",
+);
 const signalCard = readFileSync(
   new URL("../app/(app)/monitor/_components/signal-card.tsx", import.meta.url),
   "utf8",
@@ -203,7 +207,9 @@ test("duplo monitor filters and lists all requested PA classes", () => {
   // Filtros compartilhados entre Duplo, Semanal e Converter.
   assert.match(signalHelpers, /"all",\s*"pa_dois_lados",\s*"pa_um_lado",\s*"sem_pa"/);
   assert.match(signalFiltersDialog, /signalModeFilters\.map\(/);
-  assert.match(signalFiltersDialog, /createPortal\(/);
+  // A janela de filtros é a mesma de Procedimentos e Histórico.
+  assert.match(signalFiltersDialog, /<FiltersDialog/);
+  assert.match(filtersDialog, /createPortal\(/);
   assert.match(doubleMonitorUi, /<SignalFiltersDialog/);
   assert.match(duploEngine, /PA para os Dois lados/);
   assert.match(duploEngine, /PA para 1 dos lados/);
