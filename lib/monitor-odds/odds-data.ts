@@ -30,6 +30,8 @@ const ODDS_SNAPSHOT_COLUMNS = [
 const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 3;
 const DEFAULT_EVENT_LIMIT = 20;
+// A busca varre várias ligas: um limite baixo escondia jogos do time procurado.
+const DEFAULT_SEARCH_EVENT_LIMIT = 300;
 const DATE_RANGE_PAGE_SIZE = 200;
 // Teto de jogos por listagem, e o unico numero que precisa ser ajustado.
 //
@@ -343,7 +345,7 @@ function sanitizeSearchTerm(value: string) {
 }
 
 function normalizeLimit(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return DEFAULT_EVENT_LIMIT;
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_SEARCH_EVENT_LIMIT;
   return Math.min(Math.trunc(value), 50);
 }
 
@@ -456,7 +458,7 @@ function mergeEventWithSnapshot(
 
 async function searchOddsEventsUncached(
   search: string,
-  limit = DEFAULT_EVENT_LIMIT,
+  limit = DEFAULT_SEARCH_EVENT_LIMIT,
   fixturesVersion = "unknown",
 ) {
   void fixturesVersion;

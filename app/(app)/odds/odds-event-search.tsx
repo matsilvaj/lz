@@ -355,19 +355,6 @@ function getEventHref(event: OddsEvent, basePath: string) {
   return `${basePath}/${encodeURIComponent(event.fixture_id)}`;
 }
 
-function getDatePresetRange(preset: DateRangePreset) {
-  const start = getPresetDate(preset);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-
-  // Enviamos o intervalo com hora e fuso: só a data seria lida como meia-noite UTC
-  // e deixaria de fora os jogos da noite.
-  return {
-    from: start.toISOString(),
-    to: end.toISOString(),
-  };
-}
-
 function getEventsRequestParams(request: EventsRequest) {
   const params = new URLSearchParams();
 
@@ -1248,7 +1235,13 @@ export function OddsEventSearch({
   const { trendingRank } = useTrendingFixtures();
   const [availableDayKeys, setAvailableDayKeys] = useState<string[]>([]);
   const screenFilterState = useMemo(
-    () => ({ activeDatePreset, activeListSort, hiddenLeagueKeys, onlyFavorites }),
+    // Guarda "all" no lugar de nada: sem preset a tela abriria vazia.
+    () => ({
+      activeDatePreset: activeDatePreset ?? "all",
+      activeListSort,
+      hiddenLeagueKeys,
+      onlyFavorites,
+    }),
     [activeDatePreset, activeListSort, hiddenLeagueKeys, onlyFavorites],
   );
   const applyScreenFilters = useCallback(
@@ -1263,7 +1256,8 @@ export function OddsEventSearch({
       }
 
       if (filters.activeDatePreset !== undefined) {
-        setActiveDatePreset(filters.activeDatePreset);
+        // Sem preset o usuário via a tela vazia: "Todos" é o padrão.
+        setActiveDatePreset(filters.activeDatePreset ?? "all");
       }
 
       if (filters.activeListSort) {
@@ -1366,19 +1360,10 @@ export function OddsEventSearch({
       preset: DatePreset,
       options: { signal?: AbortSignal; showLoading?: boolean } = {},
     ) => {
-      if (preset === "all") {
-        return loadEvents({ kind: "available" }, options);
-      }
-
-      const range = getDatePresetRange(preset);
-      const request: EventsRequest = {
-        from: range.from,
-        kind: "date",
-        preset,
-        to: range.to,
-      };
-
-      return loadEvents(request, options);
+      void preset;
+      // Sempre a mesma lista: o dia é filtrado na tela, então "Hoje" e "Amanhã"
+      // mostram exatamente os jogos que aparecem em "Todos".
+      return loadEvents({ kind: "available" }, options);
     },
     [loadEvents],
   );
@@ -1523,7 +1508,22 @@ export function OddsEventSearch({
       return dayKeys.has(formatDateParam(getPresetDate(preset)));
     });
   }, [activeDatePreset, availableDayKeys]);
-  const loadedEvents = hasActiveList ? state.events : emptyOddsEvents;
+  const loadedEventsSource = hasActiveList ? state.events : emptyOddsEvents;
+  const loadedEvents = useMemo(() => {
+    if (!hasDatePreset || !activeDatePreset) {
+      return loadedEventsSource;
+    }
+
+    const dayKey = formatDateParam(getPresetDate(activeDatePreset));
+
+    return loadedEventsSource.filter((event) => {
+      const eventDate = new Date(event.starts_at);
+
+      return (
+        !Number.isNaN(eventDate.getTime()) && formatDateParam(eventDate) === dayKey
+      );
+    });
+  }, [activeDatePreset, hasDatePreset, loadedEventsSource]);
   const availableLeagues = useMemo<LeagueFilterOption[]>(
     () =>
       groupEventsByLeague(loadedEvents)
